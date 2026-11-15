@@ -43,3 +43,37 @@
     transform: none;
   }
 }
+
+/*
+ * Flying screens on phones. The HUD's top bar, the ops HUD under it on the left and the
+ * turbine gauges on the right fill the upper part of a small screen, so the stack moves to
+ * the open water in the middle.
+ */
+
+/* short (phone landscape): below the row under the top bar */
+@media (max-height: 500px) {
+  .toasts--flying {
+    top: calc(var(--fac-safe-top) + 130px);
+  }
+}
+
+/* narrow (phone portrait): just above the flight cluster and its caution line, which sit at
+   the bottom edge or, with touch controls, on top of the two 240 px corners */
+@media (max-width: 640px) {
+  .toasts--flying {
+    --toasts-corner: 0px;
+    top: auto;
+    bottom: calc(var(--fac-safe-bottom) + var(--toasts-corner) + 146px);
+    width: max-content;
+    max-width: calc(100% - 16px);
+  }
+
+  .toasts--touch {
+    --toasts-corner: 240px;
+  }
+
+  .toasts--flying .toast {
+    white-space: normal;
+    text-align: center;
+  }
+}

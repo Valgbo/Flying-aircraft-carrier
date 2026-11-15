@@ -38,10 +38,14 @@ export interface PostChain {
   dispose(): void;
 }
 
-/** Bloom: only HDR values (emissives above 1, the sun, hot speculars) pass the threshold. */
+/**
+ * Bloom: only real emitters (lights, plumes, the sun) pass the threshold. It sits above the
+ * shoulder of the sea's sun glitter (OCEAN.glitterMax) and of sunlit paint, so a low sun on the
+ * water or the deck does not grow a halo that washes over the ship.
+ */
 const BLOOM = {
-  luminanceThreshold: 1.0,
-  luminanceSmoothing: 0.12,
+  luminanceThreshold: 1.7,
+  luminanceSmoothing: 0.5,
   intensity: 0.85,
   radius: 0.72,
   levels: 7,

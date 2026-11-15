@@ -2,13 +2,15 @@
  * PauseMenu — shown on the flying screens while `store.paused`: resume, restart, settings,
  * exit, plus the current key bindings as a compact reference. While the settings dialog is
  * open on top of it the menu hides and hands the focus over; when the dialog closes, focus
- * returns to the button that opened it. Escape resumes through the `togglePause` action.
- * Styles: shell/pause.css.
+ * returns to the button that opened it. Escape resumes: through the `togglePause` action
+ * while Pause is bound to Escape, through this component once the player has moved Pause to
+ * another key — never both. Styles: shell/pause.css.
  */
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { isKeyCaptureActive } from '../controls/keyCapture';
 import { useGameStore } from '../state/useGameStore';
 import BrandMark from './shell/BrandMark';
-import { keyboardCheatSheet } from './shell/cheatSheet';
+import { OPS_ONLY_BINDINGS, keyboardCheatSheet } from './shell/cheatSheet';
 import { KeyReference } from './shell/controls';
 import { useModalFocus } from './shell/useModalFocus';
 import './shell/shell.css';
@@ -25,6 +27,22 @@ export default function PauseMenu() {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useModalFocus(panelRef, { active: !settingsOpen });
+
+  // Capture phase: read the dialog state before the settings dialog's own Escape handler
+  // has closed it, so one key press never closes both.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.repeat || isKeyCaptureActive()) return;
+      const state = useGameStore.getState();
+      if (state.settingsOpen || !state.paused) return;
+      // Escape with a job of its own: Pause toggles through its action, anything else is
+      // the player's choice of game key
+      if (Object.values(state.settings.keyBindings).includes('Escape')) return;
+      state.setPaused(false);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   return (
     <div className="pause" data-testid="pause-menu" hidden={settingsOpen}>
@@ -88,7 +106,9 @@ export default function PauseMenu() {
           <h3 className="fac-label pause-keys__title" id="pause-keys-title">
             Keys
           </h3>
-          <KeyReference rows={keyboardCheatSheet(bindings)} />
+          <KeyReference
+            rows={keyboardCheatSheet(bindings, screen === 'ops' ? [] : OPS_ONLY_BINDINGS)}
+          />
         </section>
       </div>
     </div>

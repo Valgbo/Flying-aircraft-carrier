@@ -3,6 +3,12 @@
  * Desktop: a side panel on the right, below the HUD's top bar. Phone landscape: a narrower
  * side panel. Phone portrait: a bottom sheet. The widths are mirrored by --hud-panel in
  * hud.css (the HUD keeps its flight cluster clear of the panel).
+ *
+ * .tp--touch  the on-screen touch controls are visible. The ship flies on while the panel
+ *             is open, so the panel stays out of their two bottom corners (240 × 240 px each,
+ *             inside the safe area): the side panel ends above the right corner, on a
+ *             landscape phone it docks between the corners, on a portrait phone it is a
+ *             sheet under the top bar that ends above the flight cluster.
  */
 .tp {
   --tp-state: var(--fac-accent);
@@ -30,6 +36,10 @@
 
 .tp-title {
   flex: 1 1 auto;
+  /* in a narrow dock the title gives way before the close button does */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin: 0;
   font-size: 13px;
   font-weight: 700;
@@ -510,6 +520,30 @@
   }
 }
 
+/* ---------- touch controls visible ---------- */
+
+/* the side panel, wide or narrow, ends above the right corner */
+.tp--touch {
+  bottom: calc(var(--fac-safe-bottom) + 248px);
+}
+
+/* phone landscape with touch controls: no room above the corner, so the panel docks between
+   the two corners, below the row the HUD keeps for the slim flight cluster (hud.css) */
+@media (max-height: 500px) and (min-width: 641px) {
+  .tp--touch {
+    top: calc(var(--fac-safe-top) + 124px);
+    right: calc(var(--fac-safe-right) + 248px);
+    bottom: calc(var(--fac-safe-bottom) + 8px);
+    left: calc(var(--fac-safe-left) + 248px);
+    width: auto;
+  }
+
+  /* two cards per row where the dock is wide enough for them */
+  .tp--touch .tp-cards {
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  }
+}
+
 /* ---------- phone portrait: bottom sheet ---------- */
 
 @media (max-width: 640px) {
@@ -525,7 +559,29 @@
     border-radius: 14px 14px 0 0;
   }
 
+  /* with touch controls: a sheet under the two-row top bar that ends above the flight
+     cluster and its caution line, which sit on top of the corners (hud.css) */
+  .tp--touch {
+    top: calc(var(--fac-safe-top) + 116px);
+    right: calc(var(--fac-safe-right) + 8px);
+    bottom: calc(var(--fac-safe-bottom) + 380px);
+    left: calc(var(--fac-safe-left) + 8px);
+    max-height: none;
+    padding-bottom: 0;
+    border-bottom: 1px solid var(--fac-border);
+    border-radius: var(--fac-radius);
+  }
+
   .tp-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* short phone portrait with touch controls: the HUD drops the compass row and slims the
+   cluster (hud.css), and the sheet takes both */
+@media (max-width: 640px) and (max-height: 700px) {
+  .tp--touch {
+    top: calc(var(--fac-safe-top) + 56px);
+    bottom: calc(var(--fac-safe-bottom) + 350px);
   }
 }

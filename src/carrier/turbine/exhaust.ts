@@ -50,6 +50,22 @@ const NOISE_GLSL = /* glsl */ `
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * Standing shock cells of the core, shared by the vertex stage (pinch) and the fragment stage
+ * (brightness): one cell every SHOCK_SPACING metres, fading over SHOCK_REACH so that only the
+ * first three or so show below the nozzle and the rest of the column is one smooth jet.
+ */
+const SHOCK_GLSL = /* glsl */ `
+  const float SHOCK_SPACING = 9.0;
+  const float SHOCK_REACH = 12.0;
+  float shockWave(float dist) {
+    return cos(6.2832 * dist / SHOCK_SPACING);
+  }
+  float shockReach(float dist) {
+    return exp(-dist / SHOCK_REACH);
+  }
+`;
+
+/**
  * Two unit shells: position = (sin phi, s, cos phi) with s = 0 at the nozzle and 1 at the tip
  * (denser rings near the nozzle for the shock cells), aShell = 0 outer sheath / 1 inner core,
  * aAngle = phi / 2π with a duplicated seam so noise can tile around the plume.
@@ -99,8 +115,7 @@ const PLUME_VERTEX = /* glsl */ `
   varying float vAngle;
   varying vec3 vNormal;
   varying vec3 vView;
-
-  const float SHOCK_SPACING = 9.0;
+  ${SHOCK_GLSL}
 
   void main() {
     float s = position.y;
@@ -108,7 +123,7 @@ const PLUME_VERTEX = /* glsl */ `
     // the outer sheath tapers gently, the inner core is a narrower and sharper cone
     float radius = uRadius * mix(1.0 - 0.42 * pow(s, 0.85), 0.56 * (1.0 - 0.8 * s), aShell);
     // shock cells pinch the core near the nozzle
-    radius *= 1.0 + aShell * 0.16 * cos(6.2832 * dist / SHOCK_SPACING) * exp(-dist / 30.0);
+    radius *= 1.0 + aShell * 0.16 * shockWave(dist) * shockReach(dist);
     vec3 p = vec3(position.x * radius, -dist, position.z * radius);
     // the airflow past the ship bends the column, more and more toward the slow tip
     p += uDrift * pow(s, 1.6);
@@ -135,8 +150,7 @@ const PLUME_FRAGMENT = /* glsl */ `
   varying float vAngle;
   varying vec3 vNormal;
   varying vec3 vView;
-
-  const float SHOCK_SPACING = 9.0;
+  ${SHOCK_GLSL}
   ${NOISE_GLSL}
 
   void main() {
@@ -153,13 +167,13 @@ const PLUME_FRAGMENT = /* glsl */ `
     float streaks = 0.22 + 1.5 * n * n;
 
     // shock diamonds: bright standing cells in the core, dying away from the nozzle
-    float cell = pow(0.5 + 0.5 * cos(6.2832 * dist / SHOCK_SPACING), 3.0);
-    float diamonds = vShell * cell * exp(-dist / 34.0) * (0.3 + uPower);
+    float cell = pow(0.5 + 0.5 * shockWave(dist), 2.0);
+    float diamonds = vShell * cell * shockReach(dist) * (0.3 + uPower);
 
     vec3 colour = mix(uCool, vec3(1.0), smoothstep(0.02, 0.36, vS) * 0.9 + 0.1 * vShell);
     colour = mix(colour, uHot, smoothstep(0.38, 0.95, vS));
 
-    float amount = soft * (fade * streaks * mix(0.13, 0.4, vShell) + diamonds * 0.8);
+    float amount = soft * (fade * streaks * mix(0.13, 0.4, vShell) + diamonds * 0.4);
     gl_FragColor = vec4(colour * (amount * uIntensity), 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>

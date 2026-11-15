@@ -127,7 +127,8 @@ Helpers (`src/state/simHelpers.ts`, allocation-free): `carrierLocalToWorld`,
 
 Everything React needs: `screen`, `paused`, `settingsOpen`, `turbinePanelOpen`, `helpOpen`,
 `cameraMode`, `cameraTurbine`, `assistEnabled`, `effectiveQuality`, `sceneReady`,
-`physicsLoading`, `settings` (persisted to `localStorage` under `fac-settings-v1`),
+`physicsLoading`, `settings` (persisted to `localStorage` under `fac-settings-v1`; read back
+through `sanitizeSettings()`, so a bad stored value falls back to its default),
 `telemetry`, `hangar`, `ops`, `messages`, plus actions (`setScreen`, `togglePause`,
 `cycleCamera`, `toggleAssist`, `resetFlight`, `updateSettings`, `setKeyBinding`, `setHangar`,
 `setOps`, `pushMessage`, …). Outside React: `useGameStore.getState()`.
@@ -205,6 +206,9 @@ What the physics driver mirrors every step, so the UI always has sensible values
 
 URL parameters (`src/config/debugFlags.ts`): `?screen=`, `?quality=`, `?time=`, `?cam=`,
 `?assist=0`, `?fixedTime=`, `?ui=0`, `?mute=1`, `?touch=1`, `?sandbox=` (dev only).
+The flags that set a setting (`quality`, `time`, `mute`, `touch`) go through
+`overrideSettings()`: they hold for the session and are not saved; the override of a setting
+ends, and saving resumes, when the player changes that setting in the app.
 `window.__FAC__` = `{ store, sim, input, inputSources, clearInput, emitAction }` for e2e tests
 and the console.
 
@@ -213,7 +217,14 @@ and the console.
 ## 4. Scene composition and component contracts
 
 `src/App.tsx` → one persistent `<Canvas>` (`SceneRoot`) + DOM overlay (`UIRoot`) +
-`ControlsManager` + `AudioManager`.
+`ControlsManager` + `AudioManager`. The canvas and its GL context live as long as the app: a
+quality change never remounts them (the context is created without antialiasing; Medium and
+High antialias in the `PostFX` composer), so scene state survives it.
+
+Failures: `ErrorBoundary` (`src/state/ErrorBoundary.tsx`) wraps the app in `src/main.tsx` —
+a crash or a missing WebGL 2 context shows a full-page message with a reload button
+(`fatal-error`) — and wraps the lazily loaded physics driver in `SceneRoot`: if that chunk
+cannot be loaded the app returns to the menu with an alert toast.
 
 `src/scene/SceneRoot.tsx` renders, in order: driver · `World` · `Clouds` · `Ocean` ·
 `Carrier` · `FlightOps` · `CameraRig` · `HangarHotspots` (hangar only) · `PostFX` ·
@@ -319,7 +330,7 @@ Stable test ids (`data-testid`) — keep them when replacing placeholders:
   `hangar-tilt`
 - Ops: `ops-hud`, `ops-score`, `ops-status`, `ops-stability`, `ops-launch`
 - Touch: `touch-controls`, `touch-stick`, `touch-throttle`, `touch-btn-<actionName>`
-- Misc: `loading-screen`, `toasts`, `fps-counter`
+- Misc: `loading-screen`, `toasts`, `fps-counter`, `fatal-error`
 
 ---
 

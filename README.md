@@ -140,7 +140,9 @@ Outside this repository's CI, install the test browser once with
 
 ## URL flags
 
-For testing and screenshots; all optional and combinable.
+For testing and screenshots; all optional and combinable. A flag that sets a setting
+(`quality`, `time`, `mute`, `touch`) applies to that visit only: your saved settings are not
+changed unless you change that setting yourself in the app.
 
 | Flag | Effect |
 |---|---|

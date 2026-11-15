@@ -111,6 +111,13 @@ describe('hud formatting', () => {
     expect(motionSense(0.2, 0.2)).toBe('stopped');
     // climbing with the bow up: speed along the ship's axis but no way on
     expect(motionSense(1.4, 0.1)).toBe('stopped');
+    // a strafe with a little drift along the axis is neither ahead nor astern
+    expect(motionSense(-1.7, 16.6)).toBe('sideways');
+    expect(motionSense(1.7, 16.6)).toBe('sideways');
+    expect(motionSense(0.2, 17)).toBe('sideways');
+    // a track 45° off the bow or the stern still counts as ahead / astern
+    expect(motionSense(12, 17)).toBe('ahead');
+    expect(motionSense(-12, 17)).toBe('astern');
     expect(verticalTrend(2)).toBe('climb');
     expect(verticalTrend(-2)).toBe('descent');
     expect(verticalTrend(0.1)).toBe('level');

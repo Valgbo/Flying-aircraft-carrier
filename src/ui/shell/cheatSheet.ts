@@ -37,12 +37,23 @@ export const KEYBOARD_CHEAT_ROWS: readonly { ids: readonly BindingId[]; label: s
   { ids: ['resetFlight'], label: 'Reset flight' },
 ];
 
-/** The keyboard reference for the given bindings, with human-readable key names. */
-export function keyboardCheatSheet(bindings: KeyBindings): CheatRow[] {
-  return KEYBOARD_CHEAT_ROWS.map((row) => ({
-    keys: row.ids.map((id) => keyLabel(bindings[id])),
-    label: row.label,
-  }));
+/** Bindings that do nothing outside flight ops: left out of the reference in free flight. */
+export const OPS_ONLY_BINDINGS: readonly BindingId[] = ['launchJet'];
+
+/**
+ * The keyboard reference for the given bindings, with human-readable key names.
+ * Rows of the bindings in `omit` are left out.
+ */
+export function keyboardCheatSheet(
+  bindings: KeyBindings,
+  omit: readonly BindingId[] = [],
+): CheatRow[] {
+  return KEYBOARD_CHEAT_ROWS.filter((row) => !row.ids.some((id) => omit.includes(id))).map(
+    (row) => ({
+      keys: row.ids.map((id) => keyLabel(bindings[id])),
+      label: row.label,
+    }),
+  );
 }
 
 export const GAMEPAD_CHEAT_SHEET: readonly CheatRow[] = [
@@ -54,13 +65,16 @@ export const GAMEPAD_CHEAT_SHEET: readonly CheatRow[] = [
   { keys: ['Select'], label: 'Camera' },
   { keys: ['A'], label: 'Launch jet' },
   { keys: ['X'], label: 'Turbine panel' },
+  { keys: ['Start'], label: 'Pause' },
 ];
 
 export const TOUCH_CHEAT_SHEET: readonly CheatRow[] = [
   { keys: ['Slider'], label: 'Climb / descend' },
   { keys: ['Stick ↕'], label: 'Tilt forward / back' },
   { keys: ['Stick ↔'], label: 'Yaw left / right' },
+  { keys: ['PORT', 'STBD'], label: 'Strafe left / right (hold)' },
   { keys: ['Buttons'], label: 'Assist, camera, launch, turbines' },
+  { keys: ['HUD button'], label: 'Pause' },
   { keys: ['Drag'], label: 'Look around' },
   { keys: ['Pinch'], label: 'Zoom' },
 ];

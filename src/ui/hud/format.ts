@@ -53,18 +53,27 @@ export function formatThrustMN(thrustKN: number): string {
   return String(Math.round(Math.max(0, thrustKN) / 1000));
 }
 
-export type MotionSense = 'ahead' | 'astern' | 'stopped';
+export type MotionSense = 'ahead' | 'astern' | 'sideways' | 'stopped';
 
 /** Below this the ship is treated as stopped, so the indicator does not chatter in a hover. */
 export const MOTION_DEADBAND_KTS = 0.5;
 
 /**
- * Whether the ship is making way ahead or astern, from the speed along its own axis.
+ * The ship counts as going ahead / astern while at least this share of its ground speed lies
+ * along its own axis (a track up to 60° off the bow or the stern).
+ */
+export const MOTION_AXIS_SHARE = 0.5;
+
+/**
+ * Which way the ship is making way. The number next to this label is the ground speed, so
+ * ahead / astern is only said when the speed along the ship's own axis is a real part of it:
+ * a strafe or a beam-wind drift reads sideways whatever the knot or two along the axis.
  * That axis tilts with the bow, so a pure climb with the bow up has a forward component:
  * without ground speed the ship counts as stopped.
  */
 export function motionSense(forwardSpeedKts: number, groundSpeedKts: number): MotionSense {
   if (groundSpeedKts <= MOTION_DEADBAND_KTS) return 'stopped';
+  if (Math.abs(forwardSpeedKts) < MOTION_AXIS_SHARE * groundSpeedKts) return 'sideways';
   if (forwardSpeedKts > MOTION_DEADBAND_KTS) return 'ahead';
   if (forwardSpeedKts < -MOTION_DEADBAND_KTS) return 'astern';
   return 'stopped';

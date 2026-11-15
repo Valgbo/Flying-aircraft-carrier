@@ -19,6 +19,7 @@ import {
   type Scene,
   type Texture,
 } from 'three';
+import { HARD_LANDING_SINK_RATE } from '../../config/physicsConfig';
 import { sim } from '../../state/sim';
 import { getDownwash, type Downwash } from '../../state/simHelpers';
 import type { QualityLevel } from '../../state/types';
@@ -44,6 +45,7 @@ export type OceanUniforms = {
   uFog: { value: Vector4 };
   uShip: { value: Vector4 };
   uShipState: { value: Vector3 };
+  uSplash: { value: Vector2 };
   uShadow: { value: Vector4 };
   uDownwash: { value: Float32Array };
   uRingPhase: { value: Vector2 };
@@ -55,6 +57,8 @@ export interface OceanSurface {
   uniforms: OceanUniforms;
   /** Texture layers in uniform order (depends on the quality level). */
   layers: readonly TextureLayer[];
+  /** The last splashdown: `sim.time` it happened at and its strength (0 = none yet). */
+  splash: { time: number; strength: number };
 }
 
 /**
@@ -81,6 +85,7 @@ export function createOceanSurface(
     uFog: { value: new Vector4(OCEAN.defaultFogDensity, 0, 1, 0) },
     uShip: { value: new Vector4(0, 0, 0, -1) },
     uShipState: { value: new Vector3() },
+    uSplash: { value: new Vector2() },
     uShadow: { value: new Vector4(0, 0, 1, 0) },
     // a zero radius would divide by zero in the shader even at zero strength
     uDownwash: { value: new Float32Array(TURBINES * 4).fill(1) },
@@ -95,7 +100,19 @@ export function createOceanSurface(
     fragmentShader: oceanFragmentShader(level),
     fog: false,
   });
-  return { material, uniforms, layers };
+  return { material, uniforms, layers, splash: { time: 0, strength: 0 } };
+}
+
+/**
+ * The hull hit the water at `sinkRate` m/s (the `splashdown` game event): start the surge of
+ * foam around it. A touch-down at walking pace leaves a little lace, a hard landing a white ring.
+ */
+export function startSplash(surface: OceanSurface, sinkRate: number): void {
+  surface.splash.time = sim.time;
+  surface.splash.strength = Math.min(
+    Math.max(sinkRate, 0) / HARD_LANDING_SINK_RATE,
+    OCEAN.splash.maxStrength,
+  );
 }
 
 const _forward = new Vector3();
@@ -141,17 +158,18 @@ export function updateOceanSurface(
   u.uSunColor.value.copy(env.sunColor);
   u.uHorizonColor.value.copy(env.horizonColor);
   u.uZenithColor.value.copy(env.zenithColor);
+  // The scene fog only lends its distances. Its colour may already be tone-mapped for the built-in
+  // materials (World does that when the renderer tone-maps), whereas this shader tone-maps its own
+  // output like the sky dome does: both must start from the same scene-linear horizon colour.
+  u.uFogColor.value.copy(env.horizonColor);
   const fog = scene.fog;
   if (fog && (fog as FogExp2).isFogExp2) {
     u.uFog.value.set((fog as FogExp2).density, 0, 1, 0);
-    u.uFogColor.value.copy(fog.color);
   } else if (fog && (fog as Fog).isFog) {
     const linear = fog as Fog;
     u.uFog.value.set(0, linear.near, Math.max(linear.far, linear.near + 1), 1);
-    u.uFogColor.value.copy(fog.color);
   } else {
     u.uFog.value.set(OCEAN.defaultFogDensity, 0, 1, 0);
-    u.uFogColor.value.copy(env.horizonColor);
   }
 
   // ---- ship -------------------------------------------------------------------------------------
@@ -171,6 +189,14 @@ export function updateOceanSurface(
     wakeSpeed,
     Math.min(wakeSpeed * OCEAN.wakePersistence, OCEAN.wakeMaxLength),
   );
+
+  // time runs with the simulation, so a pause freezes the surge; a restarted clock ends it
+  const splashAge = time - surface.splash.time;
+  if (surface.splash.strength > 0 && splashAge >= 0 && splashAge < OCEAN.splash.duration) {
+    u.uSplash.value.set(splashAge, surface.splash.strength);
+  } else {
+    u.uSplash.value.set(0, 0);
+  }
 
   // contact shadow: the hull's blob slides away from the sun as the ship climbs
   const sun = u.uSunDir.value;

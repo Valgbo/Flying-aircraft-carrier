@@ -235,6 +235,18 @@ export function plumeLength(drive: number): number {
   return d < IDLE_RPM ? (d / IDLE_RPM) * 20 : lerp(20, 110, (d - IDLE_RPM) / (1 - IDLE_RPM));
 }
 
+/** Share of its night-time brightness the exhaust keeps under a full daylight sky. */
+const DAY_EXHAUST_EXPOSURE = 0.55;
+
+/**
+ * Brightness of the exhaust for the given daylight (0 night … 1 day). The flame adds to what
+ * is behind it, so the same flame that stands out against a night sea would be the brightest
+ * thing in a sunlit frame: by day it is turned down to a pale, hot shimmer.
+ */
+export function exhaustExposure(daylight: number): number {
+  return lerp(1, DAY_EXHAUST_EXPOSURE, clamp01(daylight));
+}
+
 /** Exhaust speed at the nozzle, m/s. */
 export function exhaustSpeed(drive: number): number {
   return 20 + 125 * clamp01(drive);

@@ -27,7 +27,7 @@ import { getQuality, useQuality } from '../state/useQuality';
 import { smoothstep } from '../utils/math';
 import { useExhaustAssets } from './turbine/assets';
 import { fxEnv, syncTurbineFx } from './turbine/fxState';
-import { NOZZLE_Y, exhaustSpeed, plumeLength, sprayRadius } from './turbine/model';
+import { NOZZLE_Y, exhaustExposure, exhaustSpeed, plumeLength, sprayRadius } from './turbine/model';
 
 /** Below this drive the engine counts as shut down and nothing is drawn. */
 const MIN_DRIVE = 0.004;
@@ -62,7 +62,8 @@ export default function TurbineExhaust({ index }: { index: TurbineIndex }) {
         u.uDrift.value.set(-fx.relVel.x * lean, 0, -fx.relVel.z * lean);
         u.uPower.value = fx.drive;
         // without a bloom pass (and its tone mapping) the HDR core would clip to flat white
-        const exposure = getQuality().bloom ? 1 : NO_BLOOM_EXPOSURE;
+        const exposure =
+          exhaustExposure(sim.env.daylight) * (getQuality().bloom ? 1 : NO_BLOOM_EXPOSURE);
         u.uIntensity.value = exposure * (0.25 + 1.35 * fx.drive) * smoothstep(0, 0.08, fx.drive);
         u.uTime.value = sim.time + index * 3.7;
         assets.plumeMaterial.uniformsNeedUpdate = true;
@@ -75,7 +76,10 @@ export default function TurbineExhaust({ index }: { index: TurbineIndex }) {
         }
         u.uTime.value = sim.time + index * 7.31;
         u.uSpeed.value = exhaustSpeed(fx.drive);
-        u.uOpacity.value = smoothstep(0, 0.1, fx.drive) * (0.55 + 0.45 * fx.drive);
+        u.uOpacity.value =
+          exhaustExposure(sim.env.daylight) *
+          smoothstep(0, 0.1, fx.drive) *
+          (0.55 + 0.45 * fx.drive);
         u.uRelVel.value.copy(fx.relVel);
         u.uTint.value.copy(fxEnv.mist);
         assets.particleMaterial.uniformsNeedUpdate = true;

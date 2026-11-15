@@ -10,6 +10,8 @@ import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middl
 import type { HotspotId } from '../config/layout';
 import { DEFAULT_KEY_BINDINGS, type BindingId, type KeyBindings } from './bindings';
 import { HOVER_THROTTLE } from '../config/physicsConfig';
+import { QUALITY_ORDER } from '../config/quality';
+import { clamp } from '../utils/math';
 import { resetSimForScreen } from './sim';
 import { buildTelemetry } from './telemetrySnapshot';
 import type {
@@ -56,6 +58,59 @@ export const DEFAULT_SETTINGS: Settings = {
   showFps: false,
   keyBindings: { ...DEFAULT_KEY_BINDINGS },
 };
+
+const TOUCH_CONTROLS: readonly TouchControlsSetting[] = ['auto', 'on', 'off'];
+
+/**
+ * Settings read back from storage, field by field: whatever is missing, of the wrong type or
+ * no longer a known option falls back to its default, so stale or damaged data cannot reach
+ * the scene, the audio or the key handling.
+ */
+export function sanitizeSettings(stored: unknown): Settings {
+  const raw: Record<string, unknown> =
+    typeof stored === 'object' && stored !== null ? { ...stored } : {};
+  const d = DEFAULT_SETTINGS;
+  const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+  const num = (v: unknown, fallback: number, max: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? clamp(v, 0, max) : fallback;
+  const option = <T extends string>(v: unknown, options: readonly T[], fallback: T) =>
+    options.find((o) => o === v) ?? fallback;
+
+  const keyBindings = { ...DEFAULT_KEY_BINDINGS };
+  if (typeof raw.keyBindings === 'object' && raw.keyBindings !== null) {
+    const codes: Record<string, unknown> = { ...raw.keyBindings };
+    for (const id of Object.keys(DEFAULT_KEY_BINDINGS) as BindingId[]) {
+      const code = codes[id];
+      if (typeof code === 'string' && code !== '') keyBindings[id] = code;
+    }
+  }
+
+  return {
+    quality: option(raw.quality, QUALITY_ORDER, d.quality),
+    adaptiveQuality: bool(raw.adaptiveQuality, d.adaptiveQuality),
+    masterVolume: num(raw.masterVolume, d.masterVolume, 1),
+    engineVolume: num(raw.engineVolume, d.engineVolume, 1),
+    effectsVolume: num(raw.effectsVolume, d.effectsVolume, 1),
+    muted: bool(raw.muted, d.muted),
+    invertY: bool(raw.invertY, d.invertY),
+    cameraShake: bool(raw.cameraShake, d.cameraShake),
+    timeOfDay: num(raw.timeOfDay, d.timeOfDay, 24),
+    touchControls: option(raw.touchControls, TOUCH_CONTROLS, d.touchControls),
+    showFps: bool(raw.showFps, d.showFps),
+    keyBindings,
+  };
+}
+
+/**
+ * Settings a URL debug flag overrides for this session, each with the value it had before.
+ * That earlier value is the one kept in storage; the override ends as soon as the player
+ * changes the setting in the app (see `overrideSettings`).
+ */
+const overridden: Partial<Settings> = {};
+
+function endOverrides(keys: readonly string[]): void {
+  for (const key of keys) delete overridden[key as keyof Settings];
+}
 
 export interface HangarState {
   selectedHotspot: HotspotId | null;
@@ -269,22 +324,26 @@ export const useGameStore = create<GameState>()(
           }));
         },
 
-        updateSettings: (patch) =>
+        updateSettings: (patch) => {
+          endOverrides(Object.keys(patch));
           set((s) => ({
             settings: { ...s.settings, ...patch },
             effectiveQuality: patch.quality ?? s.effectiveQuality,
-          })),
+          }));
+        },
         setKeyBinding: (id, code) =>
           set((s) => ({
             settings: { ...s.settings, keyBindings: { ...s.settings.keyBindings, [id]: code } },
           })),
         resetKeyBindings: () =>
           set((s) => ({ settings: { ...s.settings, keyBindings: { ...DEFAULT_KEY_BINDINGS } } })),
-        resetSettings: () =>
+        resetSettings: () => {
+          endOverrides(Object.keys(overridden));
           set({
             settings: { ...DEFAULT_SETTINGS, keyBindings: { ...DEFAULT_KEY_BINDINGS } },
             effectiveQuality: DEFAULT_SETTINGS.quality,
-          }),
+          });
+        },
         setEffectiveQuality: (effectiveQuality) => set({ effectiveQuality }),
         setSceneReady: (sceneReady) => set({ sceneReady }),
         setPhysicsLoading: (physicsLoading) => set({ physicsLoading }),
@@ -311,18 +370,31 @@ export const useGameStore = create<GameState>()(
         name: 'fac-settings-v1',
         version: 1,
         storage: createJSONStorage(() => (hasLocalStorage ? localStorage : memoryStorage)),
-        partialize: (s) => ({ settings: s.settings }),
+        partialize: (s) => ({ settings: { ...s.settings, ...overridden } }),
+        // data written by another version of the app is read like any other: field by field
+        migrate: (persisted) => persisted,
         merge: (persisted, current) => {
-          const saved = (persisted as { settings?: Partial<Settings> } | undefined)?.settings;
-          if (!saved) return current;
-          const settings: Settings = {
-            ...current.settings,
-            ...saved,
-            keyBindings: { ...DEFAULT_KEY_BINDINGS, ...(saved.keyBindings ?? {}) },
-          };
+          const stored = (persisted as { settings?: unknown } | null | undefined)?.settings;
+          if (stored === undefined) return current;
+          const settings = sanitizeSettings(stored);
           return { ...current, settings, effectiveQuality: settings.quality };
         },
       },
     ),
   ),
 );
+
+/**
+ * Apply settings for this session only (URL debug flags). Storage keeps the values the player
+ * chose; a later change of the same setting in the app is saved as usual.
+ */
+export function overrideSettings(patch: Partial<Settings>): void {
+  const { settings, effectiveQuality } = useGameStore.getState();
+  for (const key of Object.keys(patch) as (keyof Settings)[]) {
+    if (!(key in overridden)) Object.assign(overridden, { [key]: settings[key] });
+  }
+  useGameStore.setState({
+    settings: { ...settings, ...patch },
+    effectiveQuality: patch.quality ?? effectiveQuality,
+  });
+}

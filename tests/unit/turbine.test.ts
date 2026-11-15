@@ -18,6 +18,7 @@ import {
   compressGlow,
   coreIntensity,
   driveLevel,
+  exhaustExposure,
   exhaustSpeed,
   glowIntensity,
   glowWhiteness,
@@ -171,6 +172,15 @@ describe('glow and exhaust response', () => {
     expect(plumeLength(1)).toBeCloseTo(110);
     expect(plumeLength(0.05)).toBeCloseTo(10);
     expect(exhaustSpeed(1)).toBeGreaterThan(exhaustSpeed(0.1));
+  });
+
+  it('exhaust is at full brightness at night and turned down, not off, by day', () => {
+    expect(exhaustExposure(0)).toBe(1);
+    expect(exhaustExposure(1)).toBeLessThan(0.7);
+    expect(exhaustExposure(1)).toBeGreaterThan(0.3);
+    expect(exhaustExposure(0.5)).toBeLessThan(exhaustExposure(0.2));
+    expect(exhaustExposure(2)).toBe(exhaustExposure(1));
+    expect(exhaustExposure(-1)).toBe(1);
   });
 
   it('spray grows with strength and its particle count with the quality budget', () => {

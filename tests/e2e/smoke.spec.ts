@@ -163,6 +163,31 @@ test.describe('smoke', () => {
         SLOW,
       )
       .toBe('medium');
+
+    // URL flags are overrides for one visit: muted now, but never written to the saved settings
+    expect(await evalIn<boolean>(page, 'window.__FAC__.store.getState().settings.muted')).toBe(
+      true,
+    );
+    const saved = await evalIn<{ quality: string; muted: boolean }>(
+      page,
+      'JSON.parse(localStorage.getItem("fac-settings-v1")).state.settings',
+    );
+    expect(saved.quality).toBe('medium');
+    expect(saved.muted).toBe(false);
+  });
+
+  test('a flight-physics chunk that fails to load returns to the menu with a message', async ({
+    page,
+  }) => {
+    await page.route(/PhysicsDriver/, (route) => route.abort());
+    await openApp(page);
+    await page.getByTestId('menu-free-flight').click();
+    await expect(page.getByTestId('toasts')).toContainText('FAILED TO LOAD');
+    await expect(page.getByTestId('main-menu')).toBeVisible();
+    await expect(page.locator('canvas')).toBeVisible();
+    expect(await evalIn<boolean>(page, 'window.__FAC__.store.getState().physicsLoading')).toBe(
+      false,
+    );
   });
 
   test('flight ops: launching a jet sends it off the catapult', async ({ page }) => {
@@ -185,6 +210,22 @@ test.describe('smoke', () => {
       'window.__FAC__.sim.jets.filter((j) => j.phase !== "parked" && j.phase !== "taxi").length',
     );
     expect(airborne).toBeGreaterThanOrEqual(1);
+
+    // changing the graphics preset keeps the same canvas and scene: the sortie carries on
+    const launches = await evalIn<number>(page, 'window.__FAC__.store.getState().ops.launches');
+    await page.locator('canvas').evaluate((el) => el.setAttribute('data-kept', '1'));
+    await page.keyboard.press('Escape');
+    await page.getByTestId('pause-settings').click();
+    await page.getByTestId('settings-quality-medium').click();
+    await page.getByTestId('settings-close').click();
+    await page.getByTestId('pause-resume').click();
+    await waitForSimStep(page, 0.5);
+    const after = await evalIn<{ quality: string; launches: number; jets: number }>(
+      page,
+      '(() => { const s = window.__FAC__.store.getState(); return { quality: s.effectiveQuality, launches: s.ops.launches, jets: window.__FAC__.sim.jets.length }; })()',
+    );
+    expect(after).toEqual({ quality: 'medium', launches, jets: 4 });
+    expect(await page.locator('canvas').getAttribute('data-kept')).toBe('1');
     expect(errors).toEqual([]);
   });
 });

@@ -37,23 +37,32 @@ export const OCEAN = {
   roughnessMin: 0.0012,
   /** How far up the sky a rough surface reflects on average, in units of its RMS slope. */
   skyLift: 1.6,
-  /** Scale of the sun's specular lobe and the cap that keeps single pixels from exploding. */
+  /**
+   * Scale of the sun's specular lobe, and the radiance its glitter approaches but never reaches:
+   * a soft shoulder, so a field of glints under a low sun keeps its wave texture instead of
+   * clipping to a flat white sheet that then feeds the bloom.
+   */
   glitterGain: 1.4,
-  glitterMax: 9,
+  glitterMax: 2.4,
   /** Anisotropy the detail texture is filtered with (also assumed by the analytic fades). */
   anisotropy: 8,
 
   // ---- far-field irregularity --------------------------------------------------------------
   /**
-   * Between these distances from the mesh centre the analytic waves start to wax, wane and bend
-   * with a slow noise, so that from altitude the sea is not a regular weave of plane waves.
-   * Inside `irregularStart` (the hull and its surroundings) the normals match the displaced
-   * geometry exactly.
+   * Between these distances from the CAMERA the analytic waves start to wax, wane and bend with
+   * slow noise fields: a handful of plane waves seen many wavelengths at a time, from altitude
+   * or across the mid distance, would otherwise read as a regular diamond weave. Closer than
+   * `irregularStart`, where the displaced geometry can be made out, the normals match it exactly.
    */
-  irregularStart: 250,
-  irregularEnd: 900,
-  /** Peak-to-peak sideways bend of the wave trains (and ripple tiles) by that noise, m. */
+  irregularStart: 120,
+  irregularEnd: 420,
+  /** Peak-to-peak sideways bend of the wave trains (and ripple tiles) by the gust fields, m. */
   irregularWarp: 160,
+  /**
+   * Peak-to-peak bend by the swirl fields (SWIRL_LAYERS), m: a few hundred metres across and
+   * tens of metres deep, enough to slip neighbouring crests of every component out of step.
+   */
+  irregularSwirl: 110,
 
   // ---- whitecaps ---------------------------------------------------------------------------
   capStart: 0.55,
@@ -106,6 +115,24 @@ export const OCEAN = {
   bowTaperFrom: 60,
   /** Keel height above the water (m) over which the waterline foam fades out. */
   hullFoamEndHeight: 5,
+  /** Waterline foam of a hull lying still, as a share of the wash at `wakeFullSpeed`. */
+  hullFoamAtRest: 0.55,
+  /** Reach of the waterline foam from the hull side, m: lying still, and added at full speed. */
+  hullFoamWidth: 5,
+  hullFoamSpeedWidth: 14,
+  /** The surge of foam a splashdown throws out from the hull. */
+  splash: {
+    /** Seconds until the last of it has dissolved. */
+    duration: 4.5,
+    /** How far the front runs from the hull side after a hard landing, m, and its time constant, s. */
+    reach: 46,
+    rise: 0.9,
+    /** Width of the foaming front, m, and how far the foam pattern pushes it in and out, m. */
+    frontWidth: 11,
+    ragged: 24,
+    /** Strength (sink rate / hard-landing sink rate) is capped here. */
+    maxStrength: 1.5,
+  },
   /** Keel height above the water (m) between which the contact shadow fades out. */
   shadowFullHeight: 40,
   shadowEndHeight: 150,
@@ -156,9 +183,18 @@ export const GUST_LAYERS: readonly [TextureLayer, TextureLayer] = [
   { tile: 2_300, angle: -64 * DEG, speed: 5 },
 ];
 
-/** All texture layers of a quality level in uniform order: octaves…, foam, gust A, gust B. */
+/** Mid-scale noise fields (A channel) that bend and group the wave trains away from the camera. */
+export const SWIRL_LAYERS: readonly [TextureLayer, TextureLayer] = [
+  { tile: 910, angle: 52 * DEG, speed: 4 },
+  { tile: 640, angle: -23 * DEG, speed: 3 },
+];
+
+/**
+ * All texture layers of a quality level in uniform order:
+ * octaves…, foam, gust A, gust B, swirl A, swirl B.
+ */
 export function textureLayers(level: QualityLevel): readonly TextureLayer[] {
-  return [...DETAIL_OCTAVES[level], FOAM_LAYER, ...GUST_LAYERS];
+  return [...DETAIL_OCTAVES[level], FOAM_LAYER, ...GUST_LAYERS, ...SWIRL_LAYERS];
 }
 
 /**

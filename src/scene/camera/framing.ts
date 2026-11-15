@@ -140,15 +140,38 @@ const stripLength = Math.hypot(stripDx, stripDz);
 /** How far up the strip from the threshold the deck observer stands, m. */
 const DECK_EYE_ALONG_STRIP = 16;
 const DECK_EYE_HEIGHT = 3;
+/**
+ * …and how far to port of the centreline: clear of the strip's edge, where a landing signal
+ * officer stands, so a recovering jet passes beside the camera and never through it.
+ */
+export const DECK_EYE_OFFSET = LANDING_STRIP.width / 2 + 4;
+/** The observer looks at the centreline this far up the strip from the threshold, m. */
+const DECK_AIM_ALONG_STRIP = 110;
+/** Unit vector across the strip toward port (ship −X side), carrier-local x and z. */
+const stripPortX = stripDz / stripLength;
+const stripPortZ = -stripDx / stripLength;
 
-/** Deck: standing on the landing-strip centreline near the stern, looking up the strip. */
+/** Deck: beside the landing strip near the stern, looking up it and in toward its centreline. */
 export const DECK_VIEW: FirstPersonView = {
   eye: [
-    LANDING_STRIP.threshold[0] + (stripDx / stripLength) * DECK_EYE_ALONG_STRIP,
+    LANDING_STRIP.threshold[0] +
+      (stripDx / stripLength) * DECK_EYE_ALONG_STRIP +
+      stripPortX * DECK_EYE_OFFSET,
     DECK.y + DECK_EYE_HEIGHT,
-    LANDING_STRIP.threshold[2] + (stripDz / stripLength) * DECK_EYE_ALONG_STRIP,
+    LANDING_STRIP.threshold[2] +
+      (stripDz / stripLength) * DECK_EYE_ALONG_STRIP +
+      stripPortZ * DECK_EYE_OFFSET,
   ],
-  yaw: Math.atan2(-stripDx, -stripDz),
+  yaw: Math.atan2(
+    -(
+      (stripDx / stripLength) * (DECK_AIM_ALONG_STRIP - DECK_EYE_ALONG_STRIP) -
+      stripPortX * DECK_EYE_OFFSET
+    ),
+    -(
+      (stripDz / stripLength) * (DECK_AIM_ALONG_STRIP - DECK_EYE_ALONG_STRIP) -
+      stripPortZ * DECK_EYE_OFFSET
+    ),
+  ),
   pitch: -1.5 * DEG2RAD,
   maxLookYaw: 130 * DEG2RAD,
   minLookPitch: -28 * DEG2RAD,

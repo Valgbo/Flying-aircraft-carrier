@@ -12,7 +12,14 @@ import {
   getTurbineExhaust,
   thrustAxisLocal,
 } from '../../src/state/simHelpers';
-import { CAMERA_CYCLE, useGameStore } from '../../src/state/useGameStore';
+import {
+  CAMERA_CYCLE,
+  DEFAULT_SETTINGS,
+  overrideSettings,
+  sanitizeSettings,
+  useGameStore,
+  type Settings,
+} from '../../src/state/useGameStore';
 import {
   clamp,
   damp,
@@ -189,6 +196,69 @@ describe('game store', () => {
     expect(useGameStore.getState().effectiveQuality).toBe('high');
     useGameStore.getState().updateSettings({ muted: true });
     expect(useGameStore.getState().effectiveQuality).toBe('high');
+  });
+
+  it('a URL-flag override lasts for the session and is saved only once the player changes it', () => {
+    const { partialize } = useGameStore.persist.getOptions();
+    const saved = () => partialize!(useGameStore.getState()) as { settings: Settings };
+    useGameStore.getState().resetSettings();
+    overrideSettings({ quality: 'low', adaptiveQuality: false, muted: true });
+    expect(useGameStore.getState().settings).toMatchObject({ quality: 'low', muted: true });
+    expect(useGameStore.getState().effectiveQuality).toBe('low');
+    expect(saved().settings).toEqual(DEFAULT_SETTINGS);
+
+    // an unrelated change is saved, the overridden settings still are not
+    useGameStore.getState().updateSettings({ invertY: true });
+    expect(saved().settings).toEqual({ ...DEFAULT_SETTINGS, invertY: true });
+
+    // the player picks a preset: that choice is saved, the other overrides stay session-only
+    useGameStore.getState().updateSettings({ quality: 'high' });
+    expect(saved().settings).toEqual({ ...DEFAULT_SETTINGS, invertY: true, quality: 'high' });
+    expect(useGameStore.getState().settings.muted).toBe(true);
+
+    useGameStore.getState().resetSettings();
+    expect(useGameStore.getState().settings.muted).toBe(false);
+    expect(saved().settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('stored settings are taken field by field and bad values fall back to the defaults', () => {
+    expect(sanitizeSettings(null)).toEqual(DEFAULT_SETTINGS);
+    expect(sanitizeSettings('x')).toEqual(DEFAULT_SETTINGS);
+    expect(
+      sanitizeSettings({
+        quality: 'ultra',
+        adaptiveQuality: 'no',
+        masterVolume: null,
+        engineVolume: 9,
+        effectsVolume: 0.25,
+        muted: true,
+        timeOfDay: 'noon',
+        touchControls: 7,
+        keyBindings: 'x',
+        unknownSetting: 1,
+      }),
+    ).toEqual({ ...DEFAULT_SETTINGS, engineVolume: 1, effectsVolume: 0.25, muted: true });
+    expect(
+      sanitizeSettings({
+        quality: 'high',
+        timeOfDay: 30,
+        touchControls: 'off',
+        keyBindings: { throttleUp: 'KeyI', yawLeft: '', launchJet: 5, bogus: 'KeyZ' },
+      }),
+    ).toEqual({
+      ...DEFAULT_SETTINGS,
+      quality: 'high',
+      timeOfDay: 24,
+      touchControls: 'off',
+      keyBindings: { ...DEFAULT_SETTINGS.keyBindings, throttleUp: 'KeyI' },
+    });
+
+    // the store's own merge uses it, whatever was stored
+    const merge = useGameStore.persist.getOptions().merge!;
+    const merged = merge({ settings: { quality: 'ultra' } }, useGameStore.getState());
+    expect(merged.settings.quality).toBe(DEFAULT_SETTINGS.quality);
+    expect(merged.effectiveQuality).toBe(DEFAULT_SETTINGS.quality);
+    expect(merge(null, useGameStore.getState())).toBe(useGameStore.getState());
   });
 
   it('messages de-duplicate and expire', () => {

@@ -21,6 +21,7 @@ import {
 import {
   BRIDGE_VIEW,
   CHASE,
+  DECK_EYE_OFFSET,
   DECK_VIEW,
   HANGAR,
   HOTSPOT_FRAMING,
@@ -334,21 +335,37 @@ describe('view selection', () => {
 });
 
 describe('framing derived from the layout', () => {
-  it('deck eye stands on the strip centreline near the stern, looking up the strip', () => {
+  it('deck eye stands to port of the landing strip near the stern, looking up and into it', () => {
     const [x, y, z] = DECK_VIEW.eye;
     expect(y).toBeCloseTo(DECK.y + 3);
     expect(z).toBeGreaterThan(110);
     expect(z).toBeLessThan(LANDING_STRIP.threshold[2]);
-    // on the line threshold → end
     const dx = LANDING_STRIP.end[0] - LANDING_STRIP.threshold[0];
     const dz = LANDING_STRIP.end[2] - LANDING_STRIP.threshold[2];
-    const cross = (x - LANDING_STRIP.threshold[0]) * dz - (z - LANDING_STRIP.threshold[2]) * dx;
-    expect(cross).toBeCloseTo(0, 6);
-    // ship-frame yaw positive = toward port: the strip is angled about 8.8° to port
-    expect(DECK_VIEW.yaw / DEG).toBeCloseTo(8.8, 0);
+    const length = Math.hypot(dx, dz);
+    // signed distance from the line threshold → end, positive to port (ship −X)
+    const toPort =
+      ((x - LANDING_STRIP.threshold[0]) * dz - (z - LANDING_STRIP.threshold[2]) * dx) / length;
+    expect(toPort).toBeCloseTo(DECK_EYE_OFFSET, 6);
+    // clear of the strip edge by more than a jet's half span, so no approach passes through the eye
+    expect(toPort - LANDING_STRIP.width / 2).toBeGreaterThanOrEqual(4);
+    // …and still over the deck: inboard of the port edge at that station
+    expect(x).toBeGreaterThan(-DECK.halfWidth + 6);
+    // ship-frame yaw positive = toward port. The strip runs about 8.8° to port; the observer looks
+    // up it but turned in toward the centreline, which the line of sight crosses beyond the wires
+    const stripYaw = Math.atan2(-dx, -dz);
+    expect(stripYaw / DEG).toBeCloseTo(8.8, 0);
+    expect(DECK_VIEW.yaw).toBeLessThan(stripYaw);
+    expect(DECK_VIEW.yaw).toBeGreaterThan(stripYaw - 20 * DEG);
     const lookX = -Math.sin(DECK_VIEW.yaw);
     const lookZ = -Math.cos(DECK_VIEW.yaw);
-    expect(lookX * dx + lookZ * dz).toBeCloseTo(Math.hypot(dx, dz), 6);
+    const closing = -(lookX * dz - lookZ * dx) / length; // metres toward the centreline per metre
+    const along = (lookX * dx + lookZ * dz) / length;
+    const eyeAlong =
+      ((x - LANDING_STRIP.threshold[0]) * dx + (z - LANDING_STRIP.threshold[2]) * dz) / length;
+    const crossing = eyeAlong + (toPort / closing) * along;
+    expect(crossing).toBeGreaterThan(Math.max(...LANDING_STRIP.wireDistances));
+    expect(crossing).toBeLessThan(length);
   });
 
   it('bridge eye is the layout eye point, looking forward and slightly to port', () => {

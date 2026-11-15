@@ -44,6 +44,7 @@ import {
   stripPoint,
 } from '../../src/carrier/hull/hullShape';
 import { RADAR_PIVOT, buildIslandGeometry } from '../../src/carrier/hull/islandGeometry';
+import { BRIDGE_VIEW } from '../../src/scene/camera/framing';
 
 type Tri = [number[], number[], number[]];
 
@@ -330,6 +331,36 @@ describe('clearances and budgets', () => {
           expect(Math.hypot(v[0] - ex, v[1] - ey, v[2] - ez)).toBeGreaterThan(1.05);
         }
       }
+    }
+  });
+
+  it('keeps window posts well clear of the default sight line of the bridge camera', () => {
+    const [ex, ey, ez] = ISLAND.bridgeEye;
+    // carrier-local direction of the view: yaw turns from the bow (-Z) toward port (-X)
+    const sightX = -Math.sin(BRIDGE_VIEW.yaw);
+    const sightZ = -Math.cos(BRIDGE_VIEW.yaw);
+    for (const detail of [0, 1, 2]) {
+      let nearest = Infinity;
+      let posts = 0;
+      for (const tri of triangles(buildIslandGeometry(detail).structure)) {
+        for (let k = 0; k < 3; k++) {
+          // where the structure crosses eye height near the eye there are only window posts
+          const [ax, ay, az] = tri[k];
+          const [bx, by, bz] = tri[(k + 1) % 3];
+          if ((ay - ey) * (by - ey) >= 0) continue;
+          const t = (ey - ay) / (by - ay);
+          const dx = ax + (bx - ax) * t - ex;
+          const dz = az + (bz - az) * t - ez;
+          const range = Math.hypot(dx, dz);
+          const along = dx * sightX + dz * sightZ;
+          if (range > 9 || along <= 0) continue;
+          posts++;
+          nearest = Math.min(nearest, Math.acos(along / range));
+        }
+      }
+      expect(posts).toBeGreaterThan(0);
+      // a pane, not a post, fills the middle of the frame: 35° is most of its half-width
+      expect(nearest).toBeGreaterThan((35 * Math.PI) / 180);
     }
   });
 

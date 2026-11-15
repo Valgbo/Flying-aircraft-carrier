@@ -135,6 +135,10 @@ export const FLIGHT = {
   tiltRecoverRate: 1.5 * DEG2RAD,
   /** How fast full tilt input moves the tilt lever, rad/s. */
   leverRate: 14 * DEG2RAD,
+  /** How far tilt input can push the lever past what the lift budget allows the nacelles, rad. */
+  leverOverrun: 2 * DEG2RAD,
+  /** Neutral stop: a lever that reaches 0° waits there for this long while the input stays held, s. */
+  leverNeutralHold: 0.6,
   /** Attitude hold: natural frequency (rad/s) per axis, damping ratio, integral gain (1/s³) and limit (rad/s²). */
   pitchFrequency: 1.0,
   rollFrequency: 1.1,

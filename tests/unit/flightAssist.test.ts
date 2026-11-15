@@ -257,6 +257,97 @@ describe('flight assist', () => {
     expect(bodySpeeds(model).forward).toBeLessThan(cruising - 40);
   });
 
+  it('does not wind the lever up past the lift budget: the nacelles answer at once when it is pulled back', () => {
+    const model = hovering(300);
+    fly(model, 6, { tilt: 1 });
+    const allowed = model.turbines[0].tiltCmd;
+    expect(allowed).toBeGreaterThan(30 * DEG2RAD); // the budget, not the mechanical stop,
+    expect(allowed).toBeLessThan(PHYS.tiltMax - 5 * DEG2RAD); // is what limits the nacelles here
+    expect(model.controls.tiltLever).toBeGreaterThan(allowed);
+    expect(model.controls.tiltLever).toBeLessThan(allowed + FLIGHT.leverOverrun + 0.5 * DEG2RAD);
+    fly(model, 0.3, { tilt: -1 });
+    expect(model.turbines[0].tiltCmd).toBeLessThan(allowed - 1 * DEG2RAD);
+  });
+
+  it('starts the lever from the limit when the budget shrank under it', () => {
+    const model = hovering(2900);
+    model.controls.tiltLever = 40 * DEG2RAD; // set lower down, carried up into thin air
+    fly(model, 5);
+    const allowed = model.turbines[0].tiltCmd;
+    expect(allowed).toBeLessThan(20 * DEG2RAD);
+    expect(model.controls.tiltLever).toBeCloseTo(40 * DEG2RAD, 6); // untouched without input
+    fly(model, 0.3, { tilt: -1 });
+    expect(model.turbines[0].tiltCmd).toBeLessThan(allowed - 1 * DEG2RAD);
+    expect(model.controls.tiltLever).toBeLessThan(allowed);
+  });
+
+  it('keeps the nacelles where the pilot left them when the lift budget grows again', () => {
+    const model = hovering(2900);
+    fly(model, 5, { tilt: 1 });
+    fly(model, 5);
+    const top = model.turbines[0].tilt;
+    expect(top).toBeGreaterThan(3 * DEG2RAD);
+    expect(top).toBeLessThan(20 * DEG2RAD);
+    model.controls.targetAltitude = 1500;
+    fly(model, 90);
+    expect(model.body.position.y).toBeLessThan(1600);
+    for (const t of model.turbines) {
+      expect(t.tilt).toBeLessThan(top + FLIGHT.leverOverrun + 0.5 * DEG2RAD);
+    }
+  });
+
+  it('holds the nacelles upright with an engine out without winding the lever up', () => {
+    const model = hovering(300);
+    model.turbines[2].enabled = false;
+    fly(model, 5, { tilt: 1 });
+    expect(model.controls.tiltLever).toBeLessThan(FLIGHT.leverOverrun + 1e-6);
+    fly(model, 5, { tilt: -1 });
+    expect(model.controls.tiltLever).toBeGreaterThan(-FLIGHT.leverOverrun - 1e-6);
+  });
+
+  it('stops the lever at neutral: letting go there leaves it at exactly zero', () => {
+    const toNeutral = (10 * DEG2RAD) / FLIGHT.leverRate;
+    for (const side of [1, -1]) {
+      const model = hovering(300);
+      model.controls.tiltLever = side * 10 * DEG2RAD;
+      // released anywhere inside the stop, late or early
+      fly(model, toNeutral + 0.75 * FLIGHT.leverNeutralHold, { tilt: -side });
+      expect(model.controls.tiltLever).toBe(0);
+      fly(model, 2);
+      expect(model.controls.tiltLever).toBe(0);
+      // a fresh push leaves neutral without delay, in either direction
+      fly(model, 0.1, { tilt: -side });
+      expect(model.controls.tiltLever * -side).toBeCloseTo(0.1 * FLIGHT.leverRate, 6);
+    }
+  });
+
+  it('lets the lever through neutral when the input stays held, and back out at once when reversed', () => {
+    const toNeutral = (10 * DEG2RAD) / FLIGHT.leverRate;
+    const model = hovering(300);
+    model.controls.tiltLever = 10 * DEG2RAD;
+    fly(model, toNeutral + FLIGHT.leverNeutralHold + 0.5, { tilt: -1 });
+    expect(model.controls.tiltLever).toBeLessThan(-5 * DEG2RAD);
+    expect(model.controls.tiltLever).toBeGreaterThan(-8 * DEG2RAD);
+    fly(model, 1, { tilt: 1 }); // up into the stop from below...
+    expect(model.controls.tiltLever).toBe(0);
+    fly(model, 0.1, { tilt: -1 }); // ...and straight back out the way it came
+    expect(model.controls.tiltLever).toBeCloseTo(-0.1 * FLIGHT.leverRate, 6);
+  });
+
+  it('comes to rest and stays there once the lever is left in the neutral stop', () => {
+    const model = hovering(300);
+    model.controls.tiltLever = 20 * DEG2RAD;
+    fly(model, 30);
+    expect(bodySpeeds(model).forward).toBeGreaterThan(30);
+    fly(model, 20 / (FLIGHT.leverRate * RAD2DEG) + 0.3, { tilt: -1 });
+    expect(model.controls.tiltLever).toBe(0);
+    fly(model, 240);
+    const settled = bodySpeeds(model).forward;
+    fly(model, 60);
+    expect(Math.abs(bodySpeeds(model).forward)).toBeLessThan(Math.max(1.5, Math.abs(settled)));
+    for (const t of model.turbines) expect(Math.abs(t.tilt)).toBeLessThan(0.2 * DEG2RAD);
+  });
+
   it('turns at 5-8 deg/s on full yaw and stops on the heading when released', () => {
     for (const direction of [1, -1]) {
       const model = hovering(300);

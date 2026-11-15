@@ -5,13 +5,16 @@
  * rotating search radar on the bridge roof.
  *
  * The bridge is laid out around ISLAND.bridgeEye: the eye sits 1.8 m above the bridge floor,
- * more than a metre inside the port and forward glass, with nothing else near it. The glass
- * is a separate single-sided mesh (invisible from inside), and the room has dark inward
- * faces everywhere except the window band, so the bridge camera looks out through a frame.
+ * more than a metre inside the port and forward glass, with nothing else near it. The forward
+ * port corner is cut back into one wide pane square in front of the bridge camera, whose
+ * default sight line passes through its middle between two thin corner posts. The glass is a
+ * separate single-sided mesh (invisible from inside), and the room has grey inward faces
+ * everywhere except the window band, so the bridge camera looks out through a lit frame.
  */
 import { Color, Matrix4, type BufferGeometry } from 'three';
 import { DECK, ISLAND } from '../../config/layout';
 import { PALETTE } from '../../config/palette';
+import { DEG2RAD } from '../../utils/math';
 import { DecalBuilder, decalAspect } from './decals';
 import { MeshBuilder, v3cross, v3lerp, v3normalize, v3scale, v3sub, type V3 } from './geo';
 import { PLATING_UV_SCALE } from './hullGeometry';
@@ -37,6 +40,10 @@ const BRIDGE_ROOF_Y = EYE_Y + 2.6;
 
 /** No window mullion stands closer than this (in plan) to the bridge eye point. */
 const EYE_CLEARANCE = 2.4;
+/** Default sight line of the bridge camera: this far to port of dead ahead (BRIDGE_VIEW.yaw). */
+const SIGHT_YAW = 13 * DEG2RAD;
+/** The pane in front of the eye reaches this far to either side of the sight line. */
+const PANE_HALF_ANGLE = 40 * DEG2RAD;
 
 /** How far the base block's walls lean in between the deck and the shoulder. */
 const BASE_LEAN = 2;
@@ -76,11 +83,42 @@ function octRing(
   ];
 }
 
+/**
+ * Outline of the bridge at height y, in the point order of octRing. The forward corners are
+ * cut back so that the posts at either end of the port one stand PANE_HALF_ANGLE to the left
+ * and right of the bridge camera's sight line — at every height, so each post lies in a
+ * vertical plane through the eye. The starboard corner mirrors it.
+ */
+function bridgeOutline(
+  x0: number,
+  x1: number,
+  z0: number,
+  z1: number,
+  aftCx: number,
+  aftCz: number,
+  y: number,
+): V3[] {
+  const cx = EYE_X + (EYE_Z - z0) * Math.tan(PANE_HALF_ANGLE - SIGHT_YAW) - x0;
+  const cz = EYE_Z - (EYE_X - x0) / Math.tan(PANE_HALF_ANGLE + SIGHT_YAW) - z0;
+  return [
+    [x0 + cx, y, z0],
+    [x1 - cx, y, z0],
+    [x1, y, z0 + cz],
+    [x1, y, z1 - aftCz],
+    [x1 - aftCx, y, z1],
+    [x0 + aftCx, y, z1],
+    [x0, y, z1 - aftCz],
+    [x0, y, z0 + cz],
+  ];
+}
+
 /** Ring segments of the bridge that are glazed: the front, both forward chamfers and both sides. */
 const GLAZED_SEGMENTS: ReadonlySet<number> = new Set([0, 1, 2, 6, 7]);
+/** The forward port chamfer: the undivided pane the bridge camera looks through. */
+const EYE_PANE_SEGMENT = 7;
 
-const bridgeChine = octRing(EYE_X - 1.8, X1 - 0.2, EYE_Z - 3.6, BRIDGE_Z1, 1.6, 2.2, CHINE_Y);
-const bridgeRoof = octRing(
+const bridgeChine = bridgeOutline(EYE_X - 1.8, X1 - 0.2, EYE_Z - 3.6, BRIDGE_Z1, 1.6, 2.2, CHINE_Y);
+const bridgeRoof = bridgeOutline(
   EYE_X - 0.74,
   X1 - 1.26,
   EYE_Z - 1.98,
@@ -124,13 +162,14 @@ function addBridge(b: MeshBuilder, glass: MeshBuilder, detail: number): void {
       posts.add(i).add(j);
       // intermediate mullions
       const length = Math.hypot(sill[j][0] - sill[i][0], sill[j][2] - sill[i][2]);
-      const panes = detail >= 1 ? Math.max(1, Math.round(length / 2.4)) : 1;
+      const divided = detail >= 1 && i !== EYE_PANE_SEGMENT;
+      const panes = divided ? Math.max(1, Math.round(length / 2.4)) : 1;
       for (let k = 1; k < panes; k++) {
         const t = k / panes;
         const foot = v3lerp(sill[i], sill[j], t);
         // keep the surroundings of the bridge camera's eye point open
         if (Math.hypot(foot[0] - EYE_X, foot[2] - EYE_Z) < EYE_CLEARANCE) continue;
-        b.beam(foot, v3lerp(head[i], head[j], t), 0.12, 0.16, PAINT.hullDark, out);
+        b.beam(foot, v3lerp(head[i], head[j], t), 0.07, 0.12, PAINT.hullDark, out);
       }
     } else {
       b.quadFacing(sill[i], sill[j], head[j], head[i], PAINT.hull, out);
@@ -142,7 +181,7 @@ function addBridge(b: MeshBuilder, glass: MeshBuilder, detail: number): void {
   }
   for (const i of posts) {
     const out: V3 = [sill[i][0] - centreX, 0, sill[i][2] - centreZ];
-    b.beam(sill[i], head[i], 0.14, 0.14, PAINT.hullDark, out);
+    b.beam(sill[i], head[i], 0.07, 0.07, PAINT.hullDark, out);
   }
   b.polygon(floor, PAINT.interior, [0, 1, 0]);
   b.polygon(ceiling, PAINT.interior, [0, -1, 0]);

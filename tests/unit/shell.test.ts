@@ -12,6 +12,7 @@ import { resetSimForScreen, sim } from '../../src/state/sim';
 import {
   GAMEPAD_CHEAT_SHEET,
   KEYBOARD_CHEAT_ROWS,
+  OPS_ONLY_BINDINGS,
   TOUCH_CHEAT_SHEET,
   cheatSheetFor,
   keyboardCheatSheet,
@@ -38,6 +39,8 @@ import {
 import {
   PIN_ENTER_INSET,
   PIN_EXIT_INSET,
+  PIN_MIN_SPACING,
+  clearHangarObstruction,
   clearHotspotProjections,
   hotspotFrame,
   hotspotProjections,
@@ -45,7 +48,10 @@ import {
   pinScaleForDepth,
   projectHotspots,
   rankByDepth,
+  setHangarObstruction,
+  spreadPins,
   subscribeHotspotFrame,
+  underPanel,
   type HotspotProjection,
 } from '../../src/ui/shell/hotspotProjection';
 import { findBindingByCode, findDuplicateBindings, rebind } from '../../src/ui/shell/rebind';
@@ -261,6 +267,23 @@ describe('shell: controls cheat-sheet', () => {
     expect(cheatSheetFor('touch', DEFAULT_KEY_BINDINGS)).toBe(TOUCH_CHEAT_SHEET);
     expect(cheatSheetFor('keyboard', DEFAULT_KEY_BINDINGS)).toEqual(rows);
   });
+
+  it('leaves the flight-ops-only keys out on request (pause menu in free flight)', () => {
+    const all = keyboardCheatSheet(DEFAULT_KEY_BINDINGS);
+    const freeFlight = keyboardCheatSheet(DEFAULT_KEY_BINDINGS, OPS_ONLY_BINDINGS);
+    expect(all.map((row) => row.label)).toContain('Launch jet');
+    expect(freeFlight.map((row) => row.label)).not.toContain('Launch jet');
+    expect(freeFlight).toHaveLength(all.length - 1);
+  });
+
+  it('covers pause on the gamepad and strafe and pause on touch', () => {
+    expect(GAMEPAD_CHEAT_SHEET).toContainEqual({ keys: ['Start'], label: 'Pause' });
+    expect(TOUCH_CHEAT_SHEET).toContainEqual({
+      keys: ['PORT', 'STBD'],
+      label: 'Strafe left / right (hold)',
+    });
+    expect(TOUCH_CHEAT_SHEET).toContainEqual({ keys: ['HUD button'], label: 'Pause' });
+  });
 });
 
 describe('shell: thrust readout', () => {
@@ -311,6 +334,7 @@ describe('shell: hotspot projection', () => {
 
   beforeEach(() => {
     resetSimForScreen('hangar');
+    clearHangarObstruction();
     clearHotspotProjections();
   });
 
@@ -365,6 +389,70 @@ describe('shell: hotspot projection', () => {
     expect(insideViewport(-5, 300, 1280, 720, true)).toBe(false);
     expect(insideViewport(640, 720 - x, 1280, 720, false)).toBe(false);
     expect(insideViewport(640, 360, 1280, 720, false)).toBe(true);
+  });
+
+  it('hides a pin whose centre is under a panel, with hysteresis at the panel edge', () => {
+    const panel = { left: 900, top: 100, right: 1200, bottom: 400 };
+    expect(underPanel(1000, 200, [panel], true)).toBe(true);
+    expect(underPanel(500, 200, [panel], false)).toBe(false);
+    expect(underPanel(1000, 200, [], true)).toBe(false);
+    const x = panel.left - (PIN_ENTER_INSET + PIN_EXIT_INSET) / 2;
+    expect(underPanel(x, 200, [panel], true)).toBe(false);
+    expect(underPanel(x, 200, [panel], false)).toBe(true);
+
+    const camera = cameraAt(-380, 260, -420, true);
+    projectHotspots(camera, viewport);
+    const { x: px, y: py } = hotspotProjections[2];
+    expect(hotspotProjections[2].visible).toBe(true);
+    setHangarObstruction([{ left: px - 30, top: py - 30, right: px + 30, bottom: py + 30 }], {
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    });
+    projectHotspots(camera, viewport);
+    expect(hotspotProjections[2].visible).toBe(false);
+    expect(hotspotProjections.filter((p) => p.visible).length).toBeGreaterThan(0);
+    clearHangarObstruction();
+    projectHotspots(camera, viewport);
+    expect(hotspotProjections[2].visible).toBe(true);
+  });
+
+  it('spreads overlapping pins until their centres are a pin apart', () => {
+    const at = (x: number, y: number, visible = true): HotspotProjection => ({
+      x,
+      y,
+      depth: 100,
+      visible,
+    });
+    // a phone-sized cluster: eight pins inside 180 × 85 px, two of them coincident
+    const pins = [
+      at(100, 300),
+      at(100, 300),
+      at(130, 310),
+      at(150, 330),
+      at(180, 320),
+      at(200, 345),
+      at(240, 360),
+      at(280, 385),
+    ];
+    const hidden = at(150, 330, false);
+    spreadPins([...pins, hidden]);
+    for (let i = 0; i < pins.length; i++) {
+      for (let j = i + 1; j < pins.length; j++) {
+        const gap = Math.hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y);
+        expect(gap).toBeGreaterThan(PIN_MIN_SPACING - 2);
+      }
+      // nobody strays far from its anchor
+      expect(Math.abs(pins[i].x - 190)).toBeLessThan(160);
+    }
+    expect(pins[0].x).toBeLessThan(pins[1].x);
+    expect(hidden).toEqual(at(150, 330, false));
+
+    // pins that are already apart stay exactly on their anchors
+    const apart = [at(100, 100), at(144, 100), at(100, 144)];
+    spreadPins(apart);
+    expect(apart).toEqual([at(100, 100), at(144, 100), at(100, 144)]);
   });
 
   it('ranks pins far to near and scales their markers within limits', () => {

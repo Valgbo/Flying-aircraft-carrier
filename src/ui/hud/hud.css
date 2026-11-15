@@ -5,9 +5,11 @@
  * flight cluster with the caution banners at the bottom centre, the key legend at the bottom
  * left. The centre of the screen and the left edge below the top bar stay free.
  *
+ * .hud--ops    the ops screen: the left edge below the top bar is the ops HUD's.
  * .hud--touch  the on-screen touch controls are visible: the two bottom corners
  *              (240 × 240 px) are theirs.
- * .hud--panel  the turbine panel is open (it covers the right side, or the bottom on phones).
+ * .hud--panel  the turbine panel is open (it covers the right side, or the bottom on phones;
+ *              with touch controls on a phone it docks between or above the corners).
  */
 .hud {
   /* inside the safe area; .ui-root's padding does not constrain absolute children */
@@ -552,6 +554,14 @@
   border-top: 7px solid currentColor;
 }
 
+/* a bow tie: neither ahead nor astern */
+.hud-motion--sideways .hud-motion-arrow {
+  border-top: 4px solid transparent;
+  border-right: 5px solid currentColor;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+}
+
 .hud-motion--stopped .hud-motion-arrow {
   width: 8px;
   height: 2px;
@@ -796,6 +806,16 @@
   bottom: var(--hud-pad);
 }
 
+/* ops: the left column is the ops HUD's at any height, so the legend (and the button that
+   brings it back) hang under the icon buttons on the right edge, above the turbine gauges */
+.hud--ops .hud-keys,
+.hud--ops .hud-keys-show {
+  top: calc(var(--hud-pad) + 48px);
+  right: calc(var(--hud-pad) + var(--hud-panel));
+  bottom: auto;
+  left: auto;
+}
+
 /* the legend needs its own column to the left of the flight cluster */
 @media (max-width: 959px) {
   .hud-keys,
@@ -916,20 +936,51 @@
   }
 }
 
-/* phone landscape with touch controls and the panel open: only the strip between the left
-   corner and the panel is left, so the speed box (secondary there) makes room */
+/* phone landscape with touch controls and the panel open: the panel docks between the two
+   corners, so the cluster moves into the row under the top bar, at the right edge where the
+   (now hidden) turbine gauges were, with the cautions to its left. The first 320 px of that
+   row stay free: on the ops screen the ops strip is there. */
 @media (max-height: 500px) and (min-width: 641px) {
-  .hud--touch.hud--panel .hud-box--speed {
-    display: none;
+  .hud--touch.hud--panel .hud-bottom {
+    top: calc(var(--hud-pad) + 46px);
+    right: var(--hud-pad);
+    bottom: auto;
+    left: auto;
+    transform: none;
+    flex-direction: row;
+    align-items: flex-end;
+    max-width: calc(100% - 320px - var(--hud-pad));
+  }
+
+  .hud--touch.hud--panel .hud-cautions {
+    justify-content: flex-end;
   }
 }
 
-/* narrow and tall: the bottom corners leave no room between them, the cluster sits above */
+/* narrow and tall: the bottom corners leave no room between them, the cluster sits above
+   (and to the left of the side panel, where the window is wide enough to have one) */
 @media (max-width: 759px) and (min-height: 501px) {
   .hud--touch .hud-bottom {
-    left: 50%;
+    left: calc((100% - var(--hud-panel)) / 2);
     bottom: calc(240px + var(--hud-pad));
-    max-width: calc(100% - 2 * var(--hud-pad));
+    max-width: calc(100% - var(--hud-panel) - 2 * var(--hud-pad));
+  }
+}
+
+/* touch controls and the panel on a phone too small for both and the full cluster (any
+   landscape phone, a short portrait one): a slim cluster of speed, a small horizon and
+   altitude with the vertical speed, on one caution line. Keep in step with tp.css. */
+@media (max-height: 500px) and (min-width: 641px), (max-width: 640px) and (max-height: 700px) {
+  .hud--touch.hud--panel {
+    --hud-horizon: 60px;
+    --hud-alt-w: 100px;
+  }
+
+  .hud--touch.hud--panel .hud-motion,
+  .hud--touch.hud--panel .hud-g,
+  .hud--touch.hud--panel .hud-alt-extra,
+  .hud--touch.hud--panel .hud-vsi {
+    display: none;
   }
 }
 
@@ -978,12 +1029,26 @@
   }
 
   /* the bottom sheet covers the lower part of the screen: the cluster moves up under the
-     compass so speed, attitude and altitude stay in view while working the turbines */
-  .hud--panel .hud-bottom,
-  .hud--touch.hud--panel .hud-bottom {
+     compass so speed, attitude and altitude stay in view while working the turbines. With
+     touch controls the panel is a sheet under the top bar instead and the cluster keeps its
+     place above the corners, under one line of cautions (the lower-priority ones wait). */
+  .hud--panel:not(.hud--touch) .hud-bottom {
     top: calc(var(--hud-pad) + 108px);
     bottom: auto;
     flex-direction: column-reverse;
+  }
+
+  .hud--touch.hud--panel .hud-cautions {
+    max-height: 24px;
+    overflow: hidden;
+  }
+}
+
+/* short phone portrait with touch controls and the panel open: the sheet needs the compass
+   row as well (tp.css) */
+@media (max-width: 640px) and (max-height: 700px) {
+  .hud--touch.hud--panel .hud-compass {
+    display: none;
   }
 }
 

@@ -7,6 +7,7 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import FlightOps from '../aircraft/FlightOps';
 import Carrier from '../carrier/Carrier';
 import IdleDriver from '../sim/IdleDriver';
+import ErrorBoundary from '../state/ErrorBoundary';
 import { isFlyingScreen, useGameStore } from '../state/useGameStore';
 import AdaptiveQuality from './AdaptiveQuality';
 import CameraRig from './CameraRig';
@@ -17,6 +18,17 @@ import PostFX from './PostFX';
 import World from './World';
 
 const PhysicsDriver = lazy(() => import('../physics/PhysicsDriver'));
+
+/**
+ * The physics chunk is fetched on demand, so it can fail: the connection dropped, or the site
+ * was redeployed under an open tab. Go back to the menu and say so. Browsers remember a failed
+ * module fetch for the life of the page, hence the advice to reload rather than a retry.
+ */
+function onPhysicsFailed(): void {
+  const s = useGameStore.getState();
+  s.setScreen('menu');
+  s.pushMessage('FLIGHT SYSTEMS FAILED TO LOAD — RELOAD THE PAGE', 'alert', 10000);
+}
 
 function PhysicsLoadingSignal() {
   useEffect(() => {
@@ -45,9 +57,11 @@ export default function SceneRoot() {
   return (
     <>
       {flying ? (
-        <Suspense fallback={<PhysicsLoadingSignal />}>
-          <PhysicsDriver key={resetNonce} />
-        </Suspense>
+        <ErrorBoundary onError={onPhysicsFailed}>
+          <Suspense fallback={<PhysicsLoadingSignal />}>
+            <PhysicsDriver key={resetNonce} />
+          </Suspense>
+        </ErrorBoundary>
       ) : (
         <IdleDriver />
       )}

@@ -4,7 +4,8 @@
  * Layout (see hud/hud.css): a top bar with the mode chips, the compass tape and the icon
  * buttons; the flight cluster (speed · artificial horizon · altitude) at the bottom centre
  * with the caution banners above it; the four turbine gauges on the right edge; the keyboard
- * legend at the bottom left. The centre of the screen stays clear for the ship.
+ * legend at the bottom left (on the ops screen: at the right edge, the left one is the ops
+ * HUD's). The centre of the screen stays clear for the ship.
  *
  * Numbers come from the ≈10 Hz store telemetry. Everything that moves smoothly (horizon,
  * compass strip, vertical-speed needle, gauge arcs and needles) is painted every animation
@@ -36,7 +37,12 @@ import './hud/hud.css';
 /** Warnings / cautions shown at once; lower priorities wait their turn. */
 const MAX_BANNERS = 3;
 
-const MOTION_LABELS = { ahead: 'AHEAD', astern: 'ASTERN', stopped: 'STOPPED' } as const;
+const MOTION_LABELS = {
+  ahead: 'AHEAD',
+  astern: 'ASTERN',
+  sideways: 'SIDEWAYS',
+  stopped: 'STOPPED',
+} as const;
 
 function emit(action: ActionName): () => void {
   return () => emitAction(action);
@@ -53,6 +59,7 @@ export default function HUD() {
   const cameraMode = useGameStore((s) => s.cameraMode);
   const panelOpen = useGameStore((s) => s.turbinePanelOpen);
   const paused = useGameStore((s) => s.paused);
+  const ops = useGameStore((s) => s.screen === 'ops');
   const touch = useTouchControlsVisible();
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -73,7 +80,7 @@ export default function HUD() {
   const trend = verticalTrend(t.verticalSpeed);
   const target = targetSense(t.targetAltitude, t.altitude);
 
-  const rootClass = ['hud', touch && 'hud--touch', panelOpen && 'hud--panel']
+  const rootClass = ['hud', ops && 'hud--ops', touch && 'hud--touch', panelOpen && 'hud--panel']
     .filter(Boolean)
     .join(' ');
 
@@ -180,7 +187,7 @@ export default function HUD() {
               <span className="hud-motion-arrow" aria-hidden="true" />
               {MOTION_LABELS[motion]}
             </div>
-            <div className="hud-sub">
+            <div className="hud-sub hud-g">
               <span className="hud-key">G</span> {t.gLoad.toFixed(2)}
             </div>
           </div>

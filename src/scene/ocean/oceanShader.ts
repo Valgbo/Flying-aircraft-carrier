@@ -29,6 +29,7 @@ import {
 } from './waveExpr';
 
 const D = OCEAN.downwash;
+const S = OCEAN.splash;
 const TAU = Math.PI * 2;
 
 /** Angular frequencies of the two downwash ripple trains (deep-water dispersion), rad/s. */
@@ -51,6 +52,9 @@ const RIPPLE_ENERGY_HIGH = RIPPLE_K_MAX ** RIPPLE_ENERGY_EXPONENT;
  */
 const TILE_WIDTHS_FULL = 80;
 const TILE_WIDTHS_GONE = 30;
+
+/** Mip bias the swirl fields are sampled with: only their broad shapes bend the wave trains. */
+const SWIRL_MIP_BIAS = 3;
 
 function vec3(c: readonly [number, number, number]): string {
   return `vec3(${f(c[0])}, ${f(c[1])}, ${f(c[2])})`;
@@ -173,6 +177,7 @@ export function oceanFragmentShader(level: QualityLevel): string {
   const octaveCount = DETAIL_OCTAVES[level].length;
   const foamIndex = octaveCount;
   const gustIndex = octaveCount + 1;
+  const swirlIndex = octaveCount + 3;
   const foamLayer = layers[foamIndex];
   const halfLength = HULL.length / 2;
   const halfBeam = HULL.beam / 2;
@@ -194,6 +199,7 @@ uniform vec3 uFogColor;
 uniform vec4 uFog;        // density (exp²), near, far (linear), 1 = linear fog
 uniform vec4 uShip;       // hull centre x, z · unit forward x, z
 uniform vec3 uShipState;  // waterline foam 0..1, wake speed m/s, wake length m
+uniform vec2 uSplash;     // seconds since the last splashdown · its strength (0 = none)
 uniform vec4 uShadow;     // shadow centre x, z · softness m · strength 0..1
 uniform vec4 uDownwash[4]; // impact x, z · patch radius m · strength 0..1
 uniform vec2 uRingPhase;
@@ -244,11 +250,19 @@ void main() {
   float gustA = texture2D(uDetail, ${layerUv(gustIndex, layers[gustIndex])}).a;
   float gustB = texture2D(uDetail, ${layerUv(gustIndex + 1, layers[gustIndex + 1])}).a;
   float gust = clamp(gustA + gustB - 0.5, 0.0, 1.0);
-  // Away from the hull the wave trains wax, wane and bend with that field: a handful of plane
-  // waves and repeating ripple tiles would otherwise weave a regular lattice across the sea.
-  float irregular = smoothstep(${f(OCEAN.irregularStart)}, ${f(OCEAN.irregularEnd)}, length(rest));
-  vec3 waveGain = vec3(mix(vec2(1.0), 0.4 + 1.2 * vec2(gustA, gustB), irregular), 1.0 - 0.85 * irregular);
-  vec2 warped = rest + ${f(OCEAN.irregularWarp)} * irregular * (vec2(gustA, gustB) - 0.5);
+  // Away from the camera the wave trains wax, wane and bend with that field and with a pair of
+  // mid-scale ones, like the groups of a real sea: a handful of plane waves and repeating ripple
+  // tiles would otherwise weave a regular lattice across the water. The swirl fields are read
+  // from a coarse mip so they bend the crests smoothly, and they leave the ripple tiles alone.
+  vec2 gusts = vec2(gustA, gustB);
+  vec2 swirl = vec2(
+    texture2D(uDetail, ${layerUv(swirlIndex, layers[swirlIndex])}, ${f(SWIRL_MIP_BIAS)}).a,
+    texture2D(uDetail, ${layerUv(swirlIndex + 1, layers[swirlIndex + 1])}, ${f(SWIRL_MIP_BIAS)}).a);
+  float irregular = smoothstep(${f(OCEAN.irregularStart)}, ${f(OCEAN.irregularEnd)}, dist);
+  vec2 groups = max(1.0 + 1.6 * (gusts + swirl.yx - 1.0), 0.15);
+  vec3 waveGain = vec3(mix(vec2(1.0), groups, irregular), 1.0 - 0.85 * irregular);
+  vec2 warped = rest + ${f(OCEAN.irregularWarp)} * irregular * (gusts - 0.5);
+  vec2 swirled = warped + ${f(OCEAN.irregularSwirl)} * irregular * (swirl - 0.5);
 
   // ---- ship: hull outline, wake, contact shadow ------------------------------------------------
   vec2 fwd = uShip.zw;
@@ -257,9 +271,12 @@ void main() {
   float along = -dot(rel, fwd);      // + toward the stern
   float across = abs(dot(rel, side));
   float bow = clamp((-along - ${f(OCEAN.bowTaperFrom)}) / ${f(halfLength - OCEAN.bowTaperFrom)}, 0.0, 1.0);
-  float hullDist = max(across - ${f(halfBeam)} * (1.0 - 0.88 * bow * bow), abs(along) - ${f(halfLength)});
+  vec2 hullEdge = vec2(across - ${f(halfBeam)} * (1.0 - 0.88 * bow * bow), abs(along) - ${f(halfLength)});
+  float hullDist = length(max(hullEdge, 0.0)) + min(max(hullEdge.x, hullEdge.y), 0.0);
   float speedK = clamp(uShipState.y / ${f(OCEAN.wakeFullSpeed)}, 0.0, 1.0);
-  float hullFoam = uShipState.x * (1.0 - smoothstep(0.5, 10.0 + 9.0 * speedK, hullDist));
+  // a hull lying still only has a thin, broken wash; the solid belt belongs to a hull under way
+  float hullFoam = uShipState.x * mix(${f(OCEAN.hullFoamAtRest)}, 1.0, speedK)
+    * (1.0 - smoothstep(0.5, ${f(OCEAN.hullFoamWidth)} + ${f(OCEAN.hullFoamSpeedWidth)} * speedK, hullDist));
 
   float astern = along - ${f(halfLength)};
   float wakeFade = 1.0 - clamp(astern / max(uShipState.z, 1.0), 0.0, 1.0);
@@ -331,7 +348,7 @@ ${
 }
 
   // ---- surface slope and what the pixel cannot resolve of it ---------------------------------
-  vec3 wave = oceanWaveSurface(warped, du, dv, waveGain) * (1.0 - calm);
+  vec3 wave = oceanWaveSurface(swirled, du, dv, waveGain) * (1.0 - calm);
   vec2 slope = wave.xy + ringSlope;
   float crest = wave.z;
   // gusts roughen the water in patches; the churned wake is smoother than the sea around it and
@@ -352,10 +369,16 @@ ${octaves}
   float caps = foamCover(0.8 * smoothstep(${f(OCEAN.capStart)}, ${f(OCEAN.capEnd)}, capField), laceNoise);
   // whitecaps too small for the pixel survive as their average cover instead of sparkling
   caps = mix(caps, ${f(OCEAN.capMeanCover)} * (0.4 + 1.2 * gust), smoothstep(1.5, 7.0, major));
-  float shipFoam = foamCover(max(max(hullFoam, 0.9 * wakeCore), 0.75 * arms), laceNoise);
+  // splashdown: a surge of foam runs out from the hull side, ragged and densest at its front,
+  // and dissolves
+  float splashFront = ${f(S.reach)} * sqrt(uSplash.y) * (1.0 - exp(-uSplash.x / ${f(S.rise)}));
+  float splashOffset = (hullDist + ${f(S.ragged)} * (laceNoise - 0.5) - splashFront) / ${f(S.frontWidth)};
+  float splash = min(uSplash.y, 1.0) * (1.0 - smoothstep(0.3, 1.0, uSplash.x / ${f(S.duration)}))
+    * (0.75 * (1.0 - smoothstep(0.0, splashFront + 1.0, hullDist)) + 0.9 * exp(-splashOffset * splashOffset));
+  float shipFoam = foamCover(max(max(hullFoam, splash), max(0.9 * wakeCore, 0.75 * arms)), laceNoise);
   float sprayFoam = foamCover(0.95 * spray, sprayNoise + 0.6 * grain) + 0.3 * blast;
   float foam = clamp(caps + shipFoam + sprayFoam, 0.0, 1.0);
-  float aerated = clamp(0.7 * wakeCore + 0.4 * hullFoam + 0.5 * blast + 0.3 * spray, 0.0, 1.0);
+  float aerated = clamp(0.7 * wakeCore + 0.4 * hullFoam + 0.5 * splash + 0.5 * blast + 0.3 * spray, 0.0, 1.0);
 
   // ---- light ---------------------------------------------------------------------------------------
   float sunUp = max(uSunDir.y, 0.0);
@@ -387,7 +410,9 @@ ${octaves}
   float facets = exp(-0.5 * dot(miss, miss) / variance) / (${f(TAU)} * variance);
   float halfFresnel = 0.02 + 0.98 * pow(1.0 - max(dot(view, halfway), 0.0), 5.0);
   float glitter = halfFresnel * facets / (4.0 * halfUp * halfUp * halfUp * halfUp * (max(view.y, 0.0) + 0.6 * sigma + 0.02));
-  vec3 sun = sunLight * min(${f(OCEAN.glitterGain)} * glitter, ${f(OCEAN.glitterMax)});
+  // soft shoulder instead of a clip: the brightest glints stay distinct from their neighbours
+  vec3 glint = sunLight * (${f(OCEAN.glitterGain)} * glitter);
+  vec3 sun = glint / (1.0 + max(glint.r, max(glint.g, glint.b)) / ${f(OCEAN.glitterMax)});
 
   vec3 color = body + fresnel * sky + sun;
 

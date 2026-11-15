@@ -1,8 +1,10 @@
 /*
  * Flight-ops HUD. Prefix: ops-. A compact block on the left edge below the top bar (and below
- * the flight HUD's status chips, which wrap to a second row on narrow windows); on
- * phones it shrinks and, in landscape, turns into a short strip so that it stays above the
- * reserved bottom-left touch corner. It never reaches the centre of the screen.
+ * the flight HUD's status chips, which wrap to a second row on narrow windows). On phones it
+ * turns into a short block that stays above the reserved bottom-left touch corner and the
+ * flight cluster over it: a strip under the status chips in landscape, a block under the
+ * two-row top bar (beside the turbine gauges) in portrait. It never reaches the centre of the
+ * screen, and nothing of it is drawn outside its own box.
  */
 .ops-hud {
   position: absolute;
@@ -201,19 +203,25 @@
   opacity: 0.8;
 }
 
-/* recovery call-out: pops in under the block, holds, fades */
+/* the status line and, laid over it while it shows, the recovery call-out */
+.ops-report {
+  position: relative;
+  min-width: 0;
+}
+
+/* recovery call-out: pops in over the status line (which says the same in small type),
+   holds, fades. Opaque, so the line does not show through. */
 .ops-callout {
   --ops-tone: var(--fac-good);
   position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
+  inset: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
-  padding: 6px 12px;
   white-space: nowrap;
   color: var(--ops-tone);
-  background: var(--fac-panel-strong);
+  background: var(--fac-bg);
   border: 1px solid var(--ops-tone);
   border-radius: var(--fac-radius-sm);
   pointer-events: none;
@@ -242,11 +250,11 @@
 @keyframes ops-callout {
   0% {
     opacity: 0;
-    transform: translateY(-8px) scale(0.9);
+    transform: scale(0.9);
   }
   8% {
     opacity: 1;
-    transform: translateY(0) scale(1.06);
+    transform: scale(1.06);
   }
   14% {
     transform: scale(1);
@@ -256,11 +264,10 @@
   }
   100% {
     opacity: 0;
-    transform: translateY(4px);
   }
 }
 
-/* ---------- Phones, portrait: narrower and tighter ---------------------------------------- */
+/* ---------- Narrow windows: narrower and tighter ------------------------------------------ */
 
 @media (max-width: 720px) {
   .ops-hud {
@@ -308,18 +315,12 @@
   }
 }
 
-/* ---------- Phones, landscape: a short strip above the touch corner ----------------------- */
+/* ---------- Phones: a short block, clear of the touch corner and the flight cluster ------- */
 
-@media (max-height: 500px) {
+@media (max-height: 500px), (max-width: 640px) {
   .ops-hud {
-    top: calc(50px + var(--fac-safe-top));
     left: calc(8px + var(--fac-safe-left));
-    width: 300px;
     padding: 6px 8px;
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas:
-      'score steady launch'
-      'status status jets';
     align-items: center;
     gap: 5px 10px;
   }
@@ -342,19 +343,17 @@
     grid-area: steady;
   }
 
-  .ops-status {
+  .ops-report {
     grid-area: status;
-    min-height: 0;
+  }
+
+  .ops-status {
     padding: 3px 6px;
     font-size: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .ops-jets {
     grid-area: jets;
-    grid-template-columns: repeat(4, auto);
     gap: 3px;
   }
 
@@ -378,14 +377,61 @@
     display: none;
   }
 
-  /* beside the strip rather than below it, clear of the touch corner */
   .ops-callout {
-    top: 0;
-    left: calc(100% + 8px);
-    padding: 4px 10px;
+    gap: 8px;
   }
 
   .ops-callout__grade {
-    font-size: 15px;
+    font-size: 13px;
+  }
+
+  .ops-callout__points {
+    font-size: 11px;
+  }
+}
+
+/* landscape: a strip under the status chips, beside the compass */
+@media (max-height: 500px) and (min-width: 641px) {
+  .ops-hud {
+    top: calc(50px + var(--fac-safe-top));
+    width: 300px;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'score steady launch'
+      'status status jets';
+  }
+
+  .ops-status {
+    min-height: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-jets {
+    grid-template-columns: repeat(4, auto);
+  }
+}
+
+/* portrait: the top bar is two rows (chips, then the compass); the block sits under it on
+   the left, level with the turbine gauges on the right */
+@media (max-width: 640px) {
+  .ops-hud {
+    top: calc(116px + var(--fac-safe-top));
+    width: 172px;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'score launch launch'
+      'steady steady jets'
+      'status status status';
+  }
+
+  .ops-steady__head .fac-label {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+  }
+
+  .ops-jets {
+    grid-template-columns: repeat(2, auto);
   }
 }

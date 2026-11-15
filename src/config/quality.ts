@@ -4,6 +4,7 @@ import type { QualityLevel } from '../state/types';
 export interface QualityPreset {
   /** Device-pixel-ratio range handed to the R3F <Canvas dpr>. */
   dpr: [min: number, max: number];
+  /** Multisample the PostFX composer's buffers. The app canvas itself is never antialiased. */
   antialias: boolean;
   shadows: boolean;
   shadowMapSize: number;

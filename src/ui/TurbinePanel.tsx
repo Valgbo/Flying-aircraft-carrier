@@ -1,6 +1,8 @@
 /**
  * TurbinePanel — hands-on control of the four turbines (rendered while
- * `store.turbinePanelOpen`). A side panel on desktop, a bottom sheet on phones (hud/tp.css).
+ * `store.turbinePanelOpen`). A side panel on desktop, a bottom sheet on phones; while the
+ * on-screen touch controls are visible it keeps out of their two bottom corners, because the
+ * ship flies on while the panel is open (hud/tp.css).
  *
  * Who owns what (docs/ARCHITECTURE.md §3):
  * - Engine switches write `sim.turbines[i].enabled` in either mode.
@@ -13,6 +15,7 @@
  */
 import { useMemo, useReducer, useRef, useState } from 'react';
 import { TURBINE } from '../config/layout';
+import { useTouchControlsVisible } from '../controls/touchVisibility';
 import { HOVER_THROTTLE, PHYS } from '../config/physicsConfig';
 import { emitAction } from '../state/actions';
 import { sim } from '../state/sim';
@@ -52,6 +55,7 @@ function TurbinePanelBody() {
   const assist = useGameStore((s) => s.assistEnabled);
   const cameraMode = useGameStore((s) => s.cameraMode);
   const cameraTurbine = useGameStore((s) => s.cameraTurbine);
+  const touch = useTouchControlsVisible();
   const [linkAll, setLinkAll] = useState(false);
   // Writes go to `sim`, which React cannot see: bump to show them at once instead of waiting
   // for the next telemetry snapshot.
@@ -104,7 +108,7 @@ function TurbinePanelBody() {
   return (
     <aside
       ref={rootRef}
-      className={`tp fac-panel ${assist ? 'tp--assist' : 'tp--manual'}`}
+      className={`tp fac-panel ${assist ? 'tp--assist' : 'tp--manual'}${touch ? ' tp--touch' : ''}`}
       data-testid="turbine-panel"
       aria-label="Turbine control"
     >

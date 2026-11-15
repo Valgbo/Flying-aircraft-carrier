@@ -6,7 +6,8 @@
  *   collective → target altitude; a cascade (altitude error → vertical speed → acceleration)
  *                plus a feed-forward of everything it knows (weight, drag, buoyancy, nacelle
  *                tilt, deck attitude, air density) gives the collective thrust
- *   tilt       → tilt lever for all nacelles, held back when the lift budget runs out
+ *   tilt       → tilt lever for all nacelles, held back when the lift budget runs out; the
+ *                lever does not travel past that budget and pauses in a stop at neutral
  *   yaw        → yaw-rate command through differential tilt (port pair vs. starboard pair);
  *                the heading is captured and held once the input is released
  *   strafe     → a small commanded bank that slides the ship sideways; level on release
@@ -72,6 +73,11 @@ export interface FlightComputerState {
   supportEstimate: number;
   /** How far the nacelles are currently pulled back because the fans ran out of lift, rad. */
   tiltRelief: number;
+  /**
+   * Seconds the tilt lever still waits in its neutral stop, signed like the tilt input that ran
+   * it there (0 = the lever is free).
+   */
+  leverHold: number;
   /** True when the last allocation had to give up climb or attitude demand. */
   saturated: boolean;
 }
@@ -88,6 +94,7 @@ export function createFlightComputerState(): FlightComputerState {
     headingHold: true,
     supportEstimate: 0,
     tiltRelief: 0,
+    leverHold: 0,
     saturated: false,
   };
 }
@@ -332,6 +339,45 @@ function resetHolds(fc: FlightComputerState, heading: number): void {
   fc.headingTarget = heading;
 }
 
+/**
+ * Where the pilot's tilt input (-1..1) takes the tilt lever in one step, rad.
+ *
+ * The lever only travels where the nacelles can follow: up to what the lift budget allows plus
+ * a small overrun that tells the pilot he is pushing against the limit. Pushing on does not
+ * wind it up, and pulling back starts from that limit even when the budget shrank under a
+ * lever set earlier — so the nacelles answer at once and never move later for travel the pilot
+ * could not see. A lever that reaches neutral stops there: it waits `leverNeutralHold` seconds
+ * of continued input before it moves on, and letting go in that time leaves it at exactly 0.
+ */
+function moveTiltLever(
+  fc: FlightComputerState,
+  lever: number,
+  input: number,
+  tiltBudget: number,
+  dt: number,
+): number {
+  // Releasing or reversing the input lets go of the neutral stop.
+  if (input * fc.leverHold <= 0) fc.leverHold = 0;
+  if (input === 0) return lever;
+  if (fc.leverHold !== 0) {
+    fc.leverHold = Math.sign(input) * Math.max(0, Math.abs(fc.leverHold) - dt);
+    return lever;
+  }
+  const upper = Math.min(PHYS.tiltMax, tiltBudget + FLIGHT.leverOverrun);
+  const lower = Math.max(PHYS.tiltMin, -tiltBudget - FLIGHT.leverOverrun);
+  const step = input * FLIGHT.leverRate * dt;
+  const from = input > 0 ? Math.max(lever, lower) : Math.min(lever, upper);
+  const next =
+    input > 0
+      ? Math.min(from + step, Math.max(from, upper))
+      : Math.max(from + step, Math.min(from, lower));
+  if (from * next < 0 || (from !== 0 && next === 0)) {
+    fc.leverHold = Math.sign(input) * FLIGHT.leverNeutralHold;
+    return 0;
+  }
+  return next;
+}
+
 function stepAssist(
   fc: FlightComputerState,
   body: RigidState,
@@ -351,6 +397,7 @@ function stepAssist(
     controls.tiltLever =
       (turbines[0].tilt + turbines[1].tilt + turbines[2].tilt + turbines[3].tilt) / 4;
     resetHolds(fc, _att.heading);
+    fc.leverHold = 0;
     fc.headingHold = false;
     fc.bankCommand = clamp(_att.roll, -FLIGHT.maxBank, FLIGHT.maxBank);
     fc.supportEstimate = support;
@@ -378,11 +425,6 @@ function stepAssist(
   }
   target = clamp(target, FLOATING_ALTITUDE, FLIGHT.maxTargetAltitude);
   controls.targetAltitude = target;
-  controls.tiltLever = clamp(
-    finiteOr(controls.tiltLever, 0) + axis(axes.tilt) * FLIGHT.leverRate * dt,
-    PHYS.tiltMin,
-    PHYS.tiltMax,
-  );
   for (let i = 0; i < 4; i++) {
     controls.manualThrottle[i] = turbines[i].throttle;
     controls.manualTilt[i] = turbines[i].tilt;
@@ -415,6 +457,11 @@ function stepAssist(
   const hoverThrottle = WEIGHT / factorSum;
   const cosLimit = hoverThrottle / FLIGHT.tiltThrottleBudget;
   const tiltBudget = enabledCount === 4 && cosLimit < 1 ? Math.acos(cosLimit) : 0;
+  controls.tiltLever = clamp(
+    moveTiltLever(fc, finiteOr(controls.tiltLever, 0), axis(axes.tilt), tiltBudget, dt),
+    PHYS.tiltMin,
+    PHYS.tiltMax,
+  );
   const tiltLimit = Math.max(0, tiltBudget - fc.tiltRelief);
   const tiltBase = clamp(
     clamp(controls.tiltLever, -tiltLimit, tiltLimit),

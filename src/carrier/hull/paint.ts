@@ -26,7 +26,7 @@ export const PAINT = {
   offWhite: c('#c4c9c8'),
   /** Bare steel: arrestor cables, shuttles. */
   steel: c('#9aa2a8'),
-  /** Inside of the navigation bridge. */
-  interior: c('#2a3138'),
+  /** Inside of the navigation bridge: light enough to shade in the daylight from its windows. */
+  interior: c('#8b949b'),
   net: c('#262b30'),
 } as const;

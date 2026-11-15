@@ -4,17 +4,19 @@
  * One camera-centred grid (src/scene/ocean/oceanGrid.ts) displaced in the vertex shader by the
  * same wave table buoyancy uses (`waveHeightAt`, src/config/waves.ts), shaded analytically from
  * `sim.env` with no reflection or refraction passes. It also draws what the ship does to the
- * water: waterline foam and wake, the four turbine downwash patches and a contact shadow.
+ * water: waterline foam and wake, the splash of a touch-down, the four turbine downwash patches
+ * and a contact shadow.
  * See src/scene/ocean/oceanShader.ts for the shading model and oceanFrame.ts for the inputs.
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import type { Mesh } from 'three';
+import { onEvent } from '../state/events';
 import { useGameStore } from '../state/useGameStore';
 import { useQuality } from '../state/useQuality';
 import { createDetailTexture } from './ocean/detailTexture';
 import { OCEAN } from './ocean/oceanConfig';
-import { createOceanSurface, updateOceanSurface } from './ocean/oceanFrame';
+import { createOceanSurface, startSplash, updateOceanSurface } from './ocean/oceanFrame';
 import { buildOceanGeometry, oceanGridLayout } from './ocean/oceanGrid';
 
 export default function Ocean() {
@@ -40,6 +42,10 @@ export default function Ocean() {
     [level, detail],
   );
   useEffect(() => () => surface.material.dispose(), [surface]);
+  useEffect(
+    () => onEvent('splashdown', ({ sinkRate }) => startSplash(surface, sinkRate)),
+    [surface],
+  );
 
   useFrame(({ camera, scene }) => {
     if (mesh.current) updateOceanSurface(surface, mesh.current, camera, scene, layout.baseCell);

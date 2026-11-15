@@ -1,10 +1,12 @@
 /**
  * OpsHUD — flight-ops score and status: a compact block on the left edge below the top bar.
  * Everything comes from `store.ops`, which the flight-ops system publishes at a low rate.
+ * A recovery result pops up over the status line, inside the block.
  */
 import { useRef } from 'react';
 import { OPS } from '../aircraft/opsConfig';
 import { WAVE_OFF_GRADE } from '../aircraft/steadiness';
+import { useTouchControlsVisible } from '../controls/touchVisibility';
 import { emitAction } from '../state/actions';
 import { keyLabel } from '../state/bindings';
 import type { JetPhase, RecoveryResult } from '../state/types';
@@ -38,6 +40,7 @@ function calloutTone(result: RecoveryResult): string {
 export default function OpsHUD() {
   const ops = useGameStore((s) => s.ops);
   const launchKey = useGameStore((s) => s.settings.keyBindings.launchJet);
+  const touch = useTouchControlsVisible();
   // call-outs are for results that arrive while the HUD is up, not for one it finds on mount
   const outcomes = ops.recoveries + ops.waveOffs;
   const seenOnMount = useRef(outcomes);
@@ -95,8 +98,20 @@ export default function OpsHUD() {
         </div>
       </div>
 
-      <div className="ops-status fac-readout" data-testid="ops-status" role="status">
-        {ops.status}
+      <div className="ops-report">
+        <div className="ops-status fac-readout" data-testid="ops-status" role="status">
+          {ops.status}
+        </div>
+        {result && (
+          <div
+            key={outcomes}
+            className={`ops-callout ops-callout--${calloutTone(result)} fac-readout`}
+            aria-hidden="true"
+          >
+            <span className="ops-callout__grade">{result.grade}</span>
+            {result.points > 0 && <span className="ops-callout__points">+{result.points}</span>}
+          </div>
+        )}
       </div>
 
       <ul className="ops-jets" aria-label="Aircraft">
@@ -119,19 +134,8 @@ export default function OpsHUD() {
         }}
       >
         Launch
-        <kbd className="ops-launch__key">{keyLabel(launchKey)}</kbd>
+        {!touch && <kbd className="ops-launch__key">{keyLabel(launchKey)}</kbd>}
       </button>
-
-      {result && (
-        <div
-          key={outcomes}
-          className={`ops-callout ops-callout--${calloutTone(result)} fac-readout`}
-          aria-hidden="true"
-        >
-          <span className="ops-callout__grade">{result.grade}</span>
-          {result.points > 0 && <span className="ops-callout__points">+{result.points}</span>}
-        </div>
-      )}
     </div>
   );
 }

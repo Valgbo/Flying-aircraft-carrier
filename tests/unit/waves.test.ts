@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { DataTexture, FogExp2, Mesh, PerspectiveCamera, Scene, type Color } from 'three';
+import { afterEach, describe, expect, it } from 'vitest';
+import { HARD_LANDING_SINK_RATE } from '../../src/config/physicsConfig';
 import { QUALITY_PRESETS } from '../../src/config/quality';
 import { WAVES, waveHeightAt, waveOmega } from '../../src/config/waves';
 import {
@@ -7,6 +9,11 @@ import {
   generateDetailPixels,
 } from '../../src/scene/ocean/detailTexture';
 import { OCEAN, computeLayerOffsets, textureLayers } from '../../src/scene/ocean/oceanConfig';
+import {
+  createOceanSurface,
+  startSplash,
+  updateOceanSurface,
+} from '../../src/scene/ocean/oceanFrame';
 import {
   OCEAN_HALF_EXTENT,
   OCEAN_UNIFORM_HALF,
@@ -24,6 +31,8 @@ import {
   waveDisplacementGLSL,
   waveSurfaceGLSL,
 } from '../../src/scene/ocean/waveExpr';
+import { acesFilmicToneMap } from '../../src/scene/sky/toneMap';
+import { resetSimForScreen, sim } from '../../src/state/sim';
 import { mulberry32 } from '../../src/utils/math';
 
 const AMPLITUDE_SUM = WAVES.reduce((sum, w) => sum + w.amplitude, 0);
@@ -310,6 +319,82 @@ describe('ocean shader sources', () => {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('ocean frame update', () => {
+  afterEach(() => resetSimForScreen('menu'));
+
+  function frame() {
+    const surface = createOceanSurface('low', new DataTexture(), 1);
+    const mesh = new Mesh();
+    const camera = new PerspectiveCamera();
+    camera.position.set(0, 80, 300);
+    const scene = new Scene();
+    return { surface, update: () => updateOceanSurface(surface, mesh, camera, scene, 8), scene };
+  }
+
+  it('fades the sea to the scene-linear horizon colour, whatever colour the scene fog carries', () => {
+    const { surface, update, scene } = frame();
+    sim.env.horizonColor.setRGB(0.52, 0.66, 0.8);
+    // what World stores in the fog when the renderer tone-maps (the Low preset): the horizon
+    // colour already tone-mapped for the built-in materials. The ocean shader tone-maps its own
+    // output, so taking this colour would map it twice and split the sea from the sky.
+    const mapped = acesFilmicToneMap(sim.env.horizonColor.clone(), 1);
+    expect(mapped.equals(sim.env.horizonColor)).toBe(false);
+    scene.fog = new FogExp2(mapped, 0.00012);
+    update();
+    const fogColor: Color = surface.uniforms.uFogColor.value;
+    expect(fogColor.toArray()).toEqual(sim.env.horizonColor.toArray());
+    // …while the fog's distances are still honoured
+    expect(surface.uniforms.uFog.value.x).toBeCloseTo(0.00012, 9);
+    scene.fog = null;
+    update();
+    expect(fogColor.toArray()).toEqual(sim.env.horizonColor.toArray());
+    expect(surface.uniforms.uFog.value.x).toBeCloseTo(OCEAN.defaultFogDensity, 9);
+  });
+
+  it('starts a splash on splashdown that ages with sim.time and dissolves', () => {
+    const { surface, update } = frame();
+    const splash = surface.uniforms.uSplash.value;
+    sim.time = 40;
+    update();
+    expect(splash.toArray()).toEqual([0, 0]);
+
+    startSplash(surface, HARD_LANDING_SINK_RATE);
+    update();
+    expect(splash.x).toBe(0);
+    expect(splash.y).toBeCloseTo(1, 9);
+    sim.time = 41.5;
+    update();
+    expect(splash.x).toBeCloseTo(1.5, 9);
+    // paused: sim.time stands still, and so does the splash
+    update();
+    expect(splash.x).toBeCloseTo(1.5, 9);
+    sim.time = 40 + OCEAN.splash.duration + 0.01;
+    update();
+    expect(splash.toArray()).toEqual([0, 0]);
+
+    // a gentle touch-down is a small splash, a crash is capped, a restarted clock ends it
+    startSplash(surface, 0.2 * HARD_LANDING_SINK_RATE);
+    update();
+    expect(splash.y).toBeCloseTo(0.2, 9);
+    startSplash(surface, 10 * HARD_LANDING_SINK_RATE);
+    update();
+    expect(splash.y).toBe(OCEAN.splash.maxStrength);
+    sim.time = 3;
+    update();
+    expect(splash.toArray()).toEqual([0, 0]);
+  });
+
+  it('declares every uniform the shaders use, including the swirl layers', () => {
+    const { surface } = frame();
+    const layers = textureLayers('low');
+    expect(surface.uniforms.uLayerOffset.value).toHaveLength(layers.length * 2);
+    const source = surface.material.fragmentShader;
+    expect(source).toContain(`uniform vec2 uLayerOffset[${layers.length}];`);
+    expect(source).toContain(`uLayerOffset[${layers.length - 1}])`);
+    expect(surface.material.fragmentShader).toContain('uniform vec2 uSplash;');
   });
 });
 
