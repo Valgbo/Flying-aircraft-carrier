@@ -1,0 +1,332 @@
+/*
+ * Shared pieces of the shell UI (menu, hangar, settings, pause, loading): slider, switch,
+ * preset chips, key caps, the brand mark. Prefix: shell-. Tokens come from global.css.
+ */
+
+/* ---------- Range slider ------------------------------------------------------------- */
+
+.shell-slider {
+  --shell-thumb: 18px;
+  --shell-track: 4px;
+  --shell-rail: rgba(143, 166, 184, 0.3);
+  /* set per instance (fractions 0..1): filled span of the track and the origin notch */
+  --shell-from: 0;
+  --shell-to: 0;
+  --shell-origin: 0;
+  /* the thumb centre travels between half a thumb from either end, and so must the fill */
+  --shell-fill-start: calc(
+    var(--shell-thumb) / 2 + (100% - var(--shell-thumb)) * var(--shell-from)
+  );
+  --shell-fill-end: calc(var(--shell-thumb) / 2 + (100% - var(--shell-thumb)) * var(--shell-to));
+  --shell-notch: calc(var(--shell-thumb) / 2 + (100% - var(--shell-thumb)) * var(--shell-origin));
+  --shell-track-paint: linear-gradient(
+    90deg,
+    var(--shell-rail) var(--shell-fill-start),
+    var(--fac-accent) var(--shell-fill-start),
+    var(--fac-accent) var(--shell-fill-end),
+    var(--shell-rail) var(--shell-fill-end)
+  );
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  /* horizontal drags move the thumb; vertical ones still scroll the sheet or dialog */
+  touch-action: pan-y;
+}
+
+/* a notch behind the track where the fill starts (the tilt slider's hover position) */
+.shell-slider[data-origin='marked'] {
+  background: linear-gradient(
+      90deg,
+      transparent calc(var(--shell-notch) - 1px),
+      var(--fac-text-dim) calc(var(--shell-notch) - 1px),
+      var(--fac-text-dim) calc(var(--shell-notch) + 1px),
+      transparent calc(var(--shell-notch) + 1px)
+    )
+    center / 100% 14px no-repeat;
+}
+
+.shell-slider::-webkit-slider-runnable-track {
+  height: var(--shell-track);
+  border-radius: 999px;
+  background: var(--shell-track-paint);
+}
+
+.shell-slider::-moz-range-track {
+  height: var(--shell-track);
+  border-radius: 999px;
+  background: var(--shell-track-paint);
+}
+
+.shell-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--shell-thumb);
+  height: var(--shell-thumb);
+  margin-top: calc((var(--shell-track) - var(--shell-thumb)) / 2);
+  border: 2px solid var(--fac-accent);
+  border-radius: 50%;
+  background: var(--fac-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.15s ease;
+}
+
+.shell-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: var(--shell-thumb);
+  height: var(--shell-thumb);
+  border: 2px solid var(--fac-accent);
+  border-radius: 50%;
+  background: var(--fac-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.15s ease;
+}
+
+.shell-slider:hover::-webkit-slider-thumb,
+.shell-slider:active::-webkit-slider-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 0 5px rgba(57, 198, 255, 0.18);
+}
+
+.shell-slider:hover::-moz-range-thumb,
+.shell-slider:active::-moz-range-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 0 5px rgba(57, 198, 255, 0.18);
+}
+
+.shell-slider:focus {
+  outline: none;
+}
+
+.shell-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 0 2px var(--fac-bg),
+    0 0 0 4px var(--fac-accent-strong);
+}
+
+.shell-slider:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 0 2px var(--fac-bg),
+    0 0 0 4px var(--fac-accent-strong);
+}
+
+@media (pointer: coarse) {
+  .shell-slider {
+    --shell-thumb: 24px;
+    height: 36px;
+  }
+}
+
+/* ---------- Switch --------------------------------------------------------------------- */
+
+.shell-switch {
+  pointer-events: auto;
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--fac-border-strong);
+  border-radius: 999px;
+  background: rgba(143, 166, 184, 0.16);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.shell-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--fac-text-dim);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.shell-switch[aria-checked='true'] {
+  background: var(--fac-accent);
+  border-color: var(--fac-accent);
+}
+
+.shell-switch[aria-checked='true'] .shell-switch__thumb {
+  transform: translateX(20px);
+  background: var(--fac-accent-ink);
+}
+
+/* ---------- Preset chips --------------------------------------------------------------- */
+
+.shell-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shell-chip {
+  pointer-events: auto;
+  appearance: none;
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid var(--fac-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fac-text-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.shell-chip:hover {
+  border-color: var(--fac-accent);
+  color: var(--fac-text);
+}
+
+.shell-chip[aria-pressed='true'] {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.18);
+  color: var(--fac-accent-strong);
+}
+
+@media (pointer: coarse) {
+  .shell-chip {
+    min-height: 32px;
+    padding: 4px 12px;
+  }
+}
+
+/* ---------- Key caps and the key reference grid ---------------------------------------- */
+
+.shell-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--fac-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: rgba(57, 198, 255, 0.08);
+  color: var(--fac-text);
+  font-family: var(--fac-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.shell-keyref {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-keyref__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shell-keyref__keys {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+
+.shell-keyref__label {
+  min-width: 0;
+  color: var(--fac-text-dim);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+/* ---------- Brand mark ------------------------------------------------------------------- */
+
+.shell-mark {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.shell-mark__deck {
+  fill: var(--fac-text);
+}
+
+.shell-mark__pylon {
+  stroke: var(--fac-text-dim);
+  stroke-linecap: butt;
+}
+
+.shell-mark__markings {
+  fill: none;
+  stroke: var(--fac-bg);
+  stroke-opacity: 0.55;
+  stroke-linecap: round;
+}
+
+.shell-mark__island {
+  fill: var(--fac-bg);
+  fill-opacity: 0.55;
+  stroke: none;
+}
+
+.shell-mark__ring {
+  fill: none;
+  stroke: var(--fac-accent);
+}
+
+.shell-mark__rotor {
+  fill: none;
+  stroke: var(--fac-accent-strong);
+  stroke-opacity: 0.5;
+  /* rotate about the fan's own centre, whatever the size of the drawing */
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.shell-mark--spin .shell-mark__rotor {
+  animation: shell-mark-spin 1.4s linear infinite;
+}
+
+/* port and starboard fans turn against each other */
+.shell-mark--spin g:nth-of-type(even) .shell-mark__rotor {
+  animation-direction: reverse;
+}
+
+@keyframes shell-mark-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* the global rule only shortens animations; an endless one has to stop altogether */
+  .shell-mark--spin .shell-mark__rotor {
+    animation: none;
+  }
+}
