@@ -21,7 +21,6 @@ number 07) lifted by four tilting ducted-fan jet turbines. Screens: main menu, h
 | @react-three/rapier | 1.5.0 | Rapier 0.14 WASM (flying screens only, lazy chunk) |
 | @react-three/postprocessing | 2.19.1 | with `postprocessing` 6.36.7 |
 | zustand | 5.0.3 | store |
-| leva | 0.10.1 | dev-only tuning panels |
 | vite 8 · typescript 5.9 · vitest 5 · @playwright/test 1.63 · eslint 10 · prettier 3 | | tooling |
 
 No binary assets: geometry, textures (canvas / data textures) and audio (Web Audio synthesis)
@@ -205,7 +204,7 @@ What the physics driver mirrors every step, so the UI always has sensible values
 ### Debug flags and test hook
 
 URL parameters (`src/config/debugFlags.ts`): `?screen=`, `?quality=`, `?time=`, `?cam=`,
-`?assist=0`, `?fixedTime=`, `?ui=0`, `?mute=1`, `?touch=1`, `?tune=1`, `?sandbox=` (dev only).
+`?assist=0`, `?fixedTime=`, `?ui=0`, `?mute=1`, `?touch=1`, `?sandbox=` (dev only).
 `window.__FAC__` = `{ store, sim, input, inputSources, clearInput, emitAction }` for e2e tests
 and the console.
 

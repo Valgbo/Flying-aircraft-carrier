@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middleware';
 import type { HotspotId } from '../config/layout';
 import { DEFAULT_KEY_BINDINGS, type BindingId, type KeyBindings } from './bindings';
+import { HOVER_THROTTLE } from '../config/physicsConfig';
 import { resetSimForScreen } from './sim';
 import { buildTelemetry } from './telemetrySnapshot';
 import type {
@@ -116,7 +117,7 @@ export function initialOps(): OpsState {
 }
 
 function initialHangar(): HangarState {
-  return { selectedHotspot: null, demoThrottle: 0.6, demoTiltDeg: 0 };
+  return { selectedHotspot: null, demoThrottle: HOVER_THROTTLE, demoTiltDeg: 0 };
 }
 
 export interface GameState {

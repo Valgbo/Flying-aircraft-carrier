@@ -12,7 +12,6 @@
  *   ?ui=0                hide the DOM overlay (clean 3D screenshots)
  *   ?mute=1              start muted
  *   ?touch=1             force the on-screen touch controls on
- *   ?tune=1              dev only: show live tuning panels
  */
 function read(): URLSearchParams {
   try {
@@ -41,7 +40,6 @@ export const debugFlags = {
   ui: params.get('ui'),
   mute: params.get('mute'),
   touch: params.get('touch'),
-  tune: params.get('tune'),
   /** Raw access for module-specific sandbox parameters. */
   params,
 } as const;
