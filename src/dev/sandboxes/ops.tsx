@@ -15,6 +15,10 @@
  *   warp=N          run simulated time N× faster (software rendering is slow)
  *   speed=m/s       ship forward speed
  *   hud=0           hide the HUD overlay
+ *
+ * A running page can be re-directed from the console or a Playwright script:
+ *   window.dispatchEvent(new CustomEvent('opsview', { detail: 'view:wires' }))
+ * with detail `view:<preset>`, `follow:<N>` (0 = stop following), `warp:<N>` or `rock:<deg>`.
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
@@ -46,6 +50,7 @@ import { emitAction } from '../../state/actions';
 import { sim } from '../../state/sim';
 import OpsHUD from '../../ui/OpsHUD';
 import Toasts from '../../ui/Toasts';
+import { IDLE_ALTITUDE } from '../../config/physicsConfig';
 import { DEG2RAD } from '../../utils/math';
 import SandboxStage from '../SandboxStage';
 
@@ -178,16 +183,20 @@ function StandInDeck() {
   );
 }
 
+/** What the `opsview` event can change while the page runs. */
+const director = { warp: 1, follow: 0, rockDeg: 0 };
+
 const _euler = new Euler(0, 0, 0, 'YXZ');
 
 /**
  * Runs between the idle driver and the gameplay systems: speeds simulated time up and / or
  * rocks the ship, so slow software rendering can still show whole sorties and wave-offs.
  */
-function TimeAndMotion({ warp, rockDeg }: { warp: number; rockDeg: number }) {
+function TimeAndMotion() {
   useFrame(() => {
-    if (sim.dt > 0 && warp > 1) {
-      const extra = sim.dt * (warp - 1);
+    const rockDeg = director.rockDeg;
+    if (sim.dt > 0 && director.warp > 1) {
+      const extra = sim.dt * (director.warp - 1);
       sim.dt += extra;
       sim.time += extra;
     }
@@ -219,13 +228,43 @@ function AutoLaunch({ interval }: { interval: number }) {
 
 const _offset = new Vector3();
 
-/** Rides with jet `id`: behind and above it, or ahead of it looking back when `ahead`. */
-function FollowCamera({ id, ahead }: { id: number; ahead: boolean }) {
+/**
+ * Camera direction: rides with the followed jet (behind and above it, or ahead of it looking
+ * back for a negative id) and applies `opsview` events from the console or a test script.
+ */
+function CameraDirector() {
   const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as {
+    target: Vector3;
+    update: () => void;
+  } | null;
+  useEffect(() => {
+    const onView = (event: Event): void => {
+      const [kind, value] = String((event as CustomEvent<string>).detail).split(':');
+      if (kind === 'warp') director.warp = Number(value) || 1;
+      if (kind === 'rock') director.rockDeg = Number(value) || 0;
+      if (kind === 'follow') director.follow = Number(value) || 0;
+      const preset = kind === 'view' ? VIEWS[value] : undefined;
+      if (preset) {
+        director.follow = 0;
+        camera.position.set(preset.camera[0], IDLE_ALTITUDE + preset.camera[1], preset.camera[2]);
+        controls?.target.set(preset.target[0], IDLE_ALTITUDE + preset.target[1], preset.target[2]);
+        if ('fov' in camera) {
+          camera.fov = preset.fov;
+          camera.updateProjectionMatrix();
+        }
+        controls?.update();
+      }
+    };
+    window.addEventListener('opsview', onView);
+    return () => window.removeEventListener('opsview', onView);
+  }, [camera, controls]);
   useFrame(() => {
+    if (director.follow === 0) return;
+    const id = Math.abs(director.follow);
     const jet = sim.jets.find((j) => j.id === id);
     if (!jet) return;
-    _offset.set(9, 5, ahead ? -30 : 30).applyQuaternion(jet.quaternion);
+    _offset.set(9, 5, director.follow < 0 ? -30 : 30).applyQuaternion(jet.quaternion);
     camera.position.copy(jet.position).add(_offset);
     camera.lookAt(jet.position);
   });
@@ -239,10 +278,10 @@ export default function OpsSandbox() {
   const target = parseVec(params.get('tgt')) ?? preset.target;
   const fov = Number(params.get('fov')) || preset.fov;
   const active = params.get('active') === '1';
-  const follow = Number(params.get('follow')) || 0;
   const launches = Number(params.get('launch')) || 0;
-  const warp = Number(params.get('warp')) || 1;
-  const rockDeg = Number(params.get('rock')) || 0;
+  director.rockDeg = Number(params.get('rock')) || 0;
+  director.warp = Number(params.get('warp')) || 1;
+  director.follow = Number(params.get('follow')) || 0;
 
   useEffect(() => {
     if (!active) return;
@@ -262,11 +301,11 @@ export default function OpsSandbox() {
         forwardSpeed={Number(params.get('speed')) || 0}
       >
         <ambientLight intensity={0.5} color="#dfe9f5" />
-        <TimeAndMotion warp={warp} rockDeg={rockDeg} />
+        <TimeAndMotion />
         {params.get('ship') === '1' ? <Carrier /> : <StandInDeck />}
         <FlightOps active={active} />
         {active && params.get('auto') === '1' && <AutoLaunch interval={6} />}
-        {follow !== 0 && <FollowCamera id={Math.abs(follow)} ahead={follow < 0} />}
+        <CameraDirector />
       </SandboxStage>
       {params.get('hud') !== '0' && (
         <div className="ui-root">

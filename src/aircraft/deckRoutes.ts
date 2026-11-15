@@ -79,8 +79,5 @@ export function taxiInPath(spot: number): RailPath {
 /** Reverse path into the spot: travel direction is tail first, so heading = tangent + π. */
 export function parkPath(spot: number): RailPath {
   const pose = parkingPose(spot);
-  return buildPath(
-    [parkEntryPoint(spot), laneMergePoint(spot), [pose.x, pose.z]],
-    OPS.parkRadius,
-  );
+  return buildPath([parkEntryPoint(spot), laneMergePoint(spot), [pose.x, pose.z]], OPS.parkRadius);
 }

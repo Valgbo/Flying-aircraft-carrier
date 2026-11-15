@@ -1,11 +1,12 @@
 /*
- * Flight-ops HUD. Prefix: ops-. A compact block on the left edge below the top bar; on
+ * Flight-ops HUD. Prefix: ops-. A compact block on the left edge below the top bar (and below
+ * the flight HUD's status chips, which wrap to a second row on narrow windows); on
  * phones it shrinks and, in landscape, turns into a short strip so that it stays above the
  * reserved bottom-left touch corner. It never reaches the centre of the screen.
  */
 .ops-hud {
   position: absolute;
-  top: calc(76px + var(--fac-safe-top));
+  top: calc(108px + var(--fac-safe-top));
   left: calc(14px + var(--fac-safe-left));
   width: 216px;
   padding: 12px;

@@ -1,0 +1,340 @@
+/*
+ * On-screen touch controls. Class prefix: touch-.
+ *
+ * Two reserved corners at the bottom of the safe area: the steering stick on the left, the
+ * lift slider with the strafe and action buttons on the right. Everything is line art on a
+ * thin dark wash so the scene shows through, and nothing here scrolls, selects text, opens a
+ * context menu or zooms.
+ */
+.touch-root {
+  /* inside the safe area; .ui-root's padding does not constrain absolute children */
+  position: absolute;
+  top: var(--fac-safe-top);
+  right: var(--fac-safe-right);
+  bottom: var(--fac-safe-bottom);
+  left: var(--fac-safe-left);
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  font-family: var(--fac-mono);
+  color: var(--fac-text);
+
+  /* side of each reserved corner — the contract's 240 px */
+  --touch-corner: 240px;
+  --touch-pad: 8px;
+  --touch-line: rgba(125, 220, 255, 0.5);
+  --touch-line-dim: rgba(125, 220, 255, 0.26);
+  --touch-wash: rgba(6, 13, 22, 0.5);
+  --touch-fill: rgba(57, 198, 255, 0.24);
+  --touch-fill-strong: rgba(57, 198, 255, 0.46);
+  --touch-glow: rgba(57, 198, 255, 0.4);
+}
+
+.touch-zone {
+  position: absolute;
+  bottom: 0;
+  /* two corners never overlap, even on a 360 px wide phone */
+  width: min(var(--touch-corner), 50%);
+  height: var(--touch-corner);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-zone--left {
+  left: 0;
+}
+
+.touch-zone--right {
+  right: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--touch-pad);
+  padding: var(--touch-pad);
+}
+
+/* ---------- shared chevron glyph ---------- */
+
+.touch-chevron {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid var(--touch-line);
+  border-left: 2px solid var(--touch-line);
+  pointer-events: none;
+}
+
+.touch-chevron--up {
+  transform: rotate(45deg);
+}
+
+.touch-chevron--right {
+  transform: rotate(135deg);
+}
+
+.touch-chevron--down {
+  transform: rotate(225deg);
+}
+
+.touch-chevron--left {
+  transform: rotate(-45deg);
+}
+
+/* ---------- steering stick ---------- */
+
+.touch-stick {
+  cursor: grab;
+}
+
+.touch-stick-base {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 132px;
+  height: 132px;
+  margin: -66px 0 0 -66px;
+  border: 1.5px solid var(--touch-line);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(57, 198, 255, 0.1) 0%, var(--touch-wash) 72%);
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 0.16s ease-out;
+}
+
+.touch-stick-base .touch-chevron {
+  position: absolute;
+}
+
+.touch-stick-base .touch-chevron--up {
+  top: 9px;
+  left: calc(50% - 4.5px);
+}
+
+.touch-stick-base .touch-chevron--down {
+  bottom: 9px;
+  left: calc(50% - 4.5px);
+}
+
+.touch-stick-base .touch-chevron--left {
+  left: 9px;
+  top: calc(50% - 4.5px);
+}
+
+.touch-stick-base .touch-chevron--right {
+  right: 9px;
+  top: calc(50% - 4.5px);
+}
+
+.touch-stick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border: 1.5px solid var(--fac-accent-strong);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 38%, var(--touch-fill-strong), var(--touch-fill) 70%);
+  box-shadow: 0 0 14px var(--touch-glow);
+  will-change: transform;
+  transition: transform 0.12s ease-out;
+}
+
+/* while a thumb is down the base and the knob track it exactly: no easing */
+.touch-stick--active {
+  cursor: grabbing;
+}
+
+.touch-stick--active .touch-stick-base,
+.touch-stick--active .touch-stick-knob {
+  transition: none;
+}
+
+.touch-stick--active .touch-stick-base {
+  border-color: var(--fac-accent-strong);
+}
+
+.touch-stick--active .touch-stick-knob {
+  background: radial-gradient(
+    circle at 50% 38%,
+    var(--fac-accent-strong),
+    var(--touch-fill-strong) 75%
+  );
+  box-shadow: 0 0 20px var(--touch-glow);
+}
+
+.touch-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--fac-text);
+  opacity: 0.8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.touch-stick--active .touch-caption {
+  opacity: 0;
+}
+
+/* ---------- lift slider ---------- */
+
+.touch-throttle {
+  position: relative;
+  flex: 0 0 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border: 1.5px solid var(--touch-line);
+  border-radius: 30px;
+  background:
+    repeating-linear-gradient(to bottom, var(--touch-line-dim) 0 1px, transparent 1px 21px) center
+      20px / 14px calc(100% - 39px) no-repeat,
+    var(--touch-wash);
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.touch-throttle-detent {
+  width: 34px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fac-accent-strong);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.touch-throttle-thumb {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  right: 3px;
+  height: 52px;
+  margin-top: -26px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--fac-accent-strong);
+  border-radius: 26px;
+  background: linear-gradient(to bottom, var(--touch-fill-strong), var(--touch-fill));
+  box-shadow: 0 0 14px var(--touch-glow);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 0.14s ease-out;
+}
+
+.touch-throttle--active {
+  border-color: var(--fac-accent-strong);
+}
+
+.touch-throttle--active .touch-throttle-thumb {
+  transition: none;
+  background: linear-gradient(to bottom, var(--fac-accent-strong), var(--touch-fill-strong));
+  color: var(--fac-accent-ink);
+  text-shadow: none;
+  box-shadow: 0 0 20px var(--touch-glow);
+}
+
+/* ---------- buttons ---------- */
+
+.touch-cluster {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--touch-pad);
+}
+
+.touch-actions,
+.touch-strafe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.touch-btn {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 2px;
+  border: 1px solid var(--touch-line);
+  border-radius: var(--fac-radius-sm);
+  background: var(--touch-wash);
+  color: var(--fac-text);
+  font: 600 10px / 1 var(--fac-mono);
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 0.08s ease,
+    border-color 0.08s ease;
+}
+
+.touch-btn--wide {
+  grid-column: 1 / -1;
+}
+
+.touch-btn[aria-pressed='true'] {
+  border-color: var(--fac-accent);
+  background: var(--touch-fill);
+  color: var(--fac-accent-strong);
+}
+
+.touch-btn--launch {
+  border-color: var(--fac-warn);
+  color: var(--fac-warn);
+}
+
+.touch-btn:active,
+.touch-btn--held {
+  border-color: var(--fac-accent-strong);
+  background: var(--touch-fill-strong);
+  color: var(--fac-text);
+}
+
+.touch-btn--strafe {
+  flex-direction: column;
+  min-height: 60px;
+}
+
+.touch-btn--strafe .touch-chevron {
+  border-color: var(--fac-accent-strong);
+}
+
+/* ---------- wide enough for the full 240 px corners: roomier type ---------- */
+
+@media (min-width: 480px) {
+  .touch-btn {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-stick-base,
+  .touch-stick-knob,
+  .touch-throttle-thumb {
+    transition: none;
+  }
+}

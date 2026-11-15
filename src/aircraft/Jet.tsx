@@ -54,7 +54,10 @@ function createParts() {
   const geometries = buildJetGeometries();
   geometries.numbers.setAttribute(
     'aDigit',
-    new InstancedBufferAttribute(Float32Array.from({ length: COUNT }, (_, i) => i), 1),
+    new InstancedBufferAttribute(
+      Float32Array.from({ length: COUNT }, (_, i) => i),
+      1,
+    ),
   );
   const atlas = createNumberAtlas();
   const airframe = new MeshStandardMaterial({
@@ -66,7 +69,7 @@ function createParts() {
   const canopy = new MeshStandardMaterial({
     color: PALETTE.glass,
     flatShading: true,
-    metalness: 0.9,
+    metalness: 0.35,
     roughness: 0.12,
   });
   const glow = new MeshBasicMaterial({
@@ -149,12 +152,18 @@ export default function Jet() {
       _local.makeScale(1, extend, 1).setPosition(0, GEAR_FOLD_Y * (1 - extend), 0);
       gear.current?.setMatrixAt(i, _part.multiplyMatrices(_jet, _local));
 
-      // afterburner: brightness and flame length follow engine power
+      // afterburner: brightness, flame length and the size of the hot core follow engine power
       const power = clamp01(jet.power);
-      const flame = 0.03 + clamp01((power - 0.45) / 0.55);
-      _local.makeScale(1, 1, flame).setPosition(NOZZLE_CENTRE[0], NOZZLE_CENTRE[1], NOZZLE_CENTRE[2]);
+      const reheat = clamp01((power - 0.45) / 0.55);
+      const core = 0.4 + 0.6 * reheat;
+      _local
+        .makeScale(core, core, 0.03 + reheat)
+        .setPosition(NOZZLE_CENTRE[0], NOZZLE_CENTRE[1], NOZZLE_CENTRE[2]);
       glow.current?.setMatrixAt(i, _part.multiplyMatrices(_jet, _local));
-      glow.current?.setColorAt(i, _color.copy(GLOW_COLOR).multiplyScalar(0.08 + 2.6 * power * power));
+      glow.current?.setColorAt(
+        i,
+        _color.copy(GLOW_COLOR).multiplyScalar(0.08 + 2.6 * power * power),
+      );
     }
     for (const ref of meshes) {
       const mesh = ref.current;

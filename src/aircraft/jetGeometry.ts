@@ -88,7 +88,9 @@ class SoupBuilder {
         [1, 1],
         [-1, 1],
       ].map(([u, v]) =>
-        alongZ ? [p[0] + u * half, p[1] + v * half, p[2]] : [p[0] + u * half, p[1], p[2] + v * half],
+        alongZ
+          ? [p[0] + u * half, p[1] + v * half, p[2]]
+          : [p[0] + u * half, p[1], p[2] + v * half],
       );
     const r0 = ring(from);
     const r1 = ring(to);
@@ -170,7 +172,15 @@ const STATIONS: readonly Station[] = [
   { z: 7.7, w: 1.05, wt: 0.55, wb: 0.7, yt: 2.4, yb: 1.5, yc: 1.95 },
 ];
 /** The flat nozzle continues the last station and narrows to its exit. */
-const NOZZLE_EXIT: Station = { z: NOZZLE_Z, w: 0.82, wt: 0.46, wb: 0.56, yt: 2.3, yb: 1.6, yc: 1.95 };
+const NOZZLE_EXIT: Station = {
+  z: NOZZLE_Z,
+  w: 0.82,
+  wt: 0.46,
+  wb: 0.56,
+  yt: 2.3,
+  yb: 1.6,
+  yc: 1.95,
+};
 
 /** Centre of the nozzle exit — the afterburner glow is built around it. */
 export const NOZZLE_CENTRE: P3 = [0, 1.95, NOZZLE_Z];
@@ -344,11 +354,7 @@ function buildAirframe(): BufferGeometry {
       const outer = corners(1);
       const inner = corners(-1);
       b.quad(outer[0], outer[1], outer[2], outer[3], color, TAIL_NORMAL);
-      b.quad(inner[0], inner[1], inner[2], inner[3], color, [
-        -TAIL_NORMAL[0],
-        -TAIL_NORMAL[1],
-        0,
-      ]);
+      b.quad(inner[0], inner[1], inner[2], inner[3], color, [-TAIL_NORMAL[0], -TAIL_NORMAL[1], 0]);
       b.quad(outer[0], outer[3], inner[3], inner[0], color, [0, 0, -1]);
       b.quad(outer[1], outer[2], inner[2], inner[1], color, [0, 0, 1]);
       b.quad(outer[3], outer[2], inner[2], inner[3], color, TAIL_OUT);
@@ -426,9 +432,13 @@ function buildGlow(): BufferGeometry {
     }
   };
   for (let i = 0; i < segments; i++) {
-    b.tri([0, 0, 0.02], ellipse(0.66, 0.3, 0.02, i), ellipse(0.66, 0.3, 0.02, i + 1), plate, [
-      0, 0, 1,
-    ]);
+    b.tri(
+      [0, 0, 0.02],
+      ellipse(0.66, 0.3, 0.02, i),
+      ellipse(0.66, 0.3, 0.02, i + 1),
+      plate,
+      [0, 0, 1],
+    );
   }
   cone(0.6, 0.28, 5.2, outer);
   cone(0.34, 0.16, 2.8, core);

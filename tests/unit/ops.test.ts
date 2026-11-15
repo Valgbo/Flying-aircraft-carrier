@@ -471,7 +471,7 @@ describe('pattern and approach geometry (ship frame)', () => {
       expect(arcs.length).toBe(2);
       for (const arc of arcs) {
         expect(arc.turn).toBe(-1);
-        const bank = Math.atan((OPS.patternSpeed ** 2 / arc.radius) / 9.81);
+        const bank = Math.atan(OPS.patternSpeed ** 2 / arc.radius / 9.81);
         expect(bank).toBeLessThan(OPS.maxBank);
       }
       const final = path.elements[path.elements.length - 1];
@@ -643,10 +643,7 @@ describe('flight ops state machine', () => {
           const [lx, lz] = approachLinePoint(d);
           finalLateral = Math.max(finalLateral, Math.hypot(jet.local.x - lx, jet.local.z - lz));
           if (d < 150) {
-            finalGlideError = Math.max(
-              finalGlideError,
-              Math.abs(jet.local.y - approachTargetY(d)),
-            );
+            finalGlideError = Math.max(finalGlideError, Math.abs(jet.local.y - approachTargetY(d)));
           }
         }
       },
@@ -685,9 +682,9 @@ describe('flight ops state machine', () => {
     expect(finalLateral).toBeLessThan(1e-6);
     expect(finalGlideError).toBeLessThan(0.05);
     expect(trapSpeed).toBeCloseTo(OPS.approachSpeed, 3);
-    expect(Math.hypot(trapLocal!.x - STRIP.touchdownX, trapLocal!.z - STRIP.touchdownZ)).toBeLessThan(
-      2,
-    );
+    expect(
+      Math.hypot(trapLocal!.x - STRIP.touchdownX, trapLocal!.z - STRIP.touchdownZ),
+    ).toBeLessThan(2);
     expect(trapLocal!.y).toBeCloseTo(DECK.y, 6);
 
     // parked at rest on its own spot
@@ -765,7 +762,6 @@ describe('flight ops state machine', () => {
     ops.reset(true);
     ops.requestLaunch();
     const jet = ops.jets[0];
-    let touchdown: Vector3 | null = null;
     let previous = new Vector3();
     let maxJump = 0;
     run(
@@ -794,7 +790,7 @@ describe('flight ops state machine', () => {
         previous = jet.out.position.clone();
       },
     );
-    touchdown = toLocal(ship, jet.out.position);
+    const touchdown = toLocal(ship, jet.out.position);
     expect(ops.recoveries).toBe(1);
     expect(Math.hypot(touchdown.x - STRIP.touchdownX, touchdown.z - STRIP.touchdownZ)).toBeLessThan(
       3,
