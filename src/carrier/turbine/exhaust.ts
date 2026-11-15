@@ -97,7 +97,8 @@ const PLUME_VERTEX = /* glsl */ `
   varying float vS;
   varying float vShell;
   varying float vAngle;
-  varying float vFacing;
+  varying vec3 vNormal;
+  varying vec3 vView;
 
   const float SHOCK_SPACING = 9.0;
 
@@ -113,8 +114,8 @@ const PLUME_VERTEX = /* glsl */ `
     p += uDrift * pow(s, 1.6);
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    vec3 n = normalize(normalMatrix * normalize(vec3(position.x, 0.2, position.z)));
-    vFacing = abs(dot(n, normalize(mv.xyz)));
+    vNormal = normalMatrix * vec3(position.x, 0.2, position.z);
+    vView = mv.xyz;
     vS = s;
     vShell = aShell;
     vAngle = aAngle;
@@ -132,22 +133,24 @@ const PLUME_FRAGMENT = /* glsl */ `
   varying float vS;
   varying float vShell;
   varying float vAngle;
-  varying float vFacing;
+  varying vec3 vNormal;
+  varying vec3 vView;
 
   const float SHOCK_SPACING = 9.0;
   ${NOISE_GLSL}
 
   void main() {
     float dist = vS * uLength;
-    // soft silhouette: a shell seen edge-on contributes nothing
-    float soft = pow(vFacing, mix(1.5, 2.3, vShell));
+    // soft silhouette: a shell seen edge-on contributes nothing, and eases into that
+    float facing = abs(dot(normalize(vNormal), normalize(vView)));
+    float soft = pow(facing, mix(3.2, 2.6, vShell));
     float fade = pow(1.0 - vS, 1.5);
 
     // streaks of turbulence scrolling downstream
     float flow = dist * 0.09 - uTime * (1.4 + 3.0 * uPower);
     float n = 0.65 * ringNoise(vec2(vAngle * 12.0, flow), 12.0)
             + 0.35 * ringNoise(vec2(vAngle * 24.0 + 3.0, flow * 2.3), 24.0);
-    float streaks = 0.4 + 1.0 * n;
+    float streaks = 0.22 + 1.5 * n * n;
 
     // shock diamonds: bright standing cells in the core, dying away from the nozzle
     float cell = pow(0.5 + 0.5 * cos(6.2832 * dist / SHOCK_SPACING), 3.0);
@@ -156,7 +159,7 @@ const PLUME_FRAGMENT = /* glsl */ `
     vec3 colour = mix(uCool, vec3(1.0), smoothstep(0.02, 0.36, vS) * 0.9 + 0.1 * vShell);
     colour = mix(colour, uHot, smoothstep(0.38, 0.95, vS));
 
-    float amount = soft * (fade * streaks * mix(0.2, 0.46, vShell) + diamonds * 0.9);
+    float amount = soft * (fade * streaks * mix(0.13, 0.4, vShell) + diamonds * 0.8);
     gl_FragColor = vec4(colour * (amount * uIntensity), 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -181,6 +184,8 @@ export function createPlumeMaterial(): ShaderMaterial {
     blending: AdditiveBlending,
     depthWrite: false,
     side: DoubleSide,
+    // additive shells: order does not matter, so skip the two-pass back / front draw
+    forceSinglePass: true,
     toneMapped: false,
   });
 }
@@ -242,16 +247,17 @@ const EXHAUST_PARTICLE_VERTEX = /* glsl */ `
   const float DRAG = 2.0;
 
   void main() {
-    // roughly a quarter of the particles are short-lived sparks, the rest is vapour
-    float spark = step(0.74, aSeed.w);
+    // about one particle in seven is a short-lived spark, the rest is vapour
+    float spark = step(0.86, aSeed.w);
     float jitter = fract(aSeed.x * 13.7);
     float life = mix(mix(1.7, 3.1, aSeed.y), mix(0.45, 1.0, aSeed.y), spark);
     float age = fract(uTime / life + aSeed.x);
 
-    // born across the annulus of the nozzle exit
+    // born across the annulus of the nozzle exit, denser toward the axis so the column has
+    // no hard flanks when seen from the side
     float ang = aSeed.z * 6.2832;
     vec2 dir = vec2(sin(ang), cos(ang));
-    float r0 = sqrt(mix(uAnnulus.x, uAnnulus.y, fract(aSeed.w * 7.3)));
+    float r0 = mix(uAnnulus.x, uAnnulus.y, fract(aSeed.w * 7.3));
 
     // shot along -Y, slowing down against the air
     float dist = uSpeed * life * (1.0 - exp(-DRAG * age)) / DRAG;
@@ -272,20 +278,20 @@ const EXHAUST_PARTICLE_VERTEX = /* glsl */ `
     float axisLen = length(axisView.xy);
     vec2 along = axisLen > 1e-4 ? axisView.xy / axisLen : vec2(0.0, 1.0);
     vec2 across = vec2(-along.y, along.x);
-    float size = mix(mix(1.8, 10.0, pow(age, 0.7)) * (0.6 + 0.8 * jitter), mix(0.55, 0.25, age), spark);
+    float size = mix(mix(1.8, 10.0, pow(age, 0.7)) * (0.6 + 0.8 * jitter), mix(0.42, 0.2, age), spark);
     // sparks are drawn as streaks along their motion
-    float stretch = 1.0 + spark * speedNow * 0.05 * axisLen;
+    float stretch = 1.0 + spark * speedNow * 0.04 * axisLen;
     mv.xy += (across * position.x + along * position.y * stretch) * size;
     gl_Position = projectionMatrix * mv;
     vCorner = position.xy;
 
     float fadeIn = smoothstep(0.0, 0.06, age);
     // vapour leaves the nozzle glowing and cools to plain steam / haze
-    float heat = exp(-age * 7.0);
-    vec3 vapour = mix(uTint, uCool * 2.2, heat);
-    float vapourCover = 0.085 * fadeIn * pow(1.0 - age, 1.4);
-    vec3 sparks = mix(vec3(1.0), uCool, 0.45) * (3.2 - 2.4 * age);
-    float sparkCover = fadeIn * (1.0 - age);
+    float heat = exp(-age * 9.0);
+    vec3 vapour = mix(uTint, uCool * 1.3, heat);
+    float vapourCover = 0.11 * fadeIn * pow(1.0 - age, 1.4);
+    vec3 sparks = mix(vec3(1.0), uCool, 0.45) * (2.4 - 1.8 * age);
+    float sparkCover = 0.5 * fadeIn * (1.0 - age);
 
     vColour = mix(vapour, sparks, spark);
     vBlend = vec2(mix(vapourCover, sparkCover, spark) * uOpacity, 1.0 - max(spark, heat));
@@ -303,7 +309,7 @@ export function createExhaustParticleMaterial(): ShaderMaterial {
       uRelVel: { value: new Vector3() },
       uTint: { value: new Color(1, 1, 1) },
       uCool: { value: new Color(PALETTE.glowCool) },
-      uAnnulus: { value: new Vector2(inner * inner, outer * outer) },
+      uAnnulus: { value: new Vector2(inner, outer) },
     },
     vertexShader: EXHAUST_PARTICLE_VERTEX,
     fragmentShader: PARTICLE_FRAGMENT,

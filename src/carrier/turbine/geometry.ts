@@ -288,10 +288,10 @@ export function buildGlowGeometry(d: TurbineDetail): BufferGeometry {
   const discRings: [radius: number, glow: number, core: number][] = [
     [18.7, 0.1, 0],
     [17.6, 0.8, 0],
-    [16, 0.45, 0],
-    [12, 0.2, 0],
-    [7, 0.2, 0.3],
-    [HUB_R, 0.25, 0.9],
+    [16.2, 0.34, 0],
+    [13, 0.1, 0],
+    [7.5, 0.05, 0.25],
+    [HUB_R, 0.12, 0.9],
   ];
   b.lathe(
     discRings.map(([r]) => ({ r, y: discY })),

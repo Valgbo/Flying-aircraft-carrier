@@ -1,0 +1,611 @@
+/*
+ * Hangar / inspect mode. Prefix: hangar-. The overlay itself never blocks the canvas (drag =
+ * orbit); only the buttons, pins and panels take pointer events. Breakpoints match
+ * COMPACT_QUERY / SHORT_QUERY in useMediaQuery.ts.
+ */
+
+.hangar {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ---------- Top bar ---------------------------------------------------------------------- */
+
+.hangar-top {
+  position: absolute;
+  top: calc(16px + var(--fac-safe-top));
+  left: calc(16px + var(--fac-safe-left));
+  /* leave room for the settings button on the right */
+  right: calc(68px + var(--fac-safe-right));
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.hangar-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 8px 10px;
+  background: var(--fac-panel);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.hangar-heading {
+  min-width: 0;
+  /* the scene behind can be bright sky or dark sea */
+  text-shadow:
+    0 1px 2px rgba(3, 10, 18, 0.9),
+    0 0 12px rgba(3, 10, 18, 0.65);
+}
+
+.hangar-heading__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hangar-heading__ship {
+  font-family: var(--fac-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--fac-accent-strong);
+}
+
+.hangar-heading__hint {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--fac-text);
+  opacity: 0.86;
+}
+
+.hangar-icon-btn {
+  pointer-events: auto;
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  background: transparent;
+  color: var(--fac-text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.hangar-icon-btn:hover {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.18);
+}
+
+.hangar-settings {
+  position: absolute;
+  top: calc(16px + var(--fac-safe-top));
+  right: calc(16px + var(--fac-safe-right));
+  z-index: 20;
+  background: var(--fac-panel);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* ---------- Pins ------------------------------------------------------------------------- */
+
+/*
+ * A zero-size box pinned to the viewport origin: the projector publishes viewport pixels, so
+ * a pin's translate is its position on screen. Pins stack by depth inside this layer (z-index
+ * 1..n) and the layer as a whole sits under the panels.
+ */
+.hangar-pins {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 0;
+  height: 0;
+}
+
+.hangar-pin {
+  --hangar-pin-scale: 1;
+  pointer-events: auto;
+  appearance: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  /* the clickable area keeps its size whatever the depth cue does to the marker */
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fac-accent-strong);
+  cursor: pointer;
+  /* shown by HangarPins once the projector has placed it */
+  visibility: hidden;
+  will-change: transform;
+}
+
+.hangar-pin:focus {
+  outline: none;
+}
+
+.hangar-pin__marker {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--fac-accent-strong);
+  border-radius: 50%;
+  background: rgba(7, 15, 26, 0.8);
+  box-shadow:
+    0 0 0 4px rgba(57, 198, 255, 0.16),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  transform: scale(var(--hangar-pin-scale));
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hangar-pin:hover .hangar-pin__marker {
+  background: rgba(20, 60, 86, 0.92);
+  box-shadow:
+    0 0 0 6px rgba(57, 198, 255, 0.26),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.hangar-pin:focus-visible .hangar-pin__marker {
+  box-shadow:
+    0 0 0 2px var(--fac-bg),
+    0 0 0 4px var(--fac-accent-strong);
+}
+
+.hangar-pin[aria-pressed='true'] .hangar-pin__marker {
+  background: var(--fac-accent);
+  border-color: var(--fac-text);
+  color: var(--fac-accent-ink);
+  box-shadow:
+    0 0 0 6px rgba(57, 198, 255, 0.3),
+    0 2px 10px rgba(0, 0, 0, 0.55);
+}
+
+.hangar-pin__label {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 50%;
+  padding: 2px 8px;
+  border: 1px solid var(--fac-border);
+  border-radius: 999px;
+  background: var(--fac-panel-strong);
+  color: var(--fac-text);
+  font-family: var(--fac-font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -3px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+}
+
+.hangar-pin:hover .hangar-pin__label,
+.hangar-pin:focus-visible .hangar-pin__label,
+.hangar-pin[aria-pressed='true'] .hangar-pin__label {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- Info card -------------------------------------------------------------------- */
+
+.hangar-card {
+  position: absolute;
+  top: calc(68px + var(--fac-safe-top));
+  right: calc(16px + var(--fac-safe-right));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(330px, 32vw);
+  max-height: calc(100% - 84px - var(--fac-safe-top) - var(--fac-safe-bottom));
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--fac-panel-strong);
+  animation: hangar-card-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.hangar-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hangar-card__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(57, 198, 255, 0.14);
+  color: var(--fac-accent-strong);
+}
+
+.hangar-card__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.hangar-card__kicker {
+  margin: 0;
+}
+
+.hangar-card__title {
+  margin: 1px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+.hangar-card__head .hangar-icon-btn {
+  width: 36px;
+  height: 36px;
+  margin: -4px -6px 0 0;
+  border-color: transparent;
+  color: var(--fac-text-dim);
+}
+
+.hangar-card__body {
+  display: grid;
+  gap: 12px;
+}
+
+.hangar-card__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fac-text);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.hangar-card__specs {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--fac-border);
+}
+
+.hangar-card__spec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(120, 190, 235, 0.14);
+  font-size: 12px;
+}
+
+.hangar-card__spec dt {
+  flex: none;
+  color: var(--fac-text-dim);
+}
+
+.hangar-card__spec dd {
+  margin: 0;
+  text-align: right;
+}
+
+/* ---------- Demo panel ------------------------------------------------------------------- */
+
+.hangar-demo {
+  position: absolute;
+  bottom: calc(16px + var(--fac-safe-bottom));
+  left: calc(16px + var(--fac-safe-left));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 292px;
+  max-height: calc(100% - 100px - var(--fac-safe-top) - var(--fac-safe-bottom));
+  padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.hangar-demo__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hangar-demo__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.hangar-demo__toggle {
+  pointer-events: auto;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: -6px -4px -6px 0;
+  padding: 0 4px 0 12px;
+  border: 0;
+  border-radius: var(--fac-radius-sm);
+  background: none;
+  color: var(--fac-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hangar-demo__chevron {
+  color: var(--fac-text-dim);
+  transition: transform 0.15s ease;
+}
+
+/* folded sheet: the chevron points up ("pull me up"), unfolded: down */
+.hangar-demo__toggle[aria-expanded='false'] .hangar-demo__chevron {
+  transform: rotate(180deg);
+}
+
+.hangar-demo__body {
+  display: grid;
+  gap: 12px;
+}
+
+.hangar-field {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hangar-field__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.hangar-field__head label {
+  font-weight: 600;
+}
+
+.hangar-field__head output {
+  color: var(--fac-accent-strong);
+}
+
+/* ---------- Thrust readout --------------------------------------------------------------- */
+
+.hangar-thrust {
+  --hangar-state: var(--fac-accent);
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fac-border);
+}
+
+.hangar-thrust[data-state='sink'] {
+  --hangar-state: var(--fac-warn);
+}
+
+.hangar-thrust[data-state='climb'] {
+  --hangar-state: var(--fac-good);
+}
+
+.hangar-thrust__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.hangar-thrust__value {
+  color: var(--hangar-state);
+  font-weight: 600;
+}
+
+/* thrust and lift as bars from the left, the ship's weight as a tick they have to reach */
+.hangar-thrust__bar {
+  position: relative;
+  height: 10px;
+  margin: 3px 0;
+  border-radius: 3px;
+  background: rgba(143, 166, 184, 0.2);
+}
+
+.hangar-thrust__total,
+.hangar-thrust__lift {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 3px;
+}
+
+.hangar-thrust__total {
+  width: calc(var(--hangar-total) * 100%);
+  background: var(--hangar-state);
+  opacity: 0.35;
+}
+
+.hangar-thrust__lift {
+  width: calc(var(--hangar-lift) * 100%);
+  background: var(--hangar-state);
+}
+
+.hangar-thrust__weight {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: calc(var(--hangar-weight) * 100% - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fac-text);
+  box-shadow: 0 0 0 1px rgba(3, 10, 18, 0.6);
+}
+
+.hangar-thrust__verdict {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--fac-text-dim);
+}
+
+.hangar-thrust__verdict .fac-readout {
+  color: var(--hangar-state);
+  font-weight: 600;
+}
+
+@keyframes hangar-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hangar-card {
+    animation: none;
+  }
+}
+
+/* ---------- Phones: card and demo panel are bottom sheets -------------------------------- */
+
+@media (max-width: 720px), (max-height: 500px) {
+  .hangar-top {
+    top: calc(10px + var(--fac-safe-top));
+    left: calc(10px + var(--fac-safe-left));
+    right: calc(58px + var(--fac-safe-right));
+    gap: 10px;
+  }
+
+  .hangar-back span {
+    /* the arrow says it; the name stays for assistive tech */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .hangar-back {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .hangar-heading__title {
+    font-size: 15px;
+  }
+
+  .hangar-heading__hint {
+    font-size: 11px;
+  }
+
+  .hangar-settings {
+    top: calc(10px + var(--fac-safe-top));
+    right: calc(10px + var(--fac-safe-right));
+  }
+
+  .hangar-card,
+  .hangar-demo {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-height: 46%;
+    padding: 12px calc(14px + var(--fac-safe-right)) calc(12px + var(--fac-safe-bottom))
+      calc(14px + var(--fac-safe-left));
+    border-width: 1px 0 0;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .hangar-card {
+    gap: 8px;
+  }
+
+  .hangar-card__body {
+    gap: 8px;
+  }
+
+  .hangar-card__spec {
+    padding: 4px 0;
+  }
+
+  .hangar-demo__body {
+    gap: 8px;
+  }
+}
+
+/* ---------- Phone held sideways ---------------------------------------------------------- */
+
+@media (max-height: 500px) {
+  .hangar-card,
+  .hangar-demo {
+    max-height: 52%;
+    padding-top: 10px;
+    padding-bottom: calc(8px + var(--fac-safe-bottom));
+  }
+
+  /* description beside the spec table instead of above it */
+  .hangar-card__body {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .hangar-card__specs {
+    border-top: 0;
+  }
+
+  /* three sliders side by side, the thrust readout as a fourth column */
+  .hangar-demo__body {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .hangar-thrust {
+    padding-top: 0;
+    border-top: 0;
+  }
+}
+
+@media (max-height: 500px) and (max-width: 640px) {
+  .hangar-demo__body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -18,8 +18,8 @@ export function createNacelleMaterial(paint: Texture): MeshStandardMaterial {
   return new MeshStandardMaterial({
     map: paint,
     vertexColors: true,
-    roughness: 0.6,
-    metalness: 0.35,
+    roughness: 0.62,
+    metalness: 0.2,
   });
 }
 
@@ -30,8 +30,8 @@ export function createNacelleMaterial(paint: Texture): MeshStandardMaterial {
 export function createBladeMaterial(): MeshStandardMaterial {
   return new MeshStandardMaterial({
     color: '#56616b',
-    roughness: 0.36,
-    metalness: 0.55,
+    roughness: 0.4,
+    metalness: 0.3,
     transparent: true,
   });
 }
@@ -106,6 +106,8 @@ export function createGlowMaterial(): ShaderMaterial {
     blending: AdditiveBlending,
     depthWrite: false,
     side: DoubleSide,
+    // additive: no need for the two-pass back / front draw of transparent double-sided meshes
+    forceSinglePass: true,
     toneMapped: false,
   });
 }
@@ -155,5 +157,7 @@ export function createBlurDiscMaterial(streaks: Texture): ShaderMaterial {
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
+    // a flat disc never overlaps itself: one pass, shaded per side through gl_FrontFacing
+    forceSinglePass: true,
   });
 }

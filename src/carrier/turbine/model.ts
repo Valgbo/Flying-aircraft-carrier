@@ -206,9 +206,9 @@ export function driveLevel(throttle: number, lit: number): number {
   return t + IDLE_RPM * (1 - t) * clamp01(lit);
 }
 
-/** Emissive multiplier of the combustion ring (≈0.5 at idle, ≈3.4 at hover, 6 at full power). */
+/** Emissive multiplier of the combustion ring (≈0.3 at idle, ≈2.9 at hover, 6 at full power). */
 export function glowIntensity(drive: number): number {
-  return 6 * Math.pow(clamp01(drive), 1.3);
+  return 6 * Math.pow(clamp01(drive), 1.6);
 }
 
 /** How far the glow colour has moved from PALETTE.glowCool toward white, 0..1. */
