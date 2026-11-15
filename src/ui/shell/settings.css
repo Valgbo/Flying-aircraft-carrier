@@ -1,0 +1,498 @@
+/*
+ * Settings dialog. Prefix: settings-. A centred modal on desktop, a full-screen sheet on
+ * phones. Sits above the pause menu and below the loading screen.
+ */
+
+.settings-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(20px + var(--fac-safe-top)) calc(20px + var(--fac-safe-right))
+    calc(20px + var(--fac-safe-bottom)) calc(20px + var(--fac-safe-left));
+  background: rgba(3, 8, 14, 0.58);
+  pointer-events: auto;
+  animation: settings-fade-in 0.2s ease-out both;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  width: min(700px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  background: var(--fac-panel-strong);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  animation: settings-in 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.settings:focus {
+  outline: none;
+}
+
+/* ---------- Header ----------------------------------------------------------------------- */
+
+.settings-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 20px;
+  border-bottom: 1px solid var(--fac-border);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.settings-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.settings-nav__link {
+  appearance: none;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--fac-text-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.settings-nav__link:hover {
+  border-color: var(--fac-border-strong);
+  color: var(--fac-text);
+}
+
+.settings-close {
+  appearance: none;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--fac-radius-sm);
+  background: none;
+  color: var(--fac-text);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.settings-close:hover {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.18);
+}
+
+/* ---------- Body ------------------------------------------------------------------------- */
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 20px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.settings-section {
+  padding-top: 16px;
+}
+
+.settings-section__title {
+  margin: 0 0 8px;
+  color: var(--fac-accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.settings-subtitle {
+  margin: 14px 0 2px;
+  color: var(--fac-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ---------- Rows ------------------------------------------------------------------------- */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 46px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(120, 190, 235, 0.12);
+}
+
+.settings-row__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.settings-row__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-row__hint {
+  color: var(--fac-text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.settings-row--slider {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 2fr) 54px;
+}
+
+.settings-row__value {
+  color: var(--fac-accent-strong);
+  font-size: 13px;
+  text-align: right;
+}
+
+.settings-select {
+  appearance: none;
+  flex: none;
+  min-width: 96px;
+  min-height: 34px;
+  padding: 4px 30px 4px 12px;
+  border: 1px solid var(--fac-border-strong);
+  border-radius: var(--fac-radius-sm);
+  /* a chevron drawn with two gradients: no image, follows the text colour token */
+  background:
+    linear-gradient(45deg, transparent 50%, var(--fac-text-dim) 50%) right 15px center / 5px 5px
+      no-repeat,
+    linear-gradient(-45deg, transparent 50%, var(--fac-text-dim) 50%) right 10px center / 5px 5px
+      no-repeat,
+    rgba(57, 198, 255, 0.08);
+  color: var(--fac-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-select option {
+  background: var(--fac-panel-solid);
+  color: var(--fac-text);
+}
+
+/* ---------- Quality preset --------------------------------------------------------------- */
+
+.settings-quality {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.settings-quality__option {
+  appearance: none;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  background: transparent;
+  color: var(--fac-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.settings-quality__option:hover {
+  border-color: var(--fac-border-strong);
+  background: rgba(57, 198, 255, 0.07);
+}
+
+.settings-quality__option[aria-checked='true'] {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.16);
+}
+
+.settings-quality__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+/* the radio dot */
+.settings-quality__name::before {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--fac-text-dim);
+  border-radius: 50%;
+}
+
+.settings-quality__option[aria-checked='true'] .settings-quality__name::before {
+  border-color: var(--fac-accent);
+  background: radial-gradient(circle, var(--fac-accent) 0 42%, transparent 46%);
+}
+
+.settings-quality__desc {
+  color: var(--fac-text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* ---------- Key bindings ----------------------------------------------------------------- */
+
+.settings-keys__hint {
+  margin: 0 0 4px;
+  color: var(--fac-text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-keys__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-keys__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  border-bottom: 1px solid rgba(120, 190, 235, 0.12);
+}
+
+.settings-keys__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.settings-keys__conflict {
+  display: inline-flex;
+  color: var(--fac-warn);
+}
+
+.settings-key {
+  appearance: none;
+  flex: none;
+  min-width: 72px;
+  min-height: 30px;
+  padding: 3px 10px;
+  border: 1px solid var(--fac-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgba(57, 198, 255, 0.08);
+  color: var(--fac-text);
+  font-family: var(--fac-mono);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.settings-key:hover {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.2);
+}
+
+.settings-key[data-capturing] {
+  border-color: var(--fac-warn);
+  background: rgba(255, 179, 71, 0.14);
+  color: var(--fac-warn);
+  animation: settings-capture 1.2s ease-in-out infinite;
+}
+
+.settings-keys__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.settings-keys__notice {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--fac-text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* ---------- Footer ----------------------------------------------------------------------- */
+
+.settings-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--fac-border);
+}
+
+.settings-btn {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.settings-btn--danger {
+  border-color: var(--fac-alert);
+  background: rgba(255, 93, 93, 0.16);
+}
+
+.settings-btn--danger:hover {
+  border-color: var(--fac-alert);
+  background: rgba(255, 93, 93, 0.3);
+}
+
+.settings-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 10px;
+}
+
+.settings-confirm__text {
+  font-size: 13px;
+}
+
+/* ---------- Motion ----------------------------------------------------------------------- */
+
+@keyframes settings-fade-in {
+  from {
+    background: rgba(3, 8, 14, 0);
+  }
+}
+
+@keyframes settings-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes settings-capture {
+  50% {
+    background: rgba(255, 179, 71, 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-layer,
+  .settings,
+  .settings-key[data-capturing] {
+    animation: none;
+  }
+}
+
+/* ---------- Phones: a full-screen sheet -------------------------------------------------- */
+
+@media (max-width: 720px), (max-height: 500px) {
+  .settings-layer {
+    padding: 0;
+  }
+
+  .settings {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .settings-head {
+    padding: calc(6px + var(--fac-safe-top)) calc(8px + var(--fac-safe-right)) 6px
+      calc(16px + var(--fac-safe-left));
+  }
+
+  .settings-body {
+    padding: 0 calc(16px + var(--fac-safe-right)) calc(16px + var(--fac-safe-bottom))
+      calc(16px + var(--fac-safe-left));
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-nav__link {
+    padding: 3px 7px;
+  }
+
+  .settings-quality {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-keys__list {
+    grid-template-columns: 1fr;
+  }
+
+  /* label and value on one line, the slider below across the full width */
+  .settings-row--slider {
+    grid-template-columns: 1fr auto;
+    row-gap: 0;
+  }
+
+  .settings-row--slider .shell-slider {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 380px) {
+  .settings-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .settings-nav {
+    margin-left: 0;
+  }
+
+  .settings-close {
+    margin-left: auto;
+  }
+}

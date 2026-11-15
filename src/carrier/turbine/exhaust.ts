@@ -340,8 +340,8 @@ const SPRAY_VERTEX = /* glsl */ `
     float ang = aSeed.z * 6.2832;
     vec2 dir = vec2(sin(ang), cos(ang));
     float ring = uRadius * (0.78 + 0.36 * aSeed.w);
-    float outward = (6.0 + 20.0 * uStrength) * (0.4 + aSeed.w);
-    float upward = (4.0 + 15.0 * uStrength) * (0.2 + jitter);
+    float outward = (4.0 + 13.0 * uStrength) * (0.4 + aSeed.w);
+    float upward = (5.0 + 16.0 * uStrength) * (0.2 + jitter);
     float radius = ring + outward * t * (1.0 - 0.35 * age);
     // ballistic arc that lands exactly at the end of the particle's life
     float height = upward * t * (1.0 - age);
@@ -354,7 +354,7 @@ const SPRAY_VERTEX = /* glsl */ `
     vCorner = position.xy;
 
     vColour = uTint;
-    float cover = 0.2 * smoothstep(0.0, 0.1, age) * (1.0 - age) * smoothstep(0.0, 0.25, uStrength);
+    float cover = 0.3 * smoothstep(0.0, 0.1, age) * (1.0 - age) * smoothstep(0.0, 0.25, uStrength);
     vBlend = vec2(cover, 1.0);
   }
 `;

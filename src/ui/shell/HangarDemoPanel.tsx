@@ -12,6 +12,8 @@ import { useGameStore } from '../../state/useGameStore';
 import { clamp01 } from '../../utils/math';
 import { PresetChips, Slider, type Preset } from './controls';
 import {
+  TIME_SLIDER_MAX,
+  TIME_SLIDER_STEP,
   formatMeganewtons,
   formatPercent,
   formatRatio,
@@ -32,10 +34,6 @@ const TILT_PRESETS: readonly Preset[] = [
   { label: 'Cruise', value: 25 },
   { label: 'Max', value: TURBINE.tiltMaxDeg },
 ];
-
-/** Latest time the slider offers: a quarter of an hour before the clock wraps to 00:00. */
-export const TIME_SLIDER_MAX = 23.75;
-export const TIME_SLIDER_STEP = 0.25;
 
 const VERDICTS: Record<LiftState, string> = {
   sink: 'not enough to stay up',

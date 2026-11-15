@@ -311,7 +311,7 @@ export function buildGlowGeometry(d: TurbineDetail): BufferGeometry {
   const centre = (statorOuter + HUB_R + 0.1) / 2;
   const h = (STATOR.top - STATOR.bottom) / 2;
   const x = STATOR.thickness / 2 + 0.04;
-  const lit = weight(0.34);
+  const lit = weight(0.2);
   const unlit = weight(0);
   for (let k = 0; k < d.stators; k++) {
     const m = statorMatrix(

@@ -1,0 +1,141 @@
+/*
+ * Loading screen and FPS counter. Prefix: loading-. The cover sits above everything else in
+ * the overlay; the FPS readout above even that.
+ */
+
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(20px + var(--fac-safe-top)) calc(20px + var(--fac-safe-right))
+    calc(20px + var(--fac-safe-bottom)) calc(20px + var(--fac-safe-left));
+  pointer-events: auto;
+  opacity: 1;
+  transition:
+    opacity 0.5s ease,
+    background-color 0.4s ease;
+}
+
+/* the opaque first-load cover: nothing of the half-built scene shows through */
+.loading--boot {
+  background-color: var(--fac-bg);
+  background-image: radial-gradient(
+    ellipse at 50% 42%,
+    rgba(57, 198, 255, 0.1),
+    rgba(57, 198, 255, 0) 60%
+  );
+}
+
+/* the lighter veil while the flight systems load: the scene stays visible underneath */
+.loading--veil {
+  background-color: rgba(6, 13, 22, 0.62);
+  animation: loading-veil-in 0.25s ease-out both;
+}
+
+.loading--out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.loading-title {
+  margin: 6px 0 0;
+  font-size: clamp(16px, 2.4vw, 22px);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.loading-title span {
+  color: var(--fac-accent-strong);
+}
+
+.loading-status {
+  margin: 0;
+}
+
+/* indeterminate progress: a short run sliding along the rail */
+.loading-bar {
+  position: relative;
+  width: min(220px, 60vw);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(143, 166, 184, 0.25);
+}
+
+.loading-bar__run {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 38%;
+  border-radius: 999px;
+  background: var(--fac-accent);
+  animation: loading-run 1.25s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+@keyframes loading-run {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+
+@keyframes loading-veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* endless motion stops; a still, centred run still reads as "busy" next to the status line */
+  .loading-bar__run {
+    animation: none;
+    transform: translateX(82%);
+  }
+
+  .loading--veil {
+    animation: none;
+  }
+}
+
+@media (max-height: 500px) {
+  .loading-box {
+    gap: 10px;
+  }
+
+  .loading--boot .shell-mark {
+    width: auto;
+    height: 96px;
+  }
+}
+
+/* ---------- FPS counter ------------------------------------------------------------------ */
+
+.loading-fps {
+  position: absolute;
+  top: calc(1px + var(--fac-safe-top));
+  right: calc(60px + var(--fac-safe-right));
+  z-index: 60;
+  padding: 0 6px;
+  border-radius: 0 0 5px 5px;
+  background: rgba(6, 13, 22, 0.6);
+  color: var(--fac-good);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}

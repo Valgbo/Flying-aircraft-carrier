@@ -10,14 +10,17 @@ const NBSP = ' ';
 /** Typographic minus — the ASCII hyphen reads as a dash next to a degree sign. */
 const MINUS = '−';
 
+/** Range of the time-of-day sliders: the last stop is a quarter of an hour before 00:00 comes round again. */
+export const TIME_SLIDER_MAX = 23.75;
+export const TIME_SLIDER_STEP = 0.25;
+
 /**
  * Time of day in hours → "HH:MM" on a 24-hour clock. Any real number is accepted and wraps
  * at midnight (24 → "00:00", -0.5 → "23:30"); rounding is to the nearest minute.
  */
 export function formatTimeOfDay(hours: number): string {
   if (!Number.isFinite(hours)) return '--:--';
-  const minutes =
-    ((Math.round(hours * 60) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+  const minutes = ((Math.round(hours * 60) % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
   const mm = String(minutes % 60).padStart(2, '0');
   return `${hh}:${mm}`;

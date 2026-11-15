@@ -101,7 +101,8 @@ export default function MainMenu() {
     let next: number;
     if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = buttons.length - 1;
-    else if (isArrowKey(e.key)) next = gridStep(current, e.key, buttons.length, columnCount(buttons));
+    else if (isArrowKey(e.key))
+      next = gridStep(current, e.key, buttons.length, columnCount(buttons));
     else return;
     e.preventDefault();
     buttons[next]?.focus();

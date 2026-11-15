@@ -54,7 +54,7 @@ export default function TurbineExhaust({ index }: { index: TurbineIndex }) {
         u.uLength.value = length;
         u.uDrift.value.set(-fx.relVel.x * lean, 0, -fx.relVel.z * lean);
         u.uPower.value = fx.drive;
-        u.uIntensity.value = (0.35 + 1.9 * fx.drive) * smoothstep(0, 0.08, fx.drive);
+        u.uIntensity.value = (0.25 + 1.35 * fx.drive) * smoothstep(0, 0.08, fx.drive);
         u.uTime.value = sim.time + index * 3.7;
         assets.plumeMaterial.uniformsNeedUpdate = true;
       },

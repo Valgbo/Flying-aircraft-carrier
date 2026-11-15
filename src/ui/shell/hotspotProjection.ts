@@ -108,9 +108,8 @@ export function projectHotspots(
   const { left, top, width, height } = viewport;
   hotspotFrame.viewportWidth = width;
   hotspotFrame.viewportHeight = height;
-  hotspotFrame.shipDepth = -_view
-    .copy(sim.carrier.position)
-    .applyMatrix4(camera.matrixWorldInverse).z;
+  hotspotFrame.shipDepth = -_view.copy(sim.carrier.position).applyMatrix4(camera.matrixWorldInverse)
+    .z;
 
   for (let i = 0; i < HOTSPOTS.length; i++) {
     const p = hotspotProjections[i];

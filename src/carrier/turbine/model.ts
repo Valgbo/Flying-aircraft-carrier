@@ -213,7 +213,7 @@ export function glowIntensity(drive: number): number {
 
 /** How far the glow colour has moved from PALETTE.glowCool toward white, 0..1. */
 export function glowWhiteness(drive: number): number {
-  return 0.85 * smoothstep(0.3, 1, drive);
+  return 0.85 * smoothstep(0.5, 1, drive);
 }
 
 /** Emissive multiplier of the hot core around the tail cone: only lights up near full power. */
