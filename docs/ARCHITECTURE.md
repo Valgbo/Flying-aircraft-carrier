@@ -180,9 +180,27 @@ flight ops). Audio, camera shake and UI flashes subscribe to these.
 
 In manual mode nothing stabilises the ship. The turbine panel edits `manualThrottle[i]`,
 `manualTilt[i]` and `turbines[i].enabled` directly. Switching modes must be bumpless (manual
-values start from the current commands; `targetAltitude` starts from the current altitude).
+values start from the current turbine state, i.e. the actual spooled throttle and tilt;
+`targetAltitude` starts from the current altitude).
 Free flight starts afloat with idle engines: hold `collective` up to raise the target altitude
 and lift off.
+
+What the physics driver mirrors every step, so the UI always has sensible values to show:
+
+- Assist ON: the actual turbine throttle and tilt are copied into `sim.controls.manualThrottle`
+  / `manualTilt`. Edits to those arrays therefore only take effect in manual mode.
+- Assist OFF: the ship is copied into `sim.controls.targetAltitude` and `tiltLever` (the mean
+  of `manualTilt`).
+- `sim.turbines[i].enabled` can be toggled at any time in either mode; the driver emits
+  `engineToggled` and pushes the toast.
+- In assist mode `tiltLever` is the pilot's request; `turbines[i].tiltCmd` is what the flight
+  computer allows (it limits forward tilt to the lift budget and holds the nacelles upright
+  with fewer than four engines). Show both where it matters.
+- `targetAltitude` moves at 24 m/s while `collective` is held, never more than 90 m ahead of
+  the ship, clamped to `FLOATING_ALTITUDE`..3500 m. `sim.dt` is a whole number of 1/60 s
+  physics steps and can be 0 on a frame; visuals must tolerate that.
+- `sim.env.wind` is written by the driver (light in free flight, stronger in flight ops).
+  There is no position hold: the ship drifts downwind in a hover.
 
 ### Debug flags and test hook
 
@@ -213,6 +231,26 @@ and the console.
 | `PostFX` | `EffectComposer` chain gated by quality: bloom, ACES tone mapping, vignette, screen-space heat distortion at `getTurbineExhaust(i)`. |
 | `FlightOps({ active })` | Air wing in world space; always mounted (keyed by `resetNonce`). `active = false` (menu, hangar, free flight): the jets sit on their `PARKING_SPOTS`, riding with the ship. `active = true` (flight ops): catapult launch on the `launchJet` action, scripted pattern + approach, recovery scoring into `store.ops`. Writes `sim.jets` at `FRAME_PRIORITY.systems`; emits the `jet*` game events. |
 | `HangarHotspots` | In-canvas projector for the hangar pins: turns the `HOTSPOTS` anchors into screen positions each frame for the DOM pins rendered by `HangarOverlay`. |
+
+Shared facts from the finished modules:
+
+- **Elevator:** `elevatorHeightAt(sim.time)` from `src/carrier/hull/elevator.ts` gives the
+  carrier-local y of the aircraft-elevator platform (`ELEVATOR_CYCLE` holds the timings). It is
+  visual only and carries nothing.
+- **Pylons:** each outrigger ends in a bearing cap of radius 3.3 m at
+  |x| = |mountX| − `TURBINE.ductOuterRadius` (= 44), centred on the tilt axis. Nothing of the
+  ship is further outboard; a duct or trunnion meets the cap there and stays outboard of it.
+- **Deck helpers:** `stripPoint(d, offset)` and friends in `src/carrier/hull/deckLayout.ts` /
+  `hullShape.ts` give landing-strip points; arrestor cables sit at `DECK.y + 0.08`.
+- **Haze colour:** `sim.env.horizonColor` is the haze colour right now (clear-air horizon,
+  blended toward cloud grey as `sim.env.cloudCover` rises). Anything that fades with distance
+  fades to it. `fogDensityFor(cloudCover)` in `src/scene/sky/atmosphere.ts` gives the matching
+  FogExp2 density (7e-5 in clear air).
+- **Dominant light:** `sim.env.sunDirection` is the sun by day and the moon at night; multiply
+  glints by `sim.env.sunColor`. `sim.env.daylight` is 0 at night and 1 by day.
+- **Render order:** sky dome −1000 (no depth), clouds −10 (transparent, no depth write), ocean
+  opaque and depth-writing. Other transparent effects use renderOrder ≥ 0.
+- **Shadows:** only objects within about 213 m of the ship origin cast or receive them.
 | `AdaptiveQuality` | Lowers `effectiveQuality` one step when the frame rate stays under 45 fps for ≈3 s (if `settings.adaptiveQuality`). |
 
 ### Rendering rules shared by all 3D code
@@ -222,6 +260,10 @@ and the console.
   Therefore every custom `ShaderMaterial` must end its fragment shader with
   `#include <tonemapping_fragment>` and `#include <colorspace_fragment>` so it is correct in
   both paths. Built-in materials already do this.
+- **Fog.** three.js applies scene fog after tone mapping when the renderer tone-maps, so
+  `World` sets `scene.fog.color` to the tone-mapped horizon colour in that path and to the
+  linear one under the composer. Custom shaders fade to `sim.env.horizonColor` before their
+  own tone mapping and do not read `scene.fog.color` for colour.
 - **Glow.** Things that should bloom use an emissive / colour above 1.0 with
   `toneMapped={false}`. Bloom thresholds at ≈1, so ordinary lit surfaces never bloom.
 - **Shadows.** Ship meshes `castShadow` + `receiveShadow`; nothing else needs to. Shadows are

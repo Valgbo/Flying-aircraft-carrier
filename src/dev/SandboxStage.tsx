@@ -21,7 +21,7 @@
  */
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { IDLE_ALTITUDE } from '../config/physicsConfig';
 import IdleDriver, { idleConfig } from '../sim/IdleDriver';
 import { useGameStore } from '../state/useGameStore';
@@ -64,16 +64,16 @@ export default function SandboxStage({
   shadows = true,
 }: SandboxStageProps) {
   const quality = useQuality();
-  // set synchronously so the very first frame already uses it
-  idleConfig.altitude = altitude;
-  idleConfig.forwardSpeed = forwardSpeed;
-  useEffect(
-    () => () => {
+  // Applied in a layout effect (before the first frame) rather than during render: under
+  // StrictMode the cleanup runs once right after mount and would otherwise lose the values.
+  useLayoutEffect(() => {
+    idleConfig.altitude = altitude;
+    idleConfig.forwardSpeed = forwardSpeed;
+    return () => {
       idleConfig.altitude = IDLE_ALTITUDE;
       idleConfig.forwardSpeed = 0;
-    },
-    [],
-  );
+    };
+  }, [altitude, forwardSpeed]);
   useEffect(() => {
     if (throttle === undefined && tiltDeg === undefined) return;
     const s = useGameStore.getState();
@@ -101,6 +101,8 @@ export default function SandboxStage({
         {lights && (
           <>
             <hemisphereLight args={['#cfe6ff', '#2a3d4f', 0.9]} />
+            {/* fill, so shadow sides and the underside stay readable */}
+            <ambientLight intensity={0.35} color="#dfe9f5" />
             <directionalLight
               position={[400, altitude + 500, 300]}
               intensity={2.2}

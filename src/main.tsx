@@ -1,6 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
 import { debugFlags } from './config/debugFlags';
 import { installDebugHook } from './dev/debugHook';
 import { applyDebugFlags } from './state/applyDebugFlags';
@@ -23,9 +22,12 @@ if (import.meta.env.DEV && debugFlags.sandbox) {
     );
   });
 } else {
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
+  // Loaded lazily so a sandbox page never depends on the whole app graph compiling.
+  void import('./App').then(({ default: App }) => {
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  });
 }
