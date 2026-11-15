@@ -11,7 +11,7 @@ import { HOVER_THROTTLE, IDLE_ALTITUDE, PHYS } from '../config/physicsConfig';
 import { combineInput } from '../controls/input';
 import { sim, updateDerived } from '../state/sim';
 import { publishTelemetry } from '../state/telemetry';
-import { useGameStore } from '../state/useGameStore';
+import { isFlyingScreen, useGameStore } from '../state/useGameStore';
 import { DEG2RAD, clamp, damp, moveToward } from '../utils/math';
 
 const _euler = new Euler(0, 0, 0, 'YXZ');
@@ -70,7 +70,20 @@ export function stepIdle(dt: number): void {
   publishTelemetry();
 }
 
-export default function IdleDriver() {
-  useFrame((_, delta) => stepIdle(Math.min(delta, 0.1)), FRAME_PRIORITY.driver);
+export interface IdleDriverProps {
+  /**
+   * Keep driving even while the store is on a flying screen. Sandboxes use this to show flight
+   * UI over the idle hover; the app never does.
+   */
+  always?: boolean;
+}
+
+export default function IdleDriver({ always = false }: IdleDriverProps) {
+  useFrame((_, delta) => {
+    // A frame can still reach this driver after the store has switched to a flying screen and
+    // reset `sim` for it, but before the scene has re-rendered. It must not touch that state.
+    if (!always && isFlyingScreen(useGameStore.getState().screen)) return;
+    stepIdle(Math.min(delta, 0.1));
+  }, FRAME_PRIORITY.driver);
   return null;
 }

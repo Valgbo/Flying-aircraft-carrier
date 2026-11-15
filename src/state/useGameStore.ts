@@ -10,6 +10,7 @@ import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middl
 import type { HotspotId } from '../config/layout';
 import { DEFAULT_KEY_BINDINGS, type BindingId, type KeyBindings } from './bindings';
 import { resetSimForScreen } from './sim';
+import { buildTelemetry } from './telemetrySnapshot';
 import type {
   CameraMode,
   GameMessage,
@@ -231,6 +232,8 @@ export const useGameStore = create<GameState>()(
             ops: initialOps(),
             hangar: initialHangar(),
             messages: [],
+            // the instruments show the new starting state at once, not the last scene's values
+            telemetry: stayIdle ? s.telemetry : buildTelemetry(),
           }));
         },
 
@@ -261,6 +264,7 @@ export const useGameStore = create<GameState>()(
             resetNonce: s.resetNonce + 1,
             ops: initialOps(),
             messages: [],
+            telemetry: buildTelemetry(),
           }));
         },
 

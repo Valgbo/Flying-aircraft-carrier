@@ -96,7 +96,7 @@ export default function SandboxStage({
           position: [camera[0], altitude + camera[1], camera[2]],
         }}
       >
-        <IdleDriver />
+        <IdleDriver always />
         {background && <color attach="background" args={[background]} />}
         {lights && (
           <>

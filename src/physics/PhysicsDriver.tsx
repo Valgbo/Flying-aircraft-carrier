@@ -33,7 +33,7 @@ import { emitEvent } from '../state/events';
 import { addCameraShake, sim, updateDerived } from '../state/sim';
 import { publishTelemetry } from '../state/telemetry';
 import type { Quad } from '../state/types';
-import { useGameStore } from '../state/useGameStore';
+import { isFlyingScreen, useGameStore } from '../state/useGameStore';
 import { clamp } from '../utils/math';
 import {
   createWaterContactState,
@@ -198,14 +198,25 @@ function watchWater(runtime: FlightRuntime): void {
 const _position = new Vector3();
 const _quaternion = new Quaternion();
 
+/**
+ * True once the store has started another flight or left the flying screens. The store resets
+ * `sim` at that moment, but a frame can still reach the old driver before the scene re-renders;
+ * it must not step or write `sim`, or the next flight would start from this one's last pose.
+ */
+function isSuperseded(flightId: number): boolean {
+  const { resetNonce, screen } = useGameStore.getState();
+  return resetNonce !== flightId || !isFlyingScreen(screen);
+}
+
 function CarrierBody() {
   const bodyRef = useRef<RapierRigidBody>(null);
   const probeRef = useRef<Group>(null);
   const [runtime] = useState(createRuntime);
+  const [flightId] = useState(() => useGameStore.getState().resetNonce);
 
   useBeforePhysicsStep(() => {
     const body = bodyRef.current;
-    if (!body) return;
+    if (!body || isSuperseded(flightId)) return;
     if (runtime.configuredBody !== body) {
       body.setAdditionalMassProperties(
         PHYS.mass,
@@ -236,6 +247,7 @@ function CarrierBody() {
   });
 
   useFrame(() => {
+    if (isSuperseded(flightId)) return;
     // other systems read `input` every frame, also on frames without a physics step
     combineInput();
     const body = bodyRef.current;

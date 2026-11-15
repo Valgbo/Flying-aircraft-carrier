@@ -300,7 +300,7 @@ export default function ViewSandbox() {
         gl={{ antialias: quality.antialias }}
         camera={{ fov: 50, near: 1, far: 60000, position: [300, 520, 420] }}
       >
-        <IdleDriver />
+        <IdleDriver always />
         <Scenario />
         <SkyDome />
         <hemisphereLight args={['#cfe6ff', '#2a3d4f', 0.9]} />
