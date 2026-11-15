@@ -58,6 +58,24 @@ export async function waitForFlight(page: Page): Promise<void> {
     .toBe(true);
 }
 
+/**
+ * Wait until the simulation has advanced past now, so whatever was just switched (flight
+ * assist, an engine) has been seen by the flight model, which reads its switches once per
+ * physics step.
+ */
+export async function waitForSimStep(page: Page, seconds = 0.1): Promise<void> {
+  const t0 = await evalIn<number>(page, 'window.__FAC__.sim.time');
+  await expect
+    .poll(() => evalIn<number>(page, 'window.__FAC__.sim.time'), SLOW)
+    .toBeGreaterThan(t0 + seconds);
+}
+
+/** Degrees turned to starboard since `heading0` (negative = to port), in -180..180. */
+export async function turnedToStarboard(page: Page, heading0: number): Promise<number> {
+  const h = await evalIn<number>(page, 'window.__FAC__.sim.carrier.headingDeg');
+  return ((h - heading0 + 540) % 360) - 180;
+}
+
 export async function readNumber(page: Page, testId: string): Promise<number> {
   const text = (await page.getByTestId(testId).textContent()) ?? '';
   return Number(text.replace(/[^0-9.+-]/g, ''));

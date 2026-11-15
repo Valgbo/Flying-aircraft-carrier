@@ -6,7 +6,9 @@ import {
   readNumber,
   setRange,
   trackPageErrors,
+  turnedToStarboard,
   waitForFlight,
+  waitForSimStep,
 } from './helpers';
 
 test.describe('smoke', () => {
@@ -53,15 +55,9 @@ test.describe('smoke', () => {
     await waitForFlight(page);
     const heading0 = await evalIn<number>(page, 'window.__FAC__.sim.carrier.headingDeg');
     await page.keyboard.down('KeyD');
-    await expect
-      .poll(async () => {
-        const h = await evalIn<number>(page, 'window.__FAC__.sim.carrier.headingDeg');
-        return (h - heading0 + 360) % 360; // degrees turned to starboard
-      }, SLOW)
-      .toBeGreaterThan(3);
+    // signed, so the small wobble the wind gives the heading cannot pass for a turn
+    await expect.poll(() => turnedToStarboard(page, heading0), SLOW).toBeGreaterThan(3);
     await page.keyboard.up('KeyD');
-    const turned = (await evalIn<number>(page, 'window.__FAC__.sim.carrier.headingDeg')) - heading0;
-    expect((turned + 360) % 360).toBeLessThan(180); // it turned right, not left
 
     const camera0 = await page.getByTestId('hud-camera').textContent();
     await page.keyboard.press('KeyC');
@@ -74,6 +70,7 @@ test.describe('smoke', () => {
 
     await page.keyboard.press('KeyF'); // flight assist off → manual control
     await expect(page.getByTestId('hud-assist')).toHaveText('OFF');
+    await waitForSimStep(page); // the flight model has handed the levers over
     await page.keyboard.press('KeyT');
     await expect(page.getByTestId('turbine-panel')).toBeVisible();
 
