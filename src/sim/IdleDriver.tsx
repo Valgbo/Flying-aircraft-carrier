@@ -16,6 +16,17 @@ import { DEG2RAD, clamp, damp, moveToward } from '../utils/math';
 
 const _euler = new Euler(0, 0, 0, 'YXZ');
 
+/**
+ * Tweakable idle-scene parameters (used by sandboxes to put the ship where a module needs it,
+ * e.g. low over the water to look at downwash). The app itself leaves the defaults alone.
+ */
+export const idleConfig = {
+  /** Hover altitude of the ship origin, m ASL. */
+  altitude: IDLE_ALTITUDE as number,
+  /** Constant speed along the ship's bow direction (-Z), m/s. */
+  forwardSpeed: 0,
+};
+
 /** Advance the idle hover by `dt` seconds. Exported so sandboxes and tests can reuse it. */
 export function stepIdle(dt: number): void {
   const { hangar, screen, paused } = useGameStore.getState();
@@ -34,10 +45,10 @@ export function stepIdle(dt: number): void {
 
   const t = sim.time;
   const c = sim.carrier;
-  c.position.set(0, IDLE_ALTITUDE + Math.sin(t * 0.35) * 1.4, 0);
+  c.position.set(0, idleConfig.altitude + Math.sin(t * 0.35) * 1.4, -idleConfig.forwardSpeed * t);
   _euler.set(Math.sin(t * 0.27) * 0.007, 0, Math.sin(t * 0.21 + 1.3) * 0.01);
   c.quaternion.setFromEuler(_euler);
-  c.velocity.set(0, Math.cos(t * 0.35) * 0.35 * 1.4, 0);
+  c.velocity.set(0, Math.cos(t * 0.35) * 0.35 * 1.4, -idleConfig.forwardSpeed);
   c.angularVelocity.set(0, 0, 0);
 
   const inHangar = screen === 'hangar';
@@ -53,7 +64,7 @@ export function stepIdle(dt: number): void {
     turbine.tilt = dt >= 1 ? tiltCmd : moveToward(turbine.tilt, tiltCmd, PHYS.tiltRate * dt);
     turbine.thrust = turbine.throttle * PHYS.maxThrust;
   }
-  sim.controls.targetAltitude = IDLE_ALTITUDE;
+  sim.controls.targetAltitude = idleConfig.altitude;
 
   updateDerived(sim.dt);
   publishTelemetry();

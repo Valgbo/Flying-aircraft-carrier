@@ -11,6 +11,9 @@
  *     );
  *   }
  *
+ * Props `altitude` / `forwardSpeed` place and move the ship (e.g. altitude={30} to hover just
+ * above the sea). Camera and target are relative to the ship's hover position.
+ *
  * Useful URL params: ?fixedTime=12 (deterministic frame), plus any of your own via
  * `debugFlags.params.get('x')`. Hangar demo sliders can be driven with
  * `useGameStore.getState().setHangar({ demoThrottle: 1, demoTiltDeg: 40 })` after
@@ -20,7 +23,7 @@ import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { useEffect, type ReactNode } from 'react';
 import { IDLE_ALTITUDE } from '../config/physicsConfig';
-import IdleDriver from '../sim/IdleDriver';
+import IdleDriver, { idleConfig } from '../sim/IdleDriver';
 import { useGameStore } from '../state/useGameStore';
 import { useQuality } from '../state/useQuality';
 import '../styles/global.css';
@@ -40,6 +43,10 @@ export interface SandboxStageProps {
   throttle?: number;
   /** Demo tilt in degrees for all turbines. */
   tiltDeg?: number;
+  /** Hover altitude of the ship origin in m ASL (default IDLE_ALTITUDE = 420). Use e.g. 30 to sit just above the sea. */
+  altitude?: number;
+  /** Constant forward speed of the ship in m/s (default 0). */
+  forwardSpeed?: number;
   shadows?: boolean;
 }
 
@@ -52,9 +59,21 @@ export default function SandboxStage({
   lights = true,
   throttle,
   tiltDeg,
+  altitude = IDLE_ALTITUDE,
+  forwardSpeed = 0,
   shadows = true,
 }: SandboxStageProps) {
   const quality = useQuality();
+  // set synchronously so the very first frame already uses it
+  idleConfig.altitude = altitude;
+  idleConfig.forwardSpeed = forwardSpeed;
+  useEffect(
+    () => () => {
+      idleConfig.altitude = IDLE_ALTITUDE;
+      idleConfig.forwardSpeed = 0;
+    },
+    [],
+  );
   useEffect(() => {
     if (throttle === undefined && tiltDeg === undefined) return;
     const s = useGameStore.getState();
@@ -74,7 +93,7 @@ export default function SandboxStage({
           fov,
           near: 1,
           far: 60000,
-          position: [camera[0], IDLE_ALTITUDE + camera[1], camera[2]],
+          position: [camera[0], altitude + camera[1], camera[2]],
         }}
       >
         <IdleDriver />
@@ -83,7 +102,7 @@ export default function SandboxStage({
           <>
             <hemisphereLight args={['#cfe6ff', '#2a3d4f', 0.9]} />
             <directionalLight
-              position={[400, IDLE_ALTITUDE + 500, 300]}
+              position={[400, altitude + 500, 300]}
               intensity={2.2}
               color="#fff2dd"
               castShadow={shadows && quality.shadows}
@@ -99,7 +118,7 @@ export default function SandboxStage({
         )}
         <OrbitControls
           makeDefault
-          target={[target[0], IDLE_ALTITUDE + target[1], target[2]]}
+          target={[target[0], altitude + target[1], target[2]]}
           maxDistance={6000}
         />
         {children}

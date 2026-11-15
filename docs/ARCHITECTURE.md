@@ -230,6 +230,12 @@ frameworks, no web fonts, no images.
 Layout must work from 360×640 (phone portrait) through 844×390 (phone landscape) to desktop,
 respect the safe-area insets, and never put a control under another one.
 
+**Reserved touch zones.** When the on-screen touch controls are visible (coarse pointer, or
+`settings.touchControls === 'on'`), the bottom-left and bottom-right corners (each
+240 px wide × 240 px high, inside the safe area) belong to the touch controls. Other overlay
+elements stay out of those corners in that case. Use `useTouchControlsVisible()` from
+`src/controls/touchVisibility.ts` to know whether they are shown.
+
 Stable test ids (`data-testid`) — keep them when replacing placeholders:
 
 - Menu: `main-menu`, `menu-free-flight`, `menu-flight-ops`, `menu-hangar`, `menu-settings`
@@ -251,7 +257,8 @@ Stable test ids (`data-testid`) — keep them when replacing placeholders:
 
 `/?sandbox=<name>` (dev server only) renders `src/dev/sandboxes/<name>.tsx` by itself.
 `src/dev/SandboxStage.tsx` gives 3D modules a canvas with the idle driver, lights and an orbit
-camera (`throttle` / `tiltDeg` props drive the turbines). Use a sandbox to look at your module
+camera (`throttle` / `tiltDeg` props drive the turbines; `altitude` / `forwardSpeed` place and
+move the ship). Use a sandbox to look at your module
 in isolation; other modules may be mid-change.
 
 ### Screenshots (headless, software WebGL)
@@ -272,7 +279,7 @@ it looks.
 ### Checks before you call a module done
 
 ```bash
-npx tsc -b                         # whole project typechecks
+npm run typecheck:app              # whole app typechecks (safe to run concurrently; do NOT use `tsc -b` or `npm run build` while others are working)
 npx eslint <your files>            # no errors
 npx prettier --write <your files>
 npx vitest run <your test files>   # if you have tests
