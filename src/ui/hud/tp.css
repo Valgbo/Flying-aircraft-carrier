@@ -1,0 +1,531 @@
+/*
+ * Turbine panel. Class prefix: tp-.
+ * Desktop: a side panel on the right, below the HUD's top bar. Phone landscape: a narrower
+ * side panel. Phone portrait: a bottom sheet. The widths are mirrored by --hud-panel in
+ * hud.css (the HUD keeps its flight cluster clear of the panel).
+ */
+.tp {
+  --tp-state: var(--fac-accent);
+  position: absolute;
+  z-index: 10;
+  top: calc(var(--fac-safe-top) + 60px);
+  right: calc(var(--fac-safe-right) + 12px);
+  bottom: calc(var(--fac-safe-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
+  width: 372px;
+  overflow: hidden;
+  font-family: var(--fac-font);
+  background: var(--fac-panel-strong);
+}
+
+.tp-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 14px;
+  border-bottom: 1px solid var(--fac-border);
+}
+
+.tp-title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tp-mode {
+  padding: 2px 9px;
+  font-family: var(--fac-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  border: 1px solid;
+  border-radius: 999px;
+}
+
+.tp-mode--assist {
+  color: var(--fac-good);
+  border-color: rgba(95, 227, 161, 0.5);
+}
+
+.tp-mode--manual {
+  color: var(--fac-warn);
+  border-color: rgba(255, 179, 71, 0.6);
+}
+
+.tp-close {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--fac-text-dim);
+  background: none;
+  border: 0;
+  border-radius: var(--fac-radius-sm);
+  cursor: pointer;
+}
+
+.tp-close:hover {
+  color: var(--fac-text);
+  background: rgba(57, 198, 255, 0.12);
+}
+
+.tp-body {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px 12px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------- overview: schematic + mode note ---------- */
+
+.tp-overview {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tp-ship {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.tp-ship-bow {
+  fill: var(--fac-text-dim);
+}
+
+.tp-ship-deck {
+  fill: rgba(143, 166, 184, 0.2);
+  stroke: var(--fac-text-dim);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.tp-ship-island {
+  fill: rgba(143, 166, 184, 0.45);
+}
+
+.tp-ship-pylon {
+  stroke: var(--fac-text-dim);
+  stroke-width: 5;
+}
+
+.tp-ship-duct {
+  --tp-duct: var(--fac-accent);
+}
+
+.tp-ship-duct--high {
+  --tp-duct: var(--fac-warn);
+}
+
+.tp-ship-duct--off {
+  --tp-duct: var(--fac-alert);
+}
+
+.tp-ship-ring {
+  fill: var(--fac-panel-solid);
+  stroke: var(--tp-duct);
+  stroke-width: 4;
+}
+
+.tp-ship-duct--off .tp-ship-ring {
+  stroke-dasharray: 9 7;
+}
+
+.tp-ship-duct--viewed .tp-ship-ring {
+  stroke-width: 7;
+}
+
+.tp-ship-fan {
+  fill: var(--tp-duct);
+}
+
+.tp-ship-vector {
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.tp-ship-name {
+  fill: #fff;
+  font-family: var(--fac-mono);
+  font-size: 20px;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(3, 12, 22, 0.75);
+  stroke-width: 4;
+}
+
+.tp-note {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.tp-note p {
+  margin: 0;
+  color: var(--fac-text-dim);
+}
+
+.tp-note strong {
+  color: var(--fac-text);
+}
+
+.tp--manual .tp-note strong {
+  color: var(--fac-warn);
+}
+
+.tp-note .tp-note-lever {
+  font-family: var(--fac-mono);
+  font-size: 11.5px;
+  color: var(--fac-warn);
+}
+
+.tp .fac-btn {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.tp .fac-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- quick actions ---------- */
+
+.tp-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tp-actions .fac-btn {
+  padding: 6px 4px;
+}
+
+.tp-link[aria-pressed='true'] {
+  color: var(--fac-accent-ink);
+  background: var(--fac-accent);
+  border-color: var(--fac-accent);
+}
+
+/* ---------- turbine cards (laid out like the ship: FL FR / RL RR) ---------- */
+
+.tp-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tp-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 10px 8px;
+  background: rgba(57, 198, 255, 0.05);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius);
+}
+
+.tp-card--high {
+  --tp-state: var(--fac-warn);
+  border-color: rgba(255, 179, 71, 0.55);
+}
+
+.tp-card--off {
+  --tp-state: var(--fac-text-dim);
+  border-color: rgba(255, 93, 93, 0.55);
+}
+
+.tp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tp-card-name {
+  font-family: var(--fac-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tp-state);
+}
+
+.tp-card-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.15;
+  color: var(--fac-text-dim);
+}
+
+.tp-engine {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  /* a comfortable touch target around the small switch */
+  margin: -6px -4px -6px 0;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.tp-engine-text {
+  min-width: 22px;
+  font-family: var(--fac-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: right;
+  color: var(--fac-good);
+}
+
+.tp-card--off .tp-engine-text {
+  color: var(--fac-alert);
+}
+
+.tp-switch {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  background: rgba(255, 93, 93, 0.22);
+  border: 1px solid rgba(255, 93, 93, 0.65);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.tp-switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--fac-alert);
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+
+.tp-switch:checked {
+  background: rgba(95, 227, 161, 0.2);
+  border-color: rgba(95, 227, 161, 0.7);
+}
+
+.tp-switch:checked::before {
+  background: var(--fac-good);
+  transform: translateX(16px);
+}
+
+.tp-switch:focus-visible,
+.tp-range:focus-visible {
+  outline: 2px solid var(--fac-accent-strong);
+  outline-offset: 2px;
+}
+
+.tp-field {
+  display: grid;
+  gap: 1px;
+}
+
+.tp-field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.tp-field-value {
+  font-family: var(--fac-mono);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-range {
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--fac-accent);
+  cursor: pointer;
+  /* horizontal drags move the thumb, vertical ones scroll the panel */
+  touch-action: pan-y;
+}
+
+.tp-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.tp-bar {
+  position: relative;
+  display: block;
+  height: 5px;
+  background: rgba(143, 166, 184, 0.24);
+  border-radius: 3px;
+}
+
+.tp-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: var(--tp-state);
+  border-radius: 3px;
+}
+
+.tp-bar-cmd {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  border-radius: 1px;
+}
+
+.tp-bar-zero {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--fac-text-dim);
+}
+
+.tp-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tp-thrust {
+  min-width: 0;
+  font-family: var(--fac-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.tp-thrust .fac-label {
+  font-size: 9.5px;
+}
+
+.tp-thrust-mn {
+  display: block;
+  font-size: 10.5px;
+  color: var(--fac-text-dim);
+}
+
+.tp-view {
+  appearance: none;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fac-text);
+  background: transparent;
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  cursor: pointer;
+}
+
+.tp-view:hover {
+  border-color: var(--fac-accent);
+}
+
+.tp-view[aria-pressed='true'] {
+  color: var(--fac-accent-strong);
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.16);
+}
+
+.tp-view .hud-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.tp-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--fac-text-dim);
+}
+
+.tp-legend-fill {
+  width: 18px;
+  height: 5px;
+  background: var(--fac-accent);
+  border-radius: 3px;
+}
+
+.tp-legend-cmd {
+  width: 2px;
+  height: 11px;
+  margin-left: 10px;
+  background: #fff;
+}
+
+/* ---------- phone landscape: narrower side panel, one card per row ---------- */
+
+@media (max-width: 900px), (max-height: 500px) {
+  .tp {
+    top: calc(var(--fac-safe-top) + 54px);
+    right: calc(var(--fac-safe-right) + 8px);
+    bottom: calc(var(--fac-safe-bottom) + 8px);
+    width: 308px;
+  }
+
+  .tp-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- phone portrait: bottom sheet ---------- */
+
+@media (max-width: 640px) {
+  .tp {
+    top: auto;
+    right: var(--fac-safe-right);
+    bottom: 0;
+    left: var(--fac-safe-left);
+    width: auto;
+    max-height: 58%;
+    padding-bottom: var(--fac-safe-bottom);
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .tp-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

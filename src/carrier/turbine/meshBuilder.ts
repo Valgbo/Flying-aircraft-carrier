@@ -104,7 +104,14 @@ export class MeshBuilder {
         const v1 = o.v ? o.v[j + 1] : (o.uv?.[1] ?? 0.5);
 
         // corner (profile point, angle): A = (p0, a0), B = (p0, a1), C = (p1, a1), D = (p1, a0)
-        const corner = (p: ProfilePoint, pn: { r: number; y: number }, a: number, u: number, v: number, c: Color) => {
+        const corner = (
+          p: ProfilePoint,
+          pn: { r: number; y: number },
+          a: number,
+          u: number,
+          v: number,
+          c: Color,
+        ) => {
           const en = edgeN[j];
           const na = o.smooth ? a : am;
           const nr = o.smooth ? pn.r : en.r;

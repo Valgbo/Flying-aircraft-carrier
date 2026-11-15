@@ -10,15 +10,20 @@
  *
  * Materials are shared between the four turbines; each mesh loads its own values into the
  * uniforms in onBeforeRender. Nothing is drawn while the engine is shut down.
+ *
+ * Sorting: none of the three writes depth and all stay at renderOrder 0, so three.js sorts
+ * them back to front with the fan, the glow and everybody else's transparent effects — after
+ * the opaque ocean and the clouds (renderOrder -10). Plume and particles share one origin; the
+ * plume is created first and therefore drawn first, with the vapour laid over it.
  */
 import { createPortal, useFrame, useThree } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
-import type { Mesh } from 'three';
+import type { Camera, Mesh } from 'three';
 import { waveHeightAt } from '../config/waves';
 import { sim } from '../state/sim';
 import { getDownwash, type Downwash } from '../state/simHelpers';
 import type { TurbineIndex } from '../state/types';
-import { useQuality } from '../state/useQuality';
+import { getQuality, useQuality } from '../state/useQuality';
 import { smoothstep } from '../utils/math';
 import { useExhaustAssets } from './turbine/assets';
 import { fxEnv, syncTurbineFx } from './turbine/fxState';
@@ -26,6 +31,8 @@ import { NOZZLE_Y, exhaustSpeed, plumeLength, sprayRadius } from './turbine/mode
 
 /** Below this drive the engine counts as shut down and nothing is drawn. */
 const MIN_DRIVE = 0.004;
+/** Brightness of the plume core on presets without bloom, relative to the HDR value. */
+const NO_BLOOM_EXPOSURE = 0.62;
 /** The bent plume core never leans further sideways than this fraction of its length. */
 const MAX_PLUME_LEAN = 0.9;
 
@@ -54,13 +61,18 @@ export default function TurbineExhaust({ index }: { index: TurbineIndex }) {
         u.uLength.value = length;
         u.uDrift.value.set(-fx.relVel.x * lean, 0, -fx.relVel.z * lean);
         u.uPower.value = fx.drive;
-        u.uIntensity.value = (0.25 + 1.35 * fx.drive) * smoothstep(0, 0.08, fx.drive);
+        // without a bloom pass (and its tone mapping) the HDR core would clip to flat white
+        const exposure = getQuality().bloom ? 1 : NO_BLOOM_EXPOSURE;
+        u.uIntensity.value = exposure * (0.25 + 1.35 * fx.drive) * smoothstep(0, 0.08, fx.drive);
         u.uTime.value = sim.time + index * 3.7;
         assets.plumeMaterial.uniformsNeedUpdate = true;
       },
-      particles() {
+      particles(_renderer: unknown, _scene: unknown, camera: Camera) {
         const fx = syncTurbineFx(index, fxEnv.frame);
         const u = assets.particleMaterial.uniforms;
+        if (particles.current) {
+          particles.current.worldToLocal(u.uEye.value.setFromMatrixPosition(camera.matrixWorld));
+        }
         u.uTime.value = sim.time + index * 7.31;
         u.uSpeed.value = exhaustSpeed(fx.drive);
         u.uOpacity.value = smoothstep(0, 0.1, fx.drive) * (0.55 + 0.45 * fx.drive);
@@ -93,11 +105,7 @@ export default function TurbineExhaust({ index }: { index: TurbineIndex }) {
     impact.current.strength = strength;
     mist.visible = strength > 0.01;
     if (mist.visible) {
-      mist.position.set(
-        _downwash.x,
-        waveHeightAt(_downwash.x, _downwash.z, sim.time),
-        _downwash.z,
-      );
+      mist.position.set(_downwash.x, waveHeightAt(_downwash.x, _downwash.z, sim.time), _downwash.z);
     }
   });
 

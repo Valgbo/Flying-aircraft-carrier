@@ -58,8 +58,13 @@ export type MotionSense = 'ahead' | 'astern' | 'stopped';
 /** Below this the ship is treated as stopped, so the indicator does not chatter in a hover. */
 export const MOTION_DEADBAND_KTS = 0.5;
 
-/** Whether the ship is making way ahead or astern, from the speed along its own axis. */
-export function motionSense(forwardSpeedKts: number): MotionSense {
+/**
+ * Whether the ship is making way ahead or astern, from the speed along its own axis.
+ * That axis tilts with the bow, so a pure climb with the bow up has a forward component:
+ * without ground speed the ship counts as stopped.
+ */
+export function motionSense(forwardSpeedKts: number, groundSpeedKts: number): MotionSense {
+  if (groundSpeedKts <= MOTION_DEADBAND_KTS) return 'stopped';
   if (forwardSpeedKts > MOTION_DEADBAND_KTS) return 'ahead';
   if (forwardSpeedKts < -MOTION_DEADBAND_KTS) return 'astern';
   return 'stopped';

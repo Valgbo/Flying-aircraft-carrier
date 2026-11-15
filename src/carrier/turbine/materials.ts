@@ -52,10 +52,17 @@ export function createDecalMaterial(numbers: Texture): MeshStandardMaterial {
 const GLOW_VERTEX = /* glsl */ `
   varying vec2 vWeights;
   varying vec3 vLocal;
+  varying float vShade;
   void main() {
     vWeights = color.rg;
     vLocal = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // seen from the intake side the fan stands between the eye and the fire: only part of
+    // the glow gets through, so the intake reads as a cool shimmer rather than a furnace
+    vec3 thrustAxis = normalize((modelViewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+    float fromIntake = smoothstep(-0.05, 0.3, dot(thrustAxis, normalize(-mv.xyz)));
+    vShade = mix(1.0, 0.5, fromIntake);
+    gl_Position = projectionMatrix * mv;
   }
 `;
 
@@ -67,6 +74,7 @@ const GLOW_FRAGMENT = /* glsl */ `
   uniform float uTime;
   varying vec2 vWeights;
   varying vec3 vLocal;
+  varying float vShade;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -83,7 +91,7 @@ const GLOW_FRAGMENT = /* glsl */ `
     // slow roil of the burning gas, drifting around the ring
     float roil = 0.8 + 0.4 * noise(vLocal.xz * 0.42 + vec2(uTime * 1.7, -uTime * 1.1));
     vec3 glow = uColor * (uIntensity * vWeights.x * roil) + uCoreColor * (uCore * vWeights.y);
-    gl_FragColor = vec4(glow, 1.0);
+    gl_FragColor = vec4(glow * vShade, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }

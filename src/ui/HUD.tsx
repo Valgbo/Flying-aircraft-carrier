@@ -69,7 +69,7 @@ export default function HUD() {
   if (!sameCautions(nextCautions, cautions)) setCautions(nextCautions);
   const banners = selectVisibleCautions(nextCautions, MAX_BANNERS);
 
-  const motion = motionSense(t.forwardSpeedKts);
+  const motion = motionSense(t.forwardSpeedKts, t.speedKts);
   const trend = verticalTrend(t.verticalSpeed);
   const target = targetSense(t.targetAltitude, t.altitude);
 
@@ -106,7 +106,10 @@ export default function HUD() {
           <div className="hud-tape-window">
             <CompassTape live={live} />
           </div>
-          <div className="hud-heading" aria-label={`Heading ${formatHeading(t.headingDeg)} degrees`}>
+          <div
+            className="hud-heading"
+            aria-label={`Heading ${formatHeading(t.headingDeg)} degrees`}
+          >
             <span data-testid="hud-heading">{formatHeading(t.headingDeg)}</span>
             <span className="hud-unit">°</span>
           </div>
@@ -168,7 +171,7 @@ export default function HUD() {
 
         <div className="hud-cluster">
           <div className="hud-box hud-box--speed">
-            <span className="fac-label">Ground speed</span>
+            <span className="fac-label">Speed</span>
             <div className="hud-big">
               <span data-testid="hud-speed">{formatInt(t.speedKts)}</span>
               <span className="hud-unit">kt</span>

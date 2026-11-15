@@ -51,7 +51,8 @@ export default function ShipSchematic({ telemetry, viewed }: ShipSchematicProps)
       />
       {TURBINE_MOUNTS.map(([x, , z], i) => {
         const state = gaugeState(telemetry.enabled[i], telemetry.throttle[i]);
-        const lean = Math.sin(telemetry.tiltDeg[i] * DEG2RAD) / Math.sin(TURBINE.tiltMaxDeg * DEG2RAD);
+        const lean =
+          Math.sin(telemetry.tiltDeg[i] * DEG2RAD) / Math.sin(TURBINE.tiltMaxDeg * DEG2RAD);
         return (
           <g
             key={TURBINE_NAMES[i]}

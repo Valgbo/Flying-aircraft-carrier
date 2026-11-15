@@ -20,8 +20,8 @@
   right: calc(68px + var(--fac-safe-right));
   z-index: 20;
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: stretch;
+  gap: 10px;
 }
 
 .hangar-back {
@@ -37,10 +37,13 @@
 
 .hangar-heading {
   min-width: 0;
-  /* the scene behind can be bright sky or dark sea */
-  text-shadow:
-    0 1px 2px rgba(3, 10, 18, 0.9),
-    0 0 12px rgba(3, 10, 18, 0.65);
+  padding: 4px 12px 5px;
+  /* its own plate: the scene behind can be bright sky or dark sea */
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  background: var(--fac-panel);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
 .hangar-heading__title {
@@ -67,8 +70,7 @@
 .hangar-heading__hint {
   margin: 3px 0 0;
   font-size: 12px;
-  color: var(--fac-text);
-  opacity: 0.86;
+  color: var(--fac-text-dim);
 }
 
 .hangar-icon-btn {
@@ -507,7 +509,7 @@
     top: calc(10px + var(--fac-safe-top));
     left: calc(10px + var(--fac-safe-left));
     right: calc(58px + var(--fac-safe-right));
-    gap: 10px;
+    gap: 8px;
   }
 
   .hangar-back span {
@@ -608,4 +610,15 @@
   .hangar-demo__body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* The selected and the hovered pin come to the front, label included (their depth rank is an
+   inline z-index, hence !important). */
+.hangar-pin[aria-pressed='true'] {
+  z-index: 100 !important;
+}
+
+.hangar-pin:hover,
+.hangar-pin:focus-visible {
+  z-index: 101 !important;
 }

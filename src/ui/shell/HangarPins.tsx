@@ -48,9 +48,11 @@ export default function HangarPins({ selected, onToggle }: HangarPinsProps) {
           el.style.visibility = visible ? 'visible' : 'hidden';
         }
         if (!visible) continue;
-        // a tenth of a pixel is finer than the eye and saves style writes on a still camera
-        const x = Math.round(p.x * 10) / 10;
-        const y = Math.round(p.y * 10) / 10;
+        // Whole pixels: half a pixel off the anchor is invisible on a 32 px marker, the label
+        // text stays crisp, and a pin over a slowly bobbing ship holds still between steps
+        // (which also saves style writes and lets pointer automation find it at rest).
+        const x = Math.round(p.x);
+        const y = Math.round(p.y);
         if (x !== shownX[i] || y !== shownY[i]) {
           shownX[i] = x;
           shownY[i] = y;

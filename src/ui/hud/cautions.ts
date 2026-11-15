@@ -8,13 +8,7 @@
 import type { Telemetry } from '../../state/types';
 
 export type CautionId =
-  | 'sinkRate'
-  | 'lowAltitude'
-  | 'engineOut'
-  | 'bankAngle'
-  | 'pitch'
-  | 'ceiling'
-  | 'manual';
+  'sinkRate' | 'lowAltitude' | 'engineOut' | 'bankAngle' | 'pitch' | 'ceiling' | 'manual';
 
 /** warning = act now (red, flashing) · caution = be aware (amber) · advisory = a mode reminder. */
 export type CautionLevel = 'warning' | 'caution' | 'advisory';
@@ -56,21 +50,14 @@ const DEFINITIONS: readonly Caution[] = [
   { id: 'manual', label: 'MANUAL CONTROL', level: 'advisory' },
 ];
 
-function isActive(
-  id: CautionId,
-  t: Telemetry,
-  assistEnabled: boolean,
-  showing: boolean,
-): boolean {
+function isActive(id: CautionId, t: Telemetry, assistEnabled: boolean, showing: boolean): boolean {
   // a showing banner clears at a slightly easier value than the one that set it
   const above = showing ? 1 - HYSTERESIS : 1;
   const below = showing ? 1 + HYSTERESIS : 1;
   const L = CAUTION_LIMITS;
   switch (id) {
     case 'sinkRate':
-      return (
-        t.verticalSpeed < -L.sinkRate * above && t.keelClearance < L.sinkRateClearance * below
-      );
+      return t.verticalSpeed < -L.sinkRate * above && t.keelClearance < L.sinkRateClearance * below;
     case 'lowAltitude':
       return (
         !t.afloat &&

@@ -27,7 +27,7 @@ import {
 } from 'three';
 import { PALETTE } from '../../config/palette';
 import { TAU, mulberry32 } from '../../utils/math';
-import { EXIT_INNER_RADIUS, type TurbineDetail } from './model';
+import { EXIT_INNER_RADIUS, FAN_Y, NOZZLE_Y, THROAT_RADIUS, type TurbineDetail } from './model';
 
 const NOISE_GLSL = /* glsl */ `
   float hash(vec2 p) {
@@ -239,6 +239,8 @@ const EXHAUST_PARTICLE_VERTEX = /* glsl */ `
   uniform vec3 uTint;
   uniform vec3 uCool;
   uniform vec2 uAnnulus;
+  uniform vec3 uEye;
+  uniform vec2 uFan;
   attribute vec4 aSeed;
   varying vec2 vCorner;
   varying vec3 vColour;
@@ -273,6 +275,14 @@ const EXHAUST_PARTICLE_VERTEX = /* glsl */ `
     // left behind by the moving ship: the older the particle, the further it has drifted
     p -= uRelVel * (life * age * age);
 
+    // looking down the intake, the line of sight to a particle crosses the fan disc: the
+    // spinning blades hide the exhaust behind them
+    float seen = 1.0;
+    if (uEye.y > uFan.x && p.y < uFan.x) {
+      vec2 crossing = mix(uEye.xz, p.xz, (uEye.y - uFan.x) / (uEye.y - p.y));
+      seen = 0.08 + 0.92 * smoothstep(uFan.y - 2.5, uFan.y, length(crossing));
+    }
+
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     vec3 axisView = (modelViewMatrix * vec4(0.0, -1.0, 0.0, 0.0)).xyz;
     float axisLen = length(axisView.xy);
@@ -294,7 +304,7 @@ const EXHAUST_PARTICLE_VERTEX = /* glsl */ `
     float sparkCover = 0.5 * fadeIn * (1.0 - age);
 
     vColour = mix(vapour, sparks, spark);
-    vBlend = vec2(mix(vapourCover, sparkCover, spark) * uOpacity, 1.0 - max(spark, heat));
+    vBlend = vec2(mix(vapourCover, sparkCover, spark) * uOpacity * seen, 1.0 - max(spark, heat));
   }
 `;
 
@@ -310,6 +320,10 @@ export function createExhaustParticleMaterial(): ShaderMaterial {
       uTint: { value: new Color(1, 1, 1) },
       uCool: { value: new Color(PALETTE.glowCool) },
       uAnnulus: { value: new Vector2(inner, outer) },
+      // camera position in the frame of the particle mesh (origin = centre of the nozzle exit)
+      uEye: { value: new Vector3() },
+      // fan disc in that frame: height above the nozzle exit, radius
+      uFan: { value: new Vector2(FAN_Y - NOZZLE_Y, THROAT_RADIUS) },
     },
     vertexShader: EXHAUST_PARTICLE_VERTEX,
     fragmentShader: PARTICLE_FRAGMENT,

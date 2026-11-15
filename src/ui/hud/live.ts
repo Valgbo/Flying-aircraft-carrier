@@ -138,7 +138,10 @@ export function createHudPainter(live: HudLive): () => void {
       const needleEl = live.tiltNeedles[i];
       if (needleEl && tilt !== cache.tilt[i]) {
         cache.tilt[i] = tilt;
-        needleEl.setAttribute('transform', `rotate(${tilt} ${TILT_DIAL.pivotX} ${TILT_DIAL.pivotY})`);
+        needleEl.setAttribute(
+          'transform',
+          `rotate(${tilt} ${TILT_DIAL.pivotX} ${TILT_DIAL.pivotY})`,
+        );
       }
     }
   };

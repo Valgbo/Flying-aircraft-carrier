@@ -1,0 +1,390 @@
+/*
+ * Flight-ops HUD. Prefix: ops-. A compact block on the left edge below the top bar; on
+ * phones it shrinks and, in landscape, turns into a short strip so that it stays above the
+ * reserved bottom-left touch corner. It never reaches the centre of the screen.
+ */
+.ops-hud {
+  position: absolute;
+  top: calc(76px + var(--fac-safe-top));
+  left: calc(14px + var(--fac-safe-left));
+  width: 216px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  z-index: 5;
+}
+
+.ops-score {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-score__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fac-accent-strong);
+}
+
+.ops-tally {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.ops-tally > div {
+  display: grid;
+  gap: 1px;
+  padding: 4px 6px;
+  border: 1px solid rgba(120, 190, 235, 0.16);
+  border-radius: var(--fac-radius-sm);
+}
+
+.ops-tally dt {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.ops-tally dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ops-steady {
+  --ops-tone: var(--fac-good);
+  display: grid;
+  gap: 5px;
+}
+
+.ops-steady--warn {
+  --ops-tone: var(--fac-warn);
+}
+
+.ops-steady--alert {
+  --ops-tone: var(--fac-alert);
+}
+
+.ops-steady__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ops-steady__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ops-tone);
+}
+
+.ops-steady__value::after {
+  content: '%';
+  margin-left: 1px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ops-steady__track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(120, 190, 235, 0.14);
+}
+
+.ops-steady__fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ops-tone);
+  transition:
+    width 0.2s linear,
+    background 0.2s ease;
+}
+
+/* the wave-off limit: below this mark approaches are waved off and launches held */
+.ops-steady__limit {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--fac-text);
+  box-shadow: 0 0 0 1px rgba(6, 13, 22, 0.8);
+}
+
+.ops-status {
+  min-height: 2.6em;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  color: var(--fac-text);
+  background: rgba(57, 198, 255, 0.07);
+  border-left: 2px solid var(--fac-accent);
+  border-radius: 0 var(--fac-radius-sm) var(--fac-radius-sm) 0;
+}
+
+.ops-jets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-jet {
+  --ops-tone: var(--fac-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  font-family: var(--fac-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  color: var(--ops-tone);
+  border: 1px solid color-mix(in srgb, var(--ops-tone) 45%, transparent);
+  border-radius: var(--fac-radius-sm);
+  white-space: nowrap;
+}
+
+.ops-jet__id {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  font-weight: 700;
+  color: var(--fac-bg);
+  background: var(--ops-tone);
+}
+
+.ops-jet--move,
+.ops-jet--air {
+  --ops-tone: var(--fac-text);
+}
+
+.ops-jet--launch {
+  --ops-tone: var(--fac-accent);
+}
+
+.ops-jet--final {
+  --ops-tone: var(--fac-warn);
+}
+
+.ops-jet--trap {
+  --ops-tone: var(--fac-good);
+}
+
+.ops-jet--alert {
+  --ops-tone: var(--fac-alert);
+}
+
+.ops-launch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-transform: uppercase;
+}
+
+.ops-launch__key {
+  padding: 1px 6px;
+  font-family: var(--fac-mono);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  opacity: 0.8;
+}
+
+/* recovery call-out: pops in under the block, holds, fades */
+.ops-callout {
+  --ops-tone: var(--fac-good);
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 12px;
+  white-space: nowrap;
+  color: var(--ops-tone);
+  background: var(--fac-panel-strong);
+  border: 1px solid var(--ops-tone);
+  border-radius: var(--fac-radius-sm);
+  pointer-events: none;
+  animation: ops-callout 3.2s ease-out both;
+}
+
+.ops-callout--warn {
+  --ops-tone: var(--fac-warn);
+}
+
+.ops-callout--alert {
+  --ops-tone: var(--fac-alert);
+}
+
+.ops-callout__grade {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ops-callout__points {
+  font-size: 15px;
+  color: var(--fac-text);
+}
+
+@keyframes ops-callout {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.9);
+  }
+  8% {
+    opacity: 1;
+    transform: translateY(0) scale(1.06);
+  }
+  14% {
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------- Phones, portrait: narrower and tighter ---------------------------------------- */
+
+@media (max-width: 720px) {
+  .ops-hud {
+    top: calc(60px + var(--fac-safe-top));
+    left: calc(8px + var(--fac-safe-left));
+    width: 164px;
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .ops-score__value {
+    font-size: 21px;
+  }
+
+  .ops-tally > div {
+    padding: 2px 4px;
+  }
+
+  .ops-tally dt {
+    font-size: 8px;
+    letter-spacing: 0.06em;
+  }
+
+  .ops-tally dd {
+    font-size: 13px;
+  }
+
+  .ops-status {
+    font-size: 10.5px;
+  }
+
+  .ops-jet {
+    padding: 2px 4px;
+    font-size: 9.5px;
+    gap: 4px;
+  }
+
+  .ops-launch {
+    min-height: 36px;
+    padding: 6px 10px;
+  }
+
+  .ops-callout__grade {
+    font-size: 16px;
+  }
+}
+
+/* ---------- Phones, landscape: a short strip above the touch corner ----------------------- */
+
+@media (max-height: 500px) {
+  .ops-hud {
+    top: calc(50px + var(--fac-safe-top));
+    left: calc(8px + var(--fac-safe-left));
+    width: 300px;
+    padding: 6px 8px;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'score steady launch'
+      'status status jets';
+    align-items: center;
+    gap: 5px 10px;
+  }
+
+  .ops-score {
+    grid-area: score;
+    display: grid;
+    gap: 0;
+  }
+
+  .ops-score__value {
+    font-size: 19px;
+  }
+
+  .ops-tally {
+    display: none;
+  }
+
+  .ops-steady {
+    grid-area: steady;
+  }
+
+  .ops-status {
+    grid-area: status;
+    min-height: 0;
+    padding: 3px 6px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-jets {
+    grid-area: jets;
+    grid-template-columns: repeat(4, auto);
+    gap: 3px;
+  }
+
+  .ops-jet {
+    padding: 1px;
+    border: 0;
+  }
+
+  .ops-jet__phase {
+    display: none;
+  }
+
+  .ops-launch {
+    grid-area: launch;
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .ops-launch__key {
+    display: none;
+  }
+
+  /* beside the strip rather than below it, clear of the touch corner */
+  .ops-callout {
+    top: 0;
+    left: calc(100% + 8px);
+    padding: 4px 10px;
+  }
+
+  .ops-callout__grade {
+    font-size: 15px;
+  }
+}

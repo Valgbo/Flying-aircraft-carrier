@@ -17,9 +17,12 @@
  *                         from the ship origin with all=1 / view=ship)
  *   hull=0                hide the stand-in hull and pylons
  *   fixedTime=<s>         freeze sim.time for repeatable frames
+ *
+ * `window.__TURBINE_STATS__` holds the draw calls and triangles of the previous frame
+ * (shadow pass included), for budget checks from a Playwright script.
  */
 import { useFrame, useThree } from '@react-three/fiber';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Group, Vector3 } from 'three';
 import Turbine from '../../carrier/Turbine';
 import { debugFlags } from '../../config/debugFlags';
@@ -79,13 +82,31 @@ function EngineSwitches({ off, wind }: { off: number[]; wind: Vec3 | null }) {
     for (const i of off) {
       const turbine = sim.turbines[i];
       // with a frozen clock there is no time to spool down in: show the end state
-      spool.current[i] =
-        debugFlags.fixedTime !== null ? 0 : damp(spool.current[i], 0, 0.9, sim.dt);
+      spool.current[i] = debugFlags.fixedTime !== null ? 0 : damp(spool.current[i], 0, 0.9, sim.dt);
       turbine.enabled = false;
       turbine.throttle = spool.current[i];
       turbine.thrust = 0;
     }
   }, FRAME_PRIORITY.systems);
+  return null;
+}
+
+const renderStats = { calls: 0, triangles: 0 };
+
+/** Publishes the renderer's counters of the previous frame for budget checks. */
+function RenderStats() {
+  const gl = useThree((state) => state.gl);
+  useEffect(() => {
+    const host = window as unknown as { __TURBINE_STATS__?: typeof renderStats };
+    host.__TURBINE_STATS__ = renderStats;
+    return () => {
+      delete host.__TURBINE_STATS__;
+    };
+  }, []);
+  useFrame(() => {
+    renderStats.calls = gl.info.render.calls;
+    renderStats.triangles = gl.info.render.triangles;
+  });
   return null;
 }
 
@@ -120,7 +141,11 @@ function StandInHull() {
       {TURBINE_MOUNTS.map((mount, i) => (
         <mesh
           key={i}
-          position={[(Math.sign(mount[0]) * (PYLON_INNER_X + PYLON_OUTER_X)) / 2, mount[1], mount[2]]}
+          position={[
+            (Math.sign(mount[0]) * (PYLON_INNER_X + PYLON_OUTER_X)) / 2,
+            mount[1],
+            mount[2],
+          ]}
           rotation-z={Math.PI / 2}
           castShadow
           receiveShadow
@@ -194,6 +219,7 @@ export default function TurbineSandbox() {
     >
       <EngineSwitches off={parseIndices(params.get('off'))} wind={parseVec(params.get('wind'))} />
       <FollowShip />
+      <RenderStats />
       <Ship indices={all ? [0, 1, 2, 3] : [index]} hull={params.get('hull') !== '0'} />
       {/* stand-in sea at mean sea level, so the spray has something to land on */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow>

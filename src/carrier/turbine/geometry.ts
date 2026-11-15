@@ -110,7 +110,13 @@ function addTrunnion(b: MeshBuilder, side: 1 | -1): void {
       .multiply(new Matrix4().makeRotationZ(-Math.PI / 2))
       .multiply(new Matrix4().makeRotationY(twist));
   // flat octagonal mounting land machined into the duct wall
-  b.add(new CylinderGeometry(5.6, 5.6, 1.3, 8), onAxis(R - 0.8, Math.PI / 8), C.pad, WHITE_UV, true);
+  b.add(
+    new CylinderGeometry(5.6, 5.6, 1.3, 8),
+    onAxis(R - 0.8, Math.PI / 8),
+    C.pad,
+    WHITE_UV,
+    true,
+  );
   // bearing collar: ends flush with the outer radius, where the pylon's bearing takes over
   b.add(new CylinderGeometry(3.7, 3.7, 1.2, 16), onAxis(R - 0.6), C.steel, WHITE_UV);
   b.add(new CylinderGeometry(2.6, 2.6, 0.5, 16), onAxis(R - 0.2), C.pad, WHITE_UV);

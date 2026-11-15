@@ -100,7 +100,10 @@ export default function TurbineCard({
   const tiltWhole = Math.round(tiltCommandDeg);
 
   return (
-    <section className={`tp-card tp-card--${state}`} aria-label={`Turbine ${name}, ${TURBINE_LABELS[index]}`}>
+    <section
+      className={`tp-card tp-card--${state}`}
+      aria-label={`Turbine ${name}, ${TURBINE_LABELS[index]}`}
+    >
       <div className="tp-card-head">
         <span className="tp-card-name">{name}</span>
         <span className="tp-card-label">{TURBINE_LABELS[index]}</span>

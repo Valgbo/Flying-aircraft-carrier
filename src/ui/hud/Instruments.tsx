@@ -47,7 +47,9 @@ export const CompassTape = memo(function CompassTape({ live }: LiveProps) {
             />
             {tick.label && (
               <text
-                className={tick.cardinal ? 'hud-tape-label hud-tape-label--cardinal' : 'hud-tape-label'}
+                className={
+                  tick.cardinal ? 'hud-tape-label hud-tape-label--cardinal' : 'hud-tape-label'
+                }
                 x={tick.x}
                 y={14}
               >
@@ -114,7 +116,13 @@ export const AttitudeIndicator = memo(function AttitudeIndicator({ live }: LiveP
               width={HORIZON_SPAN * 2}
               height={HORIZON_SPAN}
             />
-            <line className="hud-horizon-line" x1={c - HORIZON_SPAN} x2={c + HORIZON_SPAN} y1={c} y2={c} />
+            <line
+              className="hud-horizon-line"
+              x1={c - HORIZON_SPAN}
+              x2={c + HORIZON_SPAN}
+              y1={c}
+              y2={c}
+            />
             {LADDER.map((rung) => (
               <g key={rung.deg}>
                 <line
@@ -135,7 +143,9 @@ export const AttitudeIndicator = memo(function AttitudeIndicator({ live }: LiveP
           {ROLL_SCALE_MARKS.map((mark) => (
             <line
               key={mark}
-              className={mark === 0 ? 'hud-horizon-mark hud-horizon-mark--zero' : 'hud-horizon-mark'}
+              className={
+                mark === 0 ? 'hud-horizon-mark hud-horizon-mark--zero' : 'hud-horizon-mark'
+              }
               x1={c}
               x2={c}
               y1={c - HORIZON_RADIUS}
@@ -169,7 +179,13 @@ export const VerticalSpeedScale = memo(function VerticalSpeedScale({ live }: Liv
       aria-hidden="true"
       focusable="false"
     >
-      <line className="hud-vsi-rail" x1={2} x2={2} y1={VSI_DIAL.center - VSI_DIAL.travel} y2={VSI_DIAL.center + VSI_DIAL.travel} />
+      <line
+        className="hud-vsi-rail"
+        x1={2}
+        x2={2}
+        y1={VSI_DIAL.center - VSI_DIAL.travel}
+        y2={VSI_DIAL.center + VSI_DIAL.travel}
+      />
       {VSI_MARKS.map((mark) => {
         const y = VSI_DIAL.center - vsiFraction(mark) * VSI_DIAL.travel;
         return (
@@ -188,10 +204,7 @@ export const VerticalSpeedScale = memo(function VerticalSpeedScale({ live }: Liv
           live.vsiNeedle = el;
         }}
       >
-        <path
-          className="hud-vsi-needle"
-          d={`M4 ${VSI_DIAL.center} l9 -4.5 v9 z`}
-        />
+        <path className="hud-vsi-needle" d={`M4 ${VSI_DIAL.center} l9 -4.5 v9 z`} />
       </g>
     </svg>
   );

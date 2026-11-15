@@ -206,9 +206,9 @@ export function driveLevel(throttle: number, lit: number): number {
   return t + IDLE_RPM * (1 - t) * clamp01(lit);
 }
 
-/** Emissive multiplier of the combustion ring (≈0.3 at idle, ≈2.9 at hover, 6 at full power). */
+/** Emissive multiplier of the combustion ring (≈0.2 at idle, ≈2.4 at hover, 5 at full power). */
 export function glowIntensity(drive: number): number {
-  return 6 * Math.pow(clamp01(drive), 1.6);
+  return 5 * Math.pow(clamp01(drive), 1.6);
 }
 
 /** How far the glow colour has moved from PALETTE.glowCool toward white, 0..1. */
@@ -218,7 +218,7 @@ export function glowWhiteness(drive: number): number {
 
 /** Emissive multiplier of the hot core around the tail cone: only lights up near full power. */
 export function coreIntensity(drive: number): number {
-  return 9 * smoothstep(0.68, 1, drive);
+  return 7 * smoothstep(0.68, 1, drive);
 }
 
 /**

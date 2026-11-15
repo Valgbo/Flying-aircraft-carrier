@@ -95,12 +95,7 @@ export default function Turbine({ index }: { index: TurbineIndex }) {
 
   return (
     <group ref={pivot} dispose={null}>
-      <mesh
-        geometry={assets.nacelle}
-        material={assets.nacelleMaterial}
-        castShadow
-        receiveShadow
-      />
+      <mesh geometry={assets.nacelle} material={assets.nacelleMaterial} castShadow receiveShadow />
       <mesh geometry={assets.decals[index]} material={assets.decalMaterial} receiveShadow />
       <group ref={rotor} position-y={FAN_Y}>
         <mesh geometry={assets.rotor} material={assets.nacelleMaterial} castShadow receiveShadow />

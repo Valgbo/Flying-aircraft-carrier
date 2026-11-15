@@ -27,7 +27,12 @@ const ARC_ROTATION = `rotate(${ARC_START_DEG} ${GAUGE_DIAL.center} ${GAUGE_DIAL.
 const ThrottleDial = memo(function ThrottleDial({ index, live }: DialProps) {
   const { size, center, radius } = GAUGE_DIAL;
   return (
-    <svg className="hud-gauge-dial" viewBox={`0 0 ${size} ${size}`} aria-hidden="true" focusable="false">
+    <svg
+      className="hud-gauge-dial"
+      viewBox={`0 0 ${size} ${size}`}
+      aria-hidden="true"
+      focusable="false"
+    >
       <circle
         className="hud-gauge-track"
         cx={center}
@@ -81,7 +86,12 @@ const TILT_MARKS = [TURBINE.tiltMinDeg, 0, 30, TURBINE.tiltMaxDeg]
 const TiltDial = memo(function TiltDial({ index, live }: DialProps) {
   const { width, height, pivotX, pivotY, needle } = TILT_DIAL;
   return (
-    <svg className="hud-gauge-tilt" viewBox={`0 0 ${width} ${height}`} aria-hidden="true" focusable="false">
+    <svg
+      className="hud-gauge-tilt"
+      viewBox={`0 0 ${width} ${height}`}
+      aria-hidden="true"
+      focusable="false"
+    >
       <path className="hud-gauge-tiltscale" d={TILT_MARKS} />
       <line
         ref={(el) => {

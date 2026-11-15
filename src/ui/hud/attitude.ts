@@ -21,7 +21,9 @@ export const PITCH_LIMIT_DEG = 30;
  */
 export function horizonRotationDeg(rollDeg: number): number {
   if (!Number.isFinite(rollDeg)) return 0;
-  return -clamp(rollDeg, -180, 180);
+  const rotation = -clamp(rollDeg, -180, 180);
+  // level flight is a plain 0, not the -0 a bare negation would give
+  return rotation === 0 ? 0 : rotation;
 }
 
 /**

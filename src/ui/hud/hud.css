@@ -1,0 +1,994 @@
+/*
+ * Flight HUD. Class prefix: hud-.
+ *
+ * Regions: top bar (chips · compass · icon buttons), turbine gauges on the right edge, the
+ * flight cluster with the caution banners at the bottom centre, the key legend at the bottom
+ * left. The centre of the screen and the left edge below the top bar stay free.
+ *
+ * .hud--touch  the on-screen touch controls are visible: the two bottom corners
+ *              (240 × 240 px) are theirs.
+ * .hud--panel  the turbine panel is open (it covers the right side, or the bottom on phones).
+ */
+.hud {
+  /* inside the safe area; .ui-root's padding does not constrain absolute children */
+  position: absolute;
+  top: var(--fac-safe-top);
+  right: var(--fac-safe-right);
+  bottom: var(--fac-safe-bottom);
+  left: var(--fac-safe-left);
+  pointer-events: none;
+  font-family: var(--fac-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fac-text);
+
+  --hud-pad: 12px;
+  /* width of each reserved bottom corner (0 without touch controls) */
+  --hud-corner: 0px;
+  /* horizontal space taken by the open turbine panel — keep in step with tp.css */
+  --hud-panel: 0px;
+  --hud-big: 30px;
+  --hud-sub: 12px;
+  --hud-horizon: 112px;
+  --hud-vsi: 84px;
+  --hud-dial: 50px;
+  --hud-speed-w: 132px;
+  --hud-alt-w: 168px;
+  --hud-trend: var(--fac-text);
+}
+
+.hud--touch {
+  --hud-corner: 240px;
+}
+
+.hud--panel {
+  --hud-panel: 384px;
+}
+
+/* ---------- top bar ---------- */
+
+.hud-top {
+  position: absolute;
+  top: var(--hud-pad);
+  left: var(--hud-pad);
+  right: var(--hud-pad);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.hud-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hud-chip {
+  pointer-events: auto;
+  appearance: none;
+  min-height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--fac-text-dim);
+  background: var(--fac-panel);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.hud-chip:hover {
+  border-color: var(--fac-accent);
+  background: var(--fac-panel-strong);
+}
+
+.hud-chip strong {
+  font-weight: 700;
+  color: var(--fac-accent-strong);
+}
+
+.hud-chip--on strong {
+  color: var(--fac-good);
+}
+
+.hud-chip--off {
+  border-color: rgba(255, 179, 71, 0.6);
+}
+
+.hud-chip--off strong {
+  color: var(--fac-warn);
+}
+
+.hud-compass {
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(360px, 44vw);
+}
+
+.hud-tape-window {
+  width: 100%;
+  height: 30px;
+  overflow: hidden;
+  background: var(--fac-panel);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.hud-tape {
+  display: block;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+}
+
+.hud-tape-tick {
+  stroke: rgba(220, 234, 245, 0.55);
+  stroke-width: 1;
+}
+
+.hud-tape-tick--major {
+  stroke: var(--fac-text);
+  stroke-width: 1.4;
+}
+
+.hud-tape-label {
+  fill: var(--fac-text);
+  font-family: var(--fac-mono);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.hud-tape-label--cardinal {
+  fill: var(--fac-accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hud-tape-caret {
+  fill: var(--fac-warn);
+}
+
+.hud-heading {
+  margin-top: -1px;
+  padding: 0 10px 1px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  color: #fff;
+  background: var(--fac-panel-strong);
+  border: 1px solid var(--fac-border-strong);
+  border-top-color: var(--fac-warn);
+  border-radius: 0 0 var(--fac-radius-sm) var(--fac-radius-sm);
+}
+
+.hud-buttons {
+  justify-self: end;
+  display: flex;
+  gap: 6px;
+}
+
+.hud-iconbtn {
+  pointer-events: auto;
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--fac-text);
+  background: var(--fac-panel);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.hud-iconbtn:hover {
+  color: var(--fac-accent-strong);
+  border-color: var(--fac-accent);
+}
+
+/* an opaque tint: the lit state must stay readable over a bright sky */
+.hud-iconbtn[aria-pressed='true'] {
+  color: var(--fac-accent-strong);
+  border-color: var(--fac-accent);
+  background: rgba(14, 62, 90, 0.9);
+}
+
+.hud-icon {
+  display: block;
+}
+
+/* ---------- shared text pieces ---------- */
+
+.hud-unit {
+  margin-left: 3px;
+  font-size: 0.45em;
+  font-weight: 500;
+  color: var(--fac-text-dim);
+}
+
+.hud-sub .hud-unit,
+.hud-heading .hud-unit {
+  margin-left: 1px;
+  font-size: 0.85em;
+}
+
+.hud-key {
+  color: var(--fac-text-dim);
+  letter-spacing: 0.08em;
+}
+
+/* ---------- turbine gauges ---------- */
+
+.hud-turbines {
+  position: absolute;
+  right: var(--hud-pad);
+  bottom: calc(var(--hud-corner) + var(--hud-pad));
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px;
+}
+
+/* the open panel shows the same turbines in full */
+.hud--panel .hud-turbines {
+  display: none;
+}
+
+.hud-gauge {
+  --hud-gauge: var(--fac-accent);
+  pointer-events: auto;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 6px;
+  font: inherit;
+  color: var(--fac-text);
+  background: var(--fac-panel);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.hud-gauge:hover {
+  border-color: var(--fac-accent);
+}
+
+.hud-gauge--high {
+  --hud-gauge: var(--fac-warn);
+  border-color: rgba(255, 179, 71, 0.6);
+}
+
+.hud-gauge--off {
+  --hud-gauge: var(--fac-text-dim);
+  border-color: rgba(255, 93, 93, 0.6);
+}
+
+.hud-gauge-face {
+  position: relative;
+  display: block;
+  width: var(--hud-dial);
+  height: var(--hud-dial);
+}
+
+.hud-gauge-dial {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud-gauge-track {
+  fill: none;
+  stroke: rgba(143, 166, 184, 0.3);
+  stroke-width: 4;
+}
+
+.hud-gauge-arc {
+  fill: none;
+  stroke: var(--hud-gauge);
+  stroke-width: 4;
+}
+
+.hud-gauge-cmd {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.hud-gauge--off .hud-gauge-cmd {
+  stroke: var(--fac-text-dim);
+}
+
+.hud-gauge-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* thrust in percent of the sea-level maximum */
+.hud-gauge-value::after {
+  content: '%';
+  margin: 0.35em 0 0 1px;
+  font-size: 0.62em;
+  font-weight: 500;
+  color: var(--fac-text-dim);
+}
+
+.hud-gauge--off .hud-gauge-value::after {
+  content: none;
+}
+
+.hud-gauge--high .hud-gauge-value {
+  color: var(--fac-warn);
+}
+
+.hud-gauge--off .hud-gauge-value {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--fac-alert);
+}
+
+.hud-gauge-side {
+  display: grid;
+  justify-items: center;
+  width: 34px;
+  line-height: 1.15;
+}
+
+.hud-gauge-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--fac-text-dim);
+}
+
+.hud-gauge-tilt {
+  display: block;
+  width: 28px;
+  height: 20px;
+}
+
+.hud-gauge-tiltscale {
+  fill: none;
+  stroke: rgba(143, 166, 184, 0.75);
+  stroke-width: 1;
+}
+
+.hud-gauge-needle {
+  stroke: var(--hud-gauge);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.hud-gauge-pivot {
+  fill: var(--hud-gauge);
+}
+
+.hud-gauge-tiltnum {
+  font-size: 11px;
+}
+
+/* ---------- flight cluster ---------- */
+
+.hud-bottom {
+  position: absolute;
+  /* centred in the space between the left corner and the open panel */
+  left: calc(
+    var(--hud-corner) + (100% - var(--hud-corner) - max(var(--hud-corner), var(--hud-panel))) / 2
+  );
+  bottom: var(--hud-pad);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(
+    100% - var(--hud-corner) - max(var(--hud-corner), var(--hud-panel)) - 2 * var(--hud-pad)
+  );
+}
+
+.hud-cautions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.hud-caution {
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  border: 1px solid;
+  border-radius: var(--fac-radius-sm);
+  background: var(--fac-panel-strong);
+}
+
+.hud-caution--warning {
+  color: #fff;
+  background: rgba(168, 26, 26, 0.9);
+  border-color: var(--fac-alert);
+  animation: hud-flash 1s steps(1, end) infinite;
+}
+
+.hud-caution--caution {
+  color: var(--fac-warn);
+  border-color: rgba(255, 179, 71, 0.75);
+}
+
+.hud-caution--advisory {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fac-warn);
+  border-color: rgba(255, 179, 71, 0.45);
+  background: var(--fac-panel);
+}
+
+@keyframes hud-flash {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.hud-cluster {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.hud-box {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 7px 12px;
+  overflow: hidden;
+  background: var(--fac-panel);
+  border: 1px solid var(--fac-border);
+  border-radius: var(--fac-radius);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* numerals hug the horizon: right-aligned on its left, left-aligned on its right */
+.hud-box--speed {
+  width: var(--hud-speed-w);
+  align-items: flex-end;
+  text-align: right;
+}
+
+.hud-box--alt {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: var(--hud-alt-w);
+}
+
+.hud-alt-data {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hud-big {
+  font-size: var(--hud-big);
+  font-weight: 700;
+  line-height: 1.08;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.hud-sub {
+  min-height: 1.4em;
+  font-size: var(--hud-sub);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.hud-motion {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.08em;
+  color: var(--fac-text-dim);
+}
+
+.hud-motion-arrow {
+  width: 0;
+  height: 0;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.hud-motion--ahead {
+  color: var(--fac-accent-strong);
+}
+
+.hud-motion--ahead .hud-motion-arrow {
+  border-bottom: 7px solid currentColor;
+}
+
+.hud-motion--astern {
+  color: var(--fac-warn);
+}
+
+.hud-motion--astern .hud-motion-arrow {
+  border-top: 7px solid currentColor;
+}
+
+.hud-motion--stopped .hud-motion-arrow {
+  width: 8px;
+  height: 2px;
+  border: 0;
+  background: currentColor;
+}
+
+.hud-trend--climb {
+  --hud-trend: var(--fac-good);
+}
+
+.hud-trend--descent {
+  --hud-trend: var(--fac-warn);
+}
+
+.hud-vs {
+  color: var(--hud-trend);
+}
+
+.hud-alt-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.hud-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fac-accent-strong);
+}
+
+/* the target bug points to where the flight computer is taking the ship */
+.hud-target-bug {
+  width: 0;
+  height: 0;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.hud-target--above .hud-target-bug {
+  border-bottom: 6px solid currentColor;
+}
+
+.hud-target--below .hud-target-bug {
+  border-top: 6px solid currentColor;
+}
+
+.hud-target--held .hud-target-bug {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--fac-good);
+  transform: rotate(45deg) scale(0.8);
+}
+
+.hud-afloat {
+  padding: 0 6px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--fac-accent-ink);
+  background: var(--fac-accent);
+  border-radius: 4px;
+}
+
+.hud-vsi {
+  flex: 0 0 auto;
+  width: auto;
+  height: var(--hud-vsi);
+  aspect-ratio: 14 / 80;
+}
+
+.hud-vsi-rail {
+  stroke: rgba(143, 166, 184, 0.5);
+  stroke-width: 1;
+}
+
+.hud-vsi-mark {
+  stroke: rgba(220, 234, 245, 0.7);
+  stroke-width: 1;
+}
+
+.hud-vsi-mark--zero {
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.hud-vsi-needle {
+  fill: var(--hud-trend);
+}
+
+/* ---------- artificial horizon ---------- */
+
+.hud-horizon {
+  flex: 0 1 var(--hud-horizon);
+  align-self: center;
+  width: var(--hud-horizon);
+  min-width: 56px;
+  height: auto;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+}
+
+.hud-horizon-sky {
+  fill: #3f9ad8;
+}
+
+.hud-horizon-sea {
+  fill: #0d2a45;
+}
+
+.hud-horizon-line {
+  stroke: #fff;
+  stroke-width: 1.2;
+}
+
+.hud-horizon-rung {
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 0.8;
+}
+
+.hud-horizon-num {
+  fill: #fff;
+  font-family: var(--fac-mono);
+  font-size: 6px;
+}
+
+.hud-horizon-mark {
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.hud-horizon-mark--zero {
+  stroke-width: 1.8;
+}
+
+.hud-horizon-bezel {
+  fill: none;
+  stroke: var(--fac-border-strong);
+  stroke-width: 1.5;
+}
+
+.hud-horizon-pointer,
+.hud-horizon-dot {
+  fill: var(--fac-warn);
+}
+
+.hud-horizon-ship {
+  fill: none;
+  stroke: var(--fac-warn);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- key legend ---------- */
+
+.hud-keys {
+  position: absolute;
+  left: var(--hud-pad);
+  bottom: var(--hud-pad);
+  width: 236px;
+  padding: 6px 10px 10px;
+  font-family: var(--fac-font);
+}
+
+.hud-keys-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.hud-keys-close {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: -6px;
+  padding: 0;
+  color: var(--fac-text-dim);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.hud-keys-close:hover {
+  color: var(--fac-text);
+}
+
+.hud-keys-close .hud-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hud-keys-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.hud-keys-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.hud-keys-row dt {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.hud-keys-row dd {
+  margin: 0;
+  color: var(--fac-text-dim);
+  white-space: nowrap;
+}
+
+.hud-keys kbd {
+  min-width: 22px;
+  padding: 1px 5px;
+  font-family: var(--fac-mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--fac-text);
+  background: rgba(57, 198, 255, 0.1);
+  border: 1px solid var(--fac-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+.hud-keys-show {
+  position: absolute;
+  left: var(--hud-pad);
+  bottom: var(--hud-pad);
+}
+
+/* the legend needs its own column to the left of the flight cluster */
+@media (max-width: 959px) {
+  .hud-keys,
+  .hud-keys-show {
+    display: none;
+  }
+}
+
+@media (max-width: 1439px) {
+  .hud--panel .hud-keys,
+  .hud--panel .hud-keys-show {
+    display: none;
+  }
+}
+
+/* ---------- compact: phones and small windows ---------- */
+
+@media (max-width: 900px), (max-height: 500px) {
+  .hud {
+    --hud-pad: 8px;
+    --hud-big: 21px;
+    --hud-sub: 10.5px;
+    --hud-horizon: 86px;
+    --hud-vsi: 64px;
+    --hud-dial: 34px;
+    --hud-speed-w: 88px;
+    --hud-alt-w: 126px;
+  }
+
+  .hud--panel {
+    --hud-panel: 316px;
+  }
+
+  .hud-chip {
+    padding: 0 9px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .hud-chip-long,
+  .hud-chip-key {
+    display: none;
+  }
+
+  .hud-compass {
+    width: min(280px, 38vw);
+  }
+
+  .hud-heading {
+    font-size: 15px;
+  }
+
+  .hud-box {
+    padding: 5px 8px;
+  }
+
+  .hud-box .fac-label {
+    font-size: 9px;
+  }
+
+  .hud-box--alt {
+    gap: 5px;
+  }
+
+  /* on the right edge directly under the icon buttons, clear of the bottom corner */
+  .hud-turbines {
+    top: calc(var(--hud-pad) + 46px);
+    bottom: auto;
+    gap: 4px;
+  }
+
+  .hud-gauge {
+    gap: 3px;
+    padding: 3px 5px 3px 4px;
+    border-radius: 8px;
+  }
+
+  .hud-gauge-value {
+    font-size: 11px;
+  }
+
+  /* no room for the unit inside the small dial */
+  .hud-gauge-value::after {
+    content: none;
+  }
+
+  .hud-gauge--off .hud-gauge-value {
+    font-size: 9px;
+  }
+
+  .hud-gauge-side {
+    width: 28px;
+  }
+
+  .hud-gauge-tilt {
+    width: 21px;
+    height: 15px;
+  }
+
+  .hud-gauge-name,
+  .hud-gauge-tiltnum {
+    font-size: 9.5px;
+  }
+
+  .hud-caution {
+    padding: 3px 9px;
+    font-size: 11px;
+  }
+
+  .hud-caution--advisory {
+    padding: 2px 8px;
+    font-size: 10px;
+  }
+
+  .hud-keys,
+  .hud-keys-show {
+    display: none;
+  }
+}
+
+/* phone landscape with touch controls and the panel open: only the strip between the left
+   corner and the panel is left, so the speed box (secondary there) makes room */
+@media (max-height: 500px) and (min-width: 641px) {
+  .hud--touch.hud--panel .hud-box--speed {
+    display: none;
+  }
+}
+
+/* narrow and tall: the bottom corners leave no room between them, the cluster sits above */
+@media (max-width: 759px) and (min-height: 501px) {
+  .hud--touch .hud-bottom {
+    left: 50%;
+    bottom: calc(240px + var(--hud-pad));
+    max-width: calc(100% - 2 * var(--hud-pad));
+  }
+}
+
+/* narrow and short (small phone, landscape): no room above the corners either, so the strip
+   between them keeps attitude and altitude and drops the speed box */
+@media (max-width: 759px) and (max-height: 500px) {
+  .hud--touch .hud-box--speed {
+    display: none;
+  }
+}
+
+/* ---------- phone portrait ---------- */
+
+@media (max-width: 640px) {
+  .hud {
+    --hud-panel: 0px;
+  }
+
+  .hud-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'chips buttons'
+      'compass compass';
+  }
+
+  .hud-chips {
+    grid-area: chips;
+  }
+
+  .hud-buttons {
+    grid-area: buttons;
+  }
+
+  .hud-compass {
+    grid-area: compass;
+    width: min(320px, 100%);
+  }
+
+  /* the chips already toggle assist and the camera */
+  .hud-iconbtn--secondary {
+    display: none;
+  }
+
+  .hud-turbines {
+    top: calc(var(--hud-pad) + 108px);
+  }
+
+  /* the bottom sheet covers the lower part of the screen: the cluster moves up under the
+     compass so speed, attitude and altitude stay in view while working the turbines */
+  .hud--panel .hud-bottom,
+  .hud--touch.hud--panel .hud-bottom {
+    top: calc(var(--hud-pad) + 108px);
+    bottom: auto;
+    flex-direction: column-reverse;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-caution--warning {
+    animation: none;
+  }
+}
