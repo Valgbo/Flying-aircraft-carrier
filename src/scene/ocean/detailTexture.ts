@@ -26,6 +26,14 @@ export const DETAIL_TEXTURE_SIZE = 256;
 export const DETAIL_SLOPE_RMS = 0.25;
 /** RMS of the decoded height channel (2·texel − 1). */
 export const DETAIL_HEIGHT_RMS = 1 / 3;
+/**
+ * Band of the ripple field in cycles per tile and the exponent of its height spectrum
+ * (amplitude ∝ |k|^-falloff). The ocean shader derives from these how much of the ripple slope
+ * a given pixel footprint still resolves.
+ */
+export const RIPPLE_K_MIN = 2.5;
+export const RIPPLE_K_MAX = 46;
+export const RIPPLE_FALLOFF = 1.7;
 
 /** In-place inverse FFT of one complex row of length n (a power of two); unscaled. */
 function inverseFft(re: Float64Array, im: Float64Array, cosT: Float64Array, sinT: Float64Array) {
@@ -167,7 +175,7 @@ function encode(value: number): number {
 /** RGBA8 pixels of the detail map (size × size, row-major). Pure; exported for tests. */
 export function generateDetailPixels(size = DETAIL_TEXTURE_SIZE): Uint8Array {
   const random = mulberry32(0x0cea9);
-  const ripples = randomSpectrum(size, random, 2.5, 46, 1.7, 0.5);
+  const ripples = randomSpectrum(size, random, RIPPLE_K_MIN, RIPPLE_K_MAX, RIPPLE_FALLOFF, 0.5);
   const slopeU = derivativeSpectrum(ripples, size, 'u');
   const slopeV = derivativeSpectrum(ripples, size, 'v');
   const height = inverseFft2Real(ripples.re, ripples.im, size);

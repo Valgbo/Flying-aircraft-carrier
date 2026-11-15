@@ -257,7 +257,9 @@ export function daylightFromSunY(sunY: number): number {
 
 /** Daylight factor (0..1) at the given hour. */
 export function daylightAt(hours: number): number {
-  return daylightFromSunY(Math.cos(((hours - 12) / 24) * TAU) * Math.sin(SUN_CULMINATION_DEG * DEG2RAD));
+  return daylightFromSunY(
+    Math.cos(((hours - 12) / 24) * TAU) * Math.sin(SUN_CULMINATION_DEG * DEG2RAD),
+  );
 }
 
 /** Relative luminance of a linear-sRGB colour. */
@@ -370,7 +372,9 @@ export function computeSkyState(hours: number, out: SkyState): SkyState {
     .multiplyScalar(lerp(9, 24, smoothstep(0, 0.45, sunY)) / peak);
   out.sunHaloColor
     .copy(_transmittance)
-    .multiplyScalar((lerp(0.75, 0.3, smoothstep(0, 0.5, sunY)) * smoothstep(-0.14, 0.02, sunY)) / peak);
+    .multiplyScalar(
+      (lerp(0.75, 0.3, smoothstep(0, 0.5, sunY)) * smoothstep(-0.14, 0.02, sunY)) / peak,
+    );
   out.moonDiscColor.setRGB(0.86, 0.9, 1).multiplyScalar(lerp(0.35, 1.7, darkness));
   out.starVisibility = smoothstep(MOONLIGHT_START, -0.21, sunY);
 

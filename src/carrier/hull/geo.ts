@@ -243,6 +243,30 @@ export class MeshBuilder {
     this.tri(a, c, d, color);
   }
 
+  /** Flat quad wound so that it faces `facing` (any vector pointing to its outer side). */
+  quadFacing(a: V3, b: V3, c: V3, d: V3, color: Color, facing: V3): void {
+    const normal = v3cross(v3sub(c, a), v3sub(d, b));
+    if (v3dot(normal, facing) >= 0) this.quad(a, b, c, d, color);
+    else this.quad(d, c, b, a, color);
+  }
+
+  /**
+   * A shallow raised panel: `base` are its four corners on the surface (in order round the
+   * panel), `outward` the surface normal. The face stands `proud` metres off the surface and
+   * a rim closes the gap — real relief, so it cannot z-fight the way a coplanar decal would.
+   */
+  raisedPanel(base: readonly V3[], outward: V3, proud: number, face: Color, rim: Color): void {
+    const lift = v3scale(v3normalize(outward), proud);
+    const front = base.map((p) => v3add(p, lift));
+    const centre = centroid(base);
+    this.quadFacing(front[0], front[1], front[2], front[3], face, outward);
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      const edgeMid = v3lerp(base[i], base[j], 0.5);
+      this.quadFacing(base[i], base[j], front[j], front[i], rim, v3sub(edgeMid, centre));
+    }
+  }
+
   /**
    * Planar polygon (convex or concave, optional holes), triangulated without adding
    * vertices so shared edges stay watertight. If `facing` is given the result faces it.
@@ -288,48 +312,12 @@ export class MeshBuilder {
   ): void {
     const [x0, y0, z0] = min;
     const [x1, y1, z1] = max;
-    this.quad(
-      [x1, y0, z1],
-      [x1, y0, z0],
-      [x1, y1, z0],
-      [x1, y1, z1],
-      faceColors['+x'] ?? color,
-    );
-    this.quad(
-      [x0, y0, z0],
-      [x0, y0, z1],
-      [x0, y1, z1],
-      [x0, y1, z0],
-      faceColors['-x'] ?? color,
-    );
-    this.quad(
-      [x0, y1, z0],
-      [x0, y1, z1],
-      [x1, y1, z1],
-      [x1, y1, z0],
-      faceColors['+y'] ?? color,
-    );
-    this.quad(
-      [x0, y0, z1],
-      [x0, y0, z0],
-      [x1, y0, z0],
-      [x1, y0, z1],
-      faceColors['-y'] ?? color,
-    );
-    this.quad(
-      [x0, y0, z1],
-      [x1, y0, z1],
-      [x1, y1, z1],
-      [x0, y1, z1],
-      faceColors['+z'] ?? color,
-    );
-    this.quad(
-      [x1, y0, z0],
-      [x0, y0, z0],
-      [x0, y1, z0],
-      [x1, y1, z0],
-      faceColors['-z'] ?? color,
-    );
+    this.quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], faceColors['+x'] ?? color);
+    this.quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], faceColors['-x'] ?? color);
+    this.quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], faceColors['+y'] ?? color);
+    this.quad([x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], faceColors['-y'] ?? color);
+    this.quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], faceColors['+z'] ?? color);
+    this.quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], faceColors['-z'] ?? color);
   }
 
   /**
@@ -337,10 +325,16 @@ export class MeshBuilder {
    * the ends. Faces are oriented away from the loft's own axis, so the ring winding does not
    * matter. `colors` is one colour, or one per band between rings.
    */
-  loft(rings: readonly (readonly V3[])[], colors: Color | readonly Color[], opts: LoftOptions = {}): void {
+  loft(
+    rings: readonly (readonly V3[])[],
+    colors: Color | readonly Color[],
+    opts: LoftOptions = {},
+  ): void {
     if (rings.length < 2) return;
     const bandColor = (i: number): Color =>
-      Array.isArray(colors) ? (colors as readonly Color[])[Math.min(i, colors.length - 1)] : (colors as Color);
+      Array.isArray(colors)
+        ? (colors as readonly Color[])[Math.min(i, colors.length - 1)]
+        : (colors as Color);
     const centers = rings.map(centroid);
     const n = rings[0].length;
     for (let r = 0; r < rings.length - 1; r++) {
@@ -433,12 +427,22 @@ export class MeshBuilder {
     const capColor = opts.capColor ?? color;
     if (opts.capStart !== false && r0 > 1e-6) {
       for (let k = 0; k < segments; k++) {
-        this.tri(p0, v3add(p0, v3scale(dirAt(k + 1), r0)), v3add(p0, v3scale(dirAt(k), r0)), capColor);
+        this.tri(
+          p0,
+          v3add(p0, v3scale(dirAt(k + 1), r0)),
+          v3add(p0, v3scale(dirAt(k), r0)),
+          capColor,
+        );
       }
     }
     if (opts.capEnd !== false && r1 > 1e-6) {
       for (let k = 0; k < segments; k++) {
-        this.tri(p1, v3add(p1, v3scale(dirAt(k), r1)), v3add(p1, v3scale(dirAt(k + 1), r1)), capColor);
+        this.tri(
+          p1,
+          v3add(p1, v3scale(dirAt(k), r1)),
+          v3add(p1, v3scale(dirAt(k + 1), r1)),
+          capColor,
+        );
       }
     }
   }

@@ -45,16 +45,19 @@ export const OCEAN = {
 
   // ---- far-field irregularity --------------------------------------------------------------
   /**
-   * Between these distances from the mesh centre the analytic waves start to wax and wane with
-   * a slow noise, so that from high altitude the sea is not a regular weave of plane waves.
-   * Inside `irregularStart` the normals match the displaced geometry exactly.
+   * Between these distances from the mesh centre the analytic waves start to wax, wane and bend
+   * with a slow noise, so that from altitude the sea is not a regular weave of plane waves.
+   * Inside `irregularStart` (the hull and its surroundings) the normals match the displaced
+   * geometry exactly.
    */
-  irregularStart: 500,
-  irregularEnd: 1_500,
+  irregularStart: 250,
+  irregularEnd: 900,
+  /** Peak-to-peak sideways bend of the wave trains (and ripple tiles) by that noise, m. */
+  irregularWarp: 160,
 
   // ---- whitecaps ---------------------------------------------------------------------------
-  capStart: 0.47,
-  capEnd: 0.66,
+  capStart: 0.55,
+  capEnd: 0.8,
   /** Average foam cover that stands in for whitecaps too small to resolve. */
   capMeanCover: 0.012,
 
@@ -66,6 +69,9 @@ export const OCEAN = {
     /** Nothing is evaluated beyond this many patch radii. */
     reach: 4.5,
     bowlDepth: 2.2,
+    /** The bowl is flat out to `bowlFlat` and has climbed back to sea level at `bowlEdge` (patch radii). */
+    bowlFlat: 0.35,
+    bowlEdge: 1.0,
     rimHeight: 0.7,
     /** Rim position and width in patch radii. */
     rimPosition: 1.1,
@@ -74,12 +80,12 @@ export const OCEAN = {
     calm: 0.85,
     /** Concentric ripples leaving the rim: the train that is also displaced geometrically… */
     ringWavelength: 14,
-    ringAmplitude: 0.3,
+    ringAmplitude: 0.42,
     /** …and a finer one that only exists in the shading. */
     fineRingWavelength: 5.5,
-    fineRingSlope: 0.16,
+    fineRingSlope: 0.2,
     /** e-folding reach of both trains beyond the rim, in patch radii. */
-    ringReach: 1.4,
+    ringReach: 1.7,
     /** Peak speed of the surface outflow that carries the spray foam, m/s. */
     flowSpeed: 9,
     /** Period of the two-phase flow animation, s. */
@@ -92,6 +98,14 @@ export const OCEAN = {
   wakeMaxLength: 2_400,
   /** Hull speed (m/s) at which wake and bow wave are fully developed. */
   wakeFullSpeed: 9,
+  /** Widening of the turbulent wake per metre astern. */
+  wakeSpread: 0.07,
+  /** Tangent of the half-angle of the diverging bow-wave arms (the Kelvin angle, 19.5°). */
+  kelvinTan: 0.354,
+  /** The hull outline narrows toward the bow from this distance ahead of midships, m. */
+  bowTaperFrom: 60,
+  /** Keel height above the water (m) over which the waterline foam fades out. */
+  hullFoamEndHeight: 5,
   /** Keel height above the water (m) between which the contact shadow fades out. */
   shadowFullHeight: 40,
   shadowEndHeight: 150,
@@ -125,8 +139,8 @@ function octave(tile: number, angleDeg: number, slopeRms: number): DetailOctave 
 }
 
 /**
- * Ripple octaves per quality level, finest first. The last octave doubles as the whitecap
- * field. Tiles are mutually irrational and each octave has its own heading, so no repeat lines up.
+ * Ripple octaves per quality level, finest first. The finest one doubles as the whitecap
+ * streak pattern and the close-up grain of all foam. Tiles are mutually irrational and each octave has its own heading, so no repeat lines up.
  */
 export const DETAIL_OCTAVES: Record<QualityLevel, readonly DetailOctave[]> = {
   low: [octave(31, 26, 0.12), octave(173, -31, 0.085)],

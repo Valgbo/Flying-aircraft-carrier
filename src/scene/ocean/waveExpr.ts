@@ -37,10 +37,18 @@ export const VERTEX_MIN_SAMPLES = 2.5;
 /**
  * Fragment-stage band limit: a component keeps its full slope while the pixel footprint along
  * its direction of travel is under this fraction of a wavelength and is gone at
- * `PIXEL_FADE_END` wavelengths (where a box filter over the pixel has its first zero).
+ * `PIXEL_FADE_END` wavelengths — the Nyquist limit of two pixels per wave, beyond which the
+ * few plane waves of the table would beat against the pixel grid into a moiré lattice.
  */
-export const PIXEL_FADE_START = 0.25;
-export const PIXEL_FADE_END = 1;
+export const PIXEL_FADE_START = 1 / 6;
+export const PIXEL_FADE_END = 0.5;
+
+/**
+ * Components shorter than this (m) can be faded out of the shading separately (`gain.z` of the
+ * GLSL surface function): far from the hull a monochromatic train of short waves reads as
+ * regular stripes, and the ripple octaves cover those scales better.
+ */
+export const SHORT_WAVE_LENGTH = 40;
 
 export interface WaveTerm {
   dirX: number;
@@ -352,9 +360,10 @@ export function evalWaveSurface(x: number, z: number, phases: ArrayLike<number>)
 }
 
 /**
- * GLSL: `vec3 oceanWaveSurface(vec2 p, vec2 du, vec2 dv, vec2 gain)` → (slope x, slope z, crest).
+ * GLSL: `vec3 oceanWaveSurface(vec2 p, vec2 du, vec2 dv, vec3 gain)` → (slope x, slope z, crest).
  * `gain.x` scales the even components and `gain.y` the odd ones, so two independent noise
- * values can make neighbouring wavelengths wax and wane separately.
+ * values can make neighbouring wavelengths wax and wane separately; `gain.z` additionally
+ * scales every component shorter than `SHORT_WAVE_LENGTH`.
  * Needs `uniform float uWavePhase[WAVE_COUNT]`.
  */
 export function waveSurfaceGLSL(): string {
@@ -367,10 +376,13 @@ export function waveSurfaceGLSL(): string {
     duz: 'du.y',
     dvx: 'dv.x',
     dvz: 'dv.y',
-    gain: (i) => (i % 2 === 0 ? 'gain.x' : 'gain.y'),
+    gain: (i) => {
+      const parity = i % 2 === 0 ? 'gain.x' : 'gain.y';
+      return WAVE_TERMS[i].wavelength < SHORT_WAVE_LENGTH ? `(${parity} * gain.z)` : parity;
+    },
   });
   return [
-    'vec3 oceanWaveSurface(vec2 p, vec2 du, vec2 dv, vec2 gain) {',
+    'vec3 oceanWaveSurface(vec2 p, vec2 du, vec2 dv, vec3 gain) {',
     g.body(),
     `  return vec3(${s.slopeX}, ${s.slopeZ}, ${s.crest});`,
     '}',
