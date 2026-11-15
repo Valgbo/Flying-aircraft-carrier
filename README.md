@@ -127,7 +127,8 @@ tests/
   hull geometry, flight-ops logic and scoring, input mapping, HUD maths, audio mappings.
 - **End-to-end:** the app loads and draws; holding W lifts the ship off the sea; yaw and
   camera keys; a turbine-panel slider drives its turbine in manual mode; pause; hangar
-  hotspots and demo sliders; settings persist across a reload; a jet launches in flight ops.
+  hotspots and demo sliders; settings persist across a reload; a flight-physics chunk that
+  fails to load returns to the menu with a message; a jet launches in flight ops.
 - **Screenshot comparison** of the hangar is opt-in, because rendering differs between
   machines. Create baselines on your machine first:
 
@@ -186,8 +187,9 @@ The plan this was built from is in `PLAN.md`. Differences from it and open point
   hardware, real phones, real gamepads and other browsers has not been measured.
 - **Not done from the plan's release milestone:** Lighthouse pass, the v1.0 tag, and a first
   run of the CI and Pages workflow on GitHub.
-- **Visual rough edges:** a faint regular pattern on the sea at mid distance from high up;
-  clouds look soft close up; hangar pins are not hidden when their part is behind the ship.
+- **Visual rough edges:** clouds look soft close up; whitecaps read as small specks close to
+  the camera; hangar pins are not hidden when their part is behind the ship. Everything was
+  judged from still frames, so flicker or shimmer in motion has not been assessed.
 - **Flight feel:** there is no position hold, so the ship drifts with the wind in a hover; with
   one engine out it descends under partial control, and with two adjacent engines out it falls.
 

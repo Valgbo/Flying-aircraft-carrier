@@ -174,7 +174,7 @@ flight ops). Audio, camera shake and UI flashes subscribe to these.
 | Axis | Flight assist ON (default) | Flight assist OFF (manual) |
 |---|---|---|
 | `collective` | moves `targetAltitude` up/down (hold); the computer holds altitude | moves all four `manualThrottle[i]` up/down |
-| `tilt` | moves `tiltLever` (all nacelles) and leaves it there; the computer compensates lift and keeps the deck level | moves all four `manualTilt[i]` |
+| `tilt` | moves `tiltLever` (all nacelles) and leaves it there; the lever travels no further than the lift budget plus 2° and pauses 0.6 s in a stop at neutral; the computer compensates lift and keeps the deck level | moves all four `manualTilt[i]` |
 | `yaw` | yaw-rate command via differential tilt; heading holds on release | momentary differential tilt (port vs. starboard pair) |
 | `strafe` | small commanded bank → sideways slide; levels on release | momentary differential throttle (port vs. starboard pair) |
 
@@ -240,7 +240,7 @@ cannot be loaded the app returns to the menu with an alert toast.
 | `CameraRig` | Owns the default camera for every `cameraMode` (`orbit`, `chase`, `deck`, `bridge`, `turbine`) and screen; pointer/touch drag + wheel/pinch + `input.lookX/lookY`; writes `sim.camera.position`; applies shake when `settings.cameraShake`. In the hangar it eases toward `hangar.selectedHotspot`. |
 | `PostFX` | `EffectComposer` chain gated by quality: bloom, ACES tone mapping, vignette, screen-space heat distortion at `getTurbineExhaust(i)`. |
 | `FlightOps({ active })` | Air wing in world space; always mounted (keyed by `resetNonce`). `active = false` (menu, hangar, free flight): the jets sit on their `PARKING_SPOTS`, riding with the ship. `active = true` (flight ops): catapult launch on the `launchJet` action, scripted pattern + approach, recovery scoring into `store.ops`. Writes `sim.jets` at `FRAME_PRIORITY.systems`; emits the `jet*` game events. |
-| `HangarHotspots` | In-canvas projector for the hangar pins: turns the `HOTSPOTS` anchors into screen positions each frame for the DOM pins rendered by `HangarOverlay`. |
+| `HangarHotspots` | In-canvas projector for the hangar pins: turns the `HOTSPOTS` anchors into screen positions each frame for the DOM pins rendered by `HangarOverlay`, spreads pins that would overlap and hides those under a panel. While mounted it also sets a view offset on the camera (pose and fov stay the rig's) so the ship sits in the part of the screen the hangar panels leave free. |
 
 Shared facts from the finished modules:
 
@@ -326,8 +326,8 @@ Stable test ids (`data-testid`) — keep them when replacing placeholders:
   (the options), `settings-close`, `settings-time`, `settings-mute`, `settings-invert-y`,
   `settings-rebind-<bindingId>`
 - Pause: `pause-menu`, `pause-resume`, `pause-restart`, `pause-settings`, `pause-exit`
-- Hangar: `hangar-overlay`, `hangar-back`, `hotspot-<id>`, `hangar-card`, `hangar-throttle`,
-  `hangar-tilt`
+- Hangar: `hangar-overlay`, `hangar-back`, `hotspot-<id>`, `hangar-card`, `hangar-card-prev`,
+  `hangar-card-next`, `hangar-throttle`, `hangar-tilt`
 - Ops: `ops-hud`, `ops-score`, `ops-status`, `ops-stability`, `ops-launch`
 - Touch: `touch-controls`, `touch-stick`, `touch-throttle`, `touch-btn-<actionName>`
 - Misc: `loading-screen`, `toasts`, `fps-counter`, `fatal-error`
