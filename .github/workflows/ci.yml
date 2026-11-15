@@ -1,8 +1,9 @@
 name: CI
 
 # Runs on pull requests and on pushes to main; `workflow_dispatch` lets you run it by hand on
-# any branch. The deploy job publishes dist/ to GitHub Pages from main only and needs Pages to
-# be enabled for the repository (Settings → Pages → Source: GitHub Actions).
+# any branch. The deploy job publishes dist/ to GitHub Pages from main only (on a push or a
+# manual run) and needs Pages to be enabled for the repository (Settings → Pages → Source:
+# GitHub Actions).
 on:
   push:
     branches: [main]
@@ -33,7 +34,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Upload site
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -63,7 +64,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [build, e2e]
     runs-on: ubuntu-latest
     permissions:
