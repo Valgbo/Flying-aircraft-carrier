@@ -1,0 +1,65 @@
+/**
+ * IdleDriver — drives `sim` in the menu and hangar scenes (and in sandboxes): the ship hovers
+ * at IDLE_ALTITUDE with a gentle bob while the turbines follow the hangar demo sliders.
+ * Purely kinematic; no physics engine is loaded. Flying screens use PhysicsDriver instead.
+ */
+import { useFrame } from '@react-three/fiber';
+import { Euler } from 'three';
+import { debugFlags } from '../config/debugFlags';
+import { FRAME_PRIORITY } from '../config/frame';
+import { HOVER_THROTTLE, IDLE_ALTITUDE, PHYS } from '../config/physicsConfig';
+import { combineInput } from '../controls/input';
+import { sim, updateDerived } from '../state/sim';
+import { publishTelemetry } from '../state/telemetry';
+import { useGameStore } from '../state/useGameStore';
+import { DEG2RAD, clamp, damp, moveToward } from '../utils/math';
+
+const _euler = new Euler(0, 0, 0, 'YXZ');
+
+/** Advance the idle hover by `dt` seconds. Exported so sandboxes and tests can reuse it. */
+export function stepIdle(dt: number): void {
+  const { hangar, screen, paused } = useGameStore.getState();
+  if (debugFlags.fixedTime !== null) {
+    sim.time = debugFlags.fixedTime;
+    sim.dt = 0;
+    dt = 1; // let actuators settle instantly on their commands
+  } else if (paused) {
+    sim.dt = 0;
+    return;
+  } else {
+    sim.time += dt;
+    sim.dt = dt;
+  }
+  combineInput();
+
+  const t = sim.time;
+  const c = sim.carrier;
+  c.position.set(0, IDLE_ALTITUDE + Math.sin(t * 0.35) * 1.4, 0);
+  _euler.set(Math.sin(t * 0.27) * 0.007, 0, Math.sin(t * 0.21 + 1.3) * 0.01);
+  c.quaternion.setFromEuler(_euler);
+  c.velocity.set(0, Math.cos(t * 0.35) * 0.35 * 1.4, 0);
+  c.angularVelocity.set(0, 0, 0);
+
+  const inHangar = screen === 'hangar';
+  const throttleCmd = inHangar ? clamp(hangar.demoThrottle, 0, 1) : HOVER_THROTTLE;
+  const tiltCmd = inHangar ? clamp(hangar.demoTiltDeg * DEG2RAD, PHYS.tiltMin, PHYS.tiltMax) : 0;
+  for (let i = 0; i < 4; i++) {
+    const turbine = sim.turbines[i];
+    turbine.enabled = true;
+    turbine.throttleCmd = throttleCmd;
+    turbine.tiltCmd = tiltCmd;
+    const rate = throttleCmd > turbine.throttle ? PHYS.spoolUpRate : PHYS.spoolDownRate;
+    turbine.throttle = dt >= 1 ? throttleCmd : damp(turbine.throttle, throttleCmd, rate * 2, dt);
+    turbine.tilt = dt >= 1 ? tiltCmd : moveToward(turbine.tilt, tiltCmd, PHYS.tiltRate * dt);
+    turbine.thrust = turbine.throttle * PHYS.maxThrust;
+  }
+  sim.controls.targetAltitude = IDLE_ALTITUDE;
+
+  updateDerived(sim.dt);
+  publishTelemetry();
+}
+
+export default function IdleDriver() {
+  useFrame((_, delta) => stepIdle(Math.min(delta, 0.1)), FRAME_PRIORITY.driver);
+  return null;
+}
