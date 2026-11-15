@@ -292,7 +292,18 @@ respect the safe-area insets, and never put a control under another one.
 `settings.touchControls === 'on'`), the bottom-left and bottom-right corners (each
 240 px wide × 240 px high, inside the safe area) belong to the touch controls. Other overlay
 elements stay out of those corners in that case. Use `useTouchControlsVisible()` from
-`src/controls/touchVisibility.ts` to know whether they are shown.
+`src/controls/touchVisibility.ts` to know whether they are shown. On narrow screens each
+corner is `min(240px, 50%)` wide. Everything the touch layer draws, including its action
+buttons, sits inside the two corners (the HUD uses the space directly above them).
+
+**Stacking inside `.ui-root`.** HUD, ops HUD, touch controls and toasts stay below 35; the
+turbine panel is 10; hangar pins 10, hangar bar 20, hangar panels 30; pause 35; settings 40;
+loading 50; FPS counter 60.
+
+**Input gate.** Pilot input is live only on a flying screen, while not paused and with the
+settings dialog closed (`pilotInputLive()` in `src/controls/gating.ts`); `togglePause` always
+passes. Sliders and buttons blur themselves after a pointer release so they never keep the
+arrow keys or Space.
 
 Stable test ids (`data-testid`) — keep them when replacing placeholders:
 

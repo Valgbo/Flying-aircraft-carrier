@@ -6,8 +6,8 @@
  *   /?sandbox=audio&throttle=0.8&speed=60&cam=left
  *
  * Parameters: throttle (0..1), speed (m/s), alt (ship altitude, m), g (g-load),
- * cam=near|far|left|right (listener position; it always faces the bow), jet=1 (a jet circling
- * the ship), muted=1, paused=1, scene=idle (menu ambience instead of flight).
+ * cam=near|far|left|right (listener position; it always faces the bow), jet=1 (a jet flying
+ * circles past the ship), muted=1, paused=1, scene=idle (menu ambience instead of flight).
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import AudioManager from '../../audio/AudioManager';
@@ -88,9 +88,14 @@ function stepSandbox(dt: number): void {
   sim.camera.quaternion.identity();
 
   if (controls.jet) {
-    // a 400 m circle around the ship at 70 m/s: passes the listener, so the Doppler shift is audible
+    // a 400 m circle at 70 m/s whose rim passes close to the ship, so the jet sweeps past the
+    // listener and its Doppler shift is audible
     const angle = sim.time * (fakeJet.speed / 400);
-    fakeJet.position.set(Math.cos(angle) * 400, controls.altitude + 60, Math.sin(angle) * 400);
+    fakeJet.position.set(
+      350 + Math.cos(angle) * 400,
+      controls.altitude + 60,
+      Math.sin(angle) * 400,
+    );
     fakeJet.power = controls.jetPower;
     if (sim.jets.length === 0) sim.jets.push(fakeJet);
   } else if (sim.jets.length > 0) {
