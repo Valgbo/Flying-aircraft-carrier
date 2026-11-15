@@ -8,8 +8,10 @@ import FlightOps from '../aircraft/FlightOps';
 import Carrier from '../carrier/Carrier';
 import IdleDriver from '../sim/IdleDriver';
 import { isFlyingScreen, useGameStore } from '../state/useGameStore';
+import AdaptiveQuality from './AdaptiveQuality';
 import CameraRig from './CameraRig';
 import Clouds from './Clouds';
+import HangarHotspots from './HangarHotspots';
 import Ocean from './Ocean';
 import PostFX from './PostFX';
 import World from './World';
@@ -53,9 +55,11 @@ export default function SceneRoot() {
       <Clouds />
       <Ocean />
       <Carrier />
-      {screen === 'ops' && <FlightOps key={resetNonce} />}
+      <FlightOps key={resetNonce} active={screen === 'ops'} />
       <CameraRig />
+      {screen === 'hangar' && <HangarHotspots />}
       <PostFX />
+      <AdaptiveQuality />
       <SceneReadySignal />
     </>
   );

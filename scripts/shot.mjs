@@ -18,7 +18,7 @@
  *   --press <codes>      comma list of keys to tap (after ready), e.g. KeyC,KeyT
  *   --click <selector>   click an element after ready (repeatable via comma)
  *   --console            print page console messages
- *   --timeout <ms>       overall navigation/ready timeout (default 60000)
+ *   --timeout <ms>       overall navigation/ready timeout (default 120000)
  *
  * Prints page errors (uncaught exceptions) always; exits non-zero if the page threw.
  */
@@ -62,7 +62,7 @@ const landscape = Boolean(args.landscape);
 const width = Number(args.width ?? (mobile ? (landscape ? 844 : 390) : 1280));
 const height = Number(args.height ?? (mobile ? (landscape ? 390 : 844) : 720));
 const wait = Number(args.wait ?? 2500);
-const timeout = Number(args.timeout ?? 60000);
+const timeout = Number(args.timeout ?? 120000);
 
 const browser = await chromium.launch({ args: GL_ARGS });
 const context = await browser.newContext({

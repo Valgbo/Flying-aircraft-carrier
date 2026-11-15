@@ -55,6 +55,7 @@ export const sim: SimState = {
   jets: [],
   camera: {
     position: new Vector3(0, IDLE_ALTITUDE + 80, 420),
+    quaternion: new Quaternion(),
     shake: 0,
   },
 };

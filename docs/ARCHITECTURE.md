@@ -104,7 +104,7 @@ A plain mutable singleton. Visuals read it inside `useFrame`; nothing re-renders
 | `sim.env` (`sunDirection`, `daylight`, `sunColor`, `horizonColor`, `zenithColor`, `cloudCover`) | world / clouds | ocean, ship lights, effects |
 | `sim.env.wind` | driver / flight ops | physics, particles |
 | `sim.jets[]` (world-space pose per aircraft) | flight ops | jet visuals, audio, cameras |
-| `sim.camera.position` | camera rig | audio, clouds, ocean |
+| `sim.camera.position`, `sim.camera.quaternion` | camera rig | audio, clouds, ocean |
 | `sim.camera.shake` | anyone via `addCameraShake(amount)` | camera rig (consumes + decays) |
 
 Drivers (exactly one is mounted at a time, first child of `SceneRoot`):
@@ -156,6 +156,19 @@ is applied by the source (stick-style tilt / look only).
 ones are wired in `src/state/coreActions.ts`; `launchJet` belongs to flight ops.
 Key bindings (`KeyboardEvent.code`) live in `settings.keyBindings` (`src/state/bindings.ts`).
 
+### Game events — `src/state/events.ts`
+
+`emitEvent(name, payload)` / `onEvent(name, handler)` for one-shot OUTCOMES, so systems can
+react without importing each other: `liftOff`, `splashdown { sinkRate }`,
+`engineToggled { index, enabled }`, `assistChanged { enabled }` (all emitted by the flight
+driver), `jetCatapult`, `jetLaunch`, `jetTrap { points, grade }`, `jetWaveOff` (emitted by
+flight ops). Audio, camera shake and UI flashes subscribe to these.
+
+### Key capture — `src/controls/keyCapture.ts`
+
+`captureNextKey(): Promise<string | null>` (used by the settings UI to rebind a key),
+`cancelKeyCapture()`, `isKeyCaptureActive()` (the keyboard layer stays inert while true).
+
 ### What the pilot's axes mean (flight model contract)
 
 | Axis | Flight assist ON (default) | Flight assist OFF (manual) |
@@ -186,7 +199,8 @@ and the console.
 `ControlsManager` + `AudioManager`.
 
 `src/scene/SceneRoot.tsx` renders, in order: driver · `World` · `Clouds` · `Ocean` ·
-`Carrier` · `FlightOps` (ops only) · `CameraRig` · `PostFX`.
+`Carrier` · `FlightOps` · `CameraRig` · `HangarHotspots` (hangar only) · `PostFX` ·
+`AdaptiveQuality`.
 
 | Component | Contract |
 |---|---|
@@ -197,7 +211,9 @@ and the console.
 | `Turbine({ index })` | Rendered at its tilt pivot in carrier axes. Applies `-tilt` about X, spins the fan from `turbineRpmFraction`, glows with throttle, mounts `TurbineExhaust` in the tilting frame (exhaust leaves along local `-Y`). |
 | `CameraRig` | Owns the default camera for every `cameraMode` (`orbit`, `chase`, `deck`, `bridge`, `turbine`) and screen; pointer/touch drag + wheel/pinch + `input.lookX/lookY`; writes `sim.camera.position`; applies shake when `settings.cameraShake`. In the hangar it eases toward `hangar.selectedHotspot`. |
 | `PostFX` | `EffectComposer` chain gated by quality: bloom, ACES tone mapping, vignette, screen-space heat distortion at `getTurbineExhaust(i)`. |
-| `FlightOps` | Air wing in world space: parked jets, catapult launch (`launchJet` action), scripted pattern + approach, recovery scoring into `store.ops`; writes `sim.jets`. |
+| `FlightOps({ active })` | Air wing in world space; always mounted (keyed by `resetNonce`). `active = false` (menu, hangar, free flight): the jets sit on their `PARKING_SPOTS`, riding with the ship. `active = true` (flight ops): catapult launch on the `launchJet` action, scripted pattern + approach, recovery scoring into `store.ops`. Writes `sim.jets` at `FRAME_PRIORITY.systems`; emits the `jet*` game events. |
+| `HangarHotspots` | In-canvas projector for the hangar pins: turns the `HOTSPOTS` anchors into screen positions each frame for the DOM pins rendered by `HangarOverlay`. |
+| `AdaptiveQuality` | Lowers `effectiveQuality` one step when the frame rate stays under 45 fps for ≈3 s (if `settings.adaptiveQuality`). |
 
 ### Rendering rules shared by all 3D code
 
@@ -243,11 +259,15 @@ Stable test ids (`data-testid`) — keep them when replacing placeholders:
   `hud-camera` (text content = the plain number / label)
 - Turbine panel: `turbine-panel`, `turbine-throttle-0..3`, `turbine-tilt-0..3` (range inputs),
   `turbine-enabled-0..3`
-- Settings: `settings`, `settings-quality`, `settings-close`
+- Settings: `settings`, `settings-quality` (the radio group) with `settings-quality-low|medium|high`
+  (the options), `settings-close`, `settings-time`, `settings-mute`, `settings-invert-y`,
+  `settings-rebind-<bindingId>`
 - Pause: `pause-menu`, `pause-resume`, `pause-restart`, `pause-settings`, `pause-exit`
-- Hangar: `hangar-overlay`, `hangar-back`, `hotspot-<id>`, `hangar-throttle`, `hangar-tilt`
-- Ops: `ops-hud`, `ops-score`
-- Misc: `loading-screen`, `toasts`, `touch-controls`
+- Hangar: `hangar-overlay`, `hangar-back`, `hotspot-<id>`, `hangar-card`, `hangar-throttle`,
+  `hangar-tilt`
+- Ops: `ops-hud`, `ops-score`, `ops-status`, `ops-stability`, `ops-launch`
+- Touch: `touch-controls`, `touch-stick`, `touch-throttle`, `touch-btn-<actionName>`
+- Misc: `loading-screen`, `toasts`, `fps-counter`
 
 ---
 

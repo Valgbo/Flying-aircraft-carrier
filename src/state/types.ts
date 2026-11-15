@@ -126,6 +126,8 @@ export interface JetSim {
 export interface CameraSim {
   /** World position of the active camera (written by the camera rig every frame). */
   position: Vector3;
+  /** World orientation of the active camera (written by the camera rig every frame). */
+  quaternion: Quaternion;
   /** Pending shake energy 0..1+. Systems add to it via addCameraShake(); the rig consumes and decays it. */
   shake: number;
 }

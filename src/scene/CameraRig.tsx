@@ -22,6 +22,7 @@ export default function CameraRig() {
     _target.copy(c.position);
     camera.lookAt(_target);
     sim.camera.position.copy(camera.position);
+    sim.camera.quaternion.copy(camera.quaternion);
   }, FRAME_PRIORITY.camera);
   return null;
 }
