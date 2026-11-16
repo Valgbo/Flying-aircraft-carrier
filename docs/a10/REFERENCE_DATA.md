@@ -1,0 +1,85 @@
+# A-10 Simulator — Reference Data
+
+Where the simulator's numbers come from, how sure we are, and how public figures were turned
+into model constants. The constants themselves live in `src/a10/data/*.ts`, each with a
+`*_NOTES` entry naming its source and confidence; this file explains them. PLAN_A10.md §19 lists
+the figures as first collected.
+
+Confidence: **confirmed** (sources agree) · **approximate** (sources differ or are vague;
+tunable) · **estimate** (our own value, or fitted to make public figures consistent).
+
+All figures come from public sources: manufacturer brochures, official fact sheets,
+encyclopaedias, the GPL FlightGear A-10 package, and hobbyist simulator documentation. No
+restricted documents are used.
+
+---
+
+## 1. Sources
+
+The list with URLs is `src/a10/data/sources.ts`. The main ones:
+
+| Id | Source |
+|---|---|
+| `gdotsGau8` | General Dynamics OTS, 30mm GAU-8/A Gatling gun brochure (2025) |
+| `wikiGau8`, `fasGau8` | Wikipedia and FAS pages on the GAU-8/A |
+| `aerospaceweb`, `aerocorner`, `wikiA10` | A-10 specifications |
+| `flightgearA10`, `flightgearFdm` | The FlightGear A-10 package (GPL v2) and its wiki: geometry, starting coefficients, model, sounds |
+| `wikiAgm65`, `designationSystems`, `afAgm65` | AGM-65 Maverick |
+| `gdotsHydra`, `wikiHydra` | Hydra 70 rockets |
+| `wikiCbu97` | CBU-97 Sensor Fuzed Weapon |
+| `wikiLitening` | AN/AAQ-28 Litening targeting pod |
+| `wikiTf34`, `geTf34` | TF34 engine |
+| `tankograd`, `warThunderT72` | T-72 armour estimates |
+| `hoggitHud`, `dcsForumPac`, `dcsForumGunLine`, `dcsMaverick` | Hobbyist simulator documentation of HUD symbology, PAC, gun line, Maverick procedure |
+
+---
+
+## 2. Interpretation decisions
+
+These are fixed in `docs/a10/ARCHITECTURE.md` §5 because several modules depend on them.
+
+### 2.1 Penetration of the 30 mm API round
+
+Public figures: about 69 mm of steel at 500 m and 38 mm at 1,000 m. Read literally as a
+function of range, they cannot be reproduced by any physical penetration law with the drag of a
+30 mm projectile (the round loses too little speed between 500 and 1,000 m). We therefore fit
+`P(v) = P_REF · (v / V_REF)^n` to the IMPACT SPEED, with both points taken as rounds fired from
+an aircraft at 300 kn, 1,000 m above sea level (ISA), along the line of fire. `V_REF` and `n`
+are computed from the simulator's own ballistic model by a unit test, so the fit stays
+consistent if the drag law changes.
+
+Consequences: the plan's attack table (PLAN §6.3) holds for 300 kn attacks; a faster attack
+penetrates a little more, a slower one a little less, as physics says.
+
+### 2.2 Dispersion
+
+The maker states "5 mil, 80 %" as a circle DIAMETER. With a circular normal distribution,
+80 % inside radius R means R² / (2σ²) = ln 5, so σ = 2.5 mrad / √(2 ln 5) ≈ 1.393 mrad per axis.
+The aircraft's own motion during a burst adds to it and is not faked.
+
+### 2.3 Spin-up
+
+"About 50 rounds in the first second" with a linear rate ramp to 65 rounds/s gives a ramp of
+≈0.46 s (65 · (1 − T/2) = 50).
+
+### 2.4 Recoil
+
+44.5 kN average at full rate is an impulse of ≈684 N·s per round (projectile momentum
+≈400 N·s plus propellant gas). The recoil force is applied along the gun line in proportion to
+the instantaneous rate.
+
+---
+
+## 3. Measured model values
+
+Filled in from the modules' acceptance tests at each integration (see `tests/unit/a10/`).
+
+| Quantity | Target (plan) | Model | Test |
+|---|---|---|---|
+| Max level speed, clean, sea level | 381 kn ± 3 % | — | flight |
+| Stall speed, clean, 13,600 kg | 120 kn ± 5 % | — | flight |
+| Initial climb rate | ≈6,000 ft/min ± 10 % | — | flight |
+| Gun rate | 65 ± 1 rds/s; 47–52 in the first second | — | gun |
+| Dispersion | 80 ± 1.5 % inside 5 mrad | — | gun |
+| Recoil, 2 s burst at 18,000 kg | 3.8–4.8 m/s | — | gun / flight |
+| Gun sight agreement | burst centre within 1.5 mrad of the pipper | — | avionics |
