@@ -34,9 +34,16 @@ export function visibilityForFogDensity(density: number): number {
 export const CLEAR_FOG_DENSITY = fogDensityForVisibility(CLEAR_VISIBILITY);
 export const CLOUD_FOG_DENSITY = fogDensityForVisibility(CLOUD_VISIBILITY);
 
-/** Scene fog density for a cloud cover of 0 (clear air) … 1 (deep inside a cloud). */
-export function fogDensityFor(cloudCover: number): number {
-  return CLEAR_FOG_DENSITY * Math.pow(CLOUD_FOG_DENSITY / CLEAR_FOG_DENSITY, clamp01(cloudCover));
+/**
+ * Scene fog density for a cloud cover of 0 (clear air) … 1 (deep inside a cloud).
+ * `clearDensity` is the clear-air density (default: the carrier's 28 km day; the A-10 passes
+ * its own, from the visibility it flies in).
+ */
+export function fogDensityFor(
+  cloudCover: number,
+  clearDensity: number = CLEAR_FOG_DENSITY,
+): number {
+  return clearDensity * Math.pow(CLOUD_FOG_DENSITY / clearDensity, clamp01(cloudCover));
 }
 
 /**
@@ -49,7 +56,7 @@ const CLOUD_PATH_LENGTH = 1500;
  * 0..1 — how much of the sky (dome, sun, far clouds) is hidden by the cloud the camera is in:
  * the opacity of the cloud's extra fog along a typical path out of it. Exactly 0 in clear air.
  */
-export function skyWhiteout(cloudCover: number): number {
-  const depth = (fogDensityFor(cloudCover) - CLEAR_FOG_DENSITY) * CLOUD_PATH_LENGTH;
+export function skyWhiteout(cloudCover: number, clearDensity: number = CLEAR_FOG_DENSITY): number {
+  const depth = (fogDensityFor(cloudCover, clearDensity) - clearDensity) * CLOUD_PATH_LENGTH;
   return 1 - Math.exp(-depth * depth);
 }

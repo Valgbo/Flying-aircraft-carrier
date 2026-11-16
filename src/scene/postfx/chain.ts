@@ -1,6 +1,6 @@
 /**
- * The post-processing chain: scene → [heat distortion] → [bloom] → vignette → ACES tone
- * mapping → screen. Built on the `postprocessing` composer directly (the library
+ * The post-processing chain: scene → [pre-effects, e.g. heat distortion] → [bloom] → vignette →
+ * ACES tone mapping → screen. Built on the `postprocessing` composer directly (the library
  * @react-three/postprocessing wraps) so the chain owns its lifetime: everything it creates —
  * render targets, depth texture, passes, effects — is disposed when it is torn down, which
  * the React wrapper does not do.
@@ -8,6 +8,10 @@
  * The scene is rendered into a half-float buffer (HDR survives until tone mapping) with
  * MSAA when the quality preset asks for anti-aliasing. All effects are merged into a single
  * full-screen pass, executed in the order listed above.
+ *
+ * Carrier-free (src/engine re-exports it): app-specific effects come in as `preEffects`. An
+ * app that draws its frame in several passes of its own (the A-10's world, cockpit and HUD)
+ * sets `renderScene: false`, draws into `inputBuffer` and then calls `render`.
  */
 import {
   BlendFunction,
@@ -20,14 +24,30 @@ import {
   VignetteEffect,
   type Effect,
 } from 'postprocessing';
-import { HalfFloatType, type PerspectiveCamera, type Scene, type WebGLRenderer } from 'three';
-import { HeatDistortionEffect } from './HeatDistortionEffect';
+import {
+  HalfFloatType,
+  type PerspectiveCamera,
+  type Scene,
+  type WebGLRenderTarget,
+  type WebGLRenderer,
+} from 'three';
 
 export interface PostChainOptions {
   bloom: boolean;
-  heatDistortion: boolean;
   /** MSAA samples of the scene buffer (0 = off). */
   multisampling: number;
+  /**
+   * Effects run first, in this order, before bloom (the carrier's heat distortion). The chain
+   * owns them from now on and disposes them with itself.
+   */
+  preEffects?: readonly Effect[];
+  /**
+   * Draw `scene` with `camera` into the scene buffer first (default true). false: the caller
+   * draws the frame into `inputBuffer` itself before every `render`.
+   */
+  renderScene?: boolean;
+  /** Give the scene buffer a stencil buffer (default false). */
+  stencilBuffer?: boolean;
 }
 
 export interface PostChain {
@@ -36,6 +56,8 @@ export interface PostChain {
   /** Match the canvas size in CSS pixels; the drawing-buffer size follows the renderer's pixel ratio. */
   setSize(width: number, height: number): void;
   dispose(): void;
+  /** The linear HDR scene buffer the effects read (drawing-buffer size; MSAA when asked). */
+  readonly inputBuffer: WebGLRenderTarget;
 }
 
 /**
@@ -61,14 +83,14 @@ export function createPostChain(
 ): PostChain {
   const composer = new EffectComposer(gl, {
     depthBuffer: true,
-    stencilBuffer: false,
+    stencilBuffer: options.stencilBuffer ?? false,
     multisampling: gl.capabilities.isWebGL2 ? options.multisampling : 0,
     frameBufferType: HalfFloatType,
   });
-  composer.addPass(new RenderPass(scene, camera));
+  if (options.renderScene ?? true) composer.addPass(new RenderPass(scene, camera));
 
   const effects: Effect[] = [];
-  if (options.heatDistortion) effects.push(new HeatDistortionEffect(camera));
+  if (options.preEffects) effects.push(...options.preEffects);
   if (options.bloom) {
     effects.push(
       new BloomEffect({
@@ -94,6 +116,9 @@ export function createPostChain(
       // disposes every pass (and through the EffectPass every effect), both buffers and the depth texture
       composer.dispose();
       gl.setRenderTarget(null);
+    },
+    get inputBuffer() {
+      return composer.inputBuffer;
     },
   };
 }

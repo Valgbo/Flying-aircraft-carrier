@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+
+
+<PropertyList>
+
+	<path>detail-cpt.ac</path>
+
+	<effect>
+		<inherits-from>Effects/model-transparent</inherits-from>
+		<parameters>
+			<render-bin>
+				<bin-number>10</bin-number>
+				<bin-name>RenderBin</bin-name>
+			</render-bin>
+		</parameters>
+		<object-name>hud-screen</object-name>
+	</effect>
+
+	<effect>
+		<inherits-from>Effects/model-transparent</inherits-from>
+		<parameters>
+			<render-bin>
+				<bin-number>11</bin-number>
+				<bin-name>RenderBin</bin-name>
+			</render-bin>
+		</parameters>
+		<object-name>CPT-hud-screen</object-name>
+		<object-name>hud-screen</object-name>
+	</effect>
+
+
+<!-- panels-light -->
+	<animation> 
+		<object-name>consoles</object-name>
+		<type>material</type>
+		<condition><not><property>/sim/rendering/rembrandt/enabled</property></not></condition>
+		<emission>
+			<factor-prop>controls/lighting/panel-norm</factor-prop>
+			<red>0.225</red>
+			<green>0.17</green>
+			<blue>0.09</blue>
+		</emission>
+	</animation>
+	<animation>
+		<object-name>CPT-fake-panel</object-name>
+		<type>material</type>
+		<condition><not><property>/sim/rendering/rembrandt/enabled</property></not></condition>
+		<emission>
+			<factor-prop>controls/lighting/instruments-norm</factor-prop>
+			<red>0.50</red>
+			<green>0.25</green>
+			<blue>0.18</blue>
+		</emission>
+	</animation>
+
+	<animation>
+        <object-name>hud-screen</object-name>
+        <type>material</type>
+        <condition>
+            <greater-than-equals>
+                <property>systems/electrical/outputs/hud</property>
+                <value>24</value>
+            </greater-than-equals>
+        </condition>
+        <emission>
+            <factor-prop>sim/model/A-10/controls/hud/intens</factor-prop>
+            <red>  1</red>
+            <green>1</green>
+            <blue> 1</blue>
+        </emission>
+    </animation>
+
+
+	<!-- aux-lg-ext-handle -->
+
+	<animation>
+		<type>slider</type>
+		<object-name>aux-lg-ext-handle</object-name>
+		<property>sim/model/A-10/controls/gear/aux-lg-ext</property>
+		<factor>0.04</factor>
+		<axis>
+			<x>0.1372</x>
+			<y>0.00</y>
+			<z>0.0232</z>
+		</axis>
+		<action>
+            <binding>
+                <command>property-toggle</command>
+                <property>sim/model/A-10/controls/gear/aux-lg-ext</property>
+            </binding>
+        </action>
+	</animation>
+
+	<animation>
+		<type>range</type>
+		<object-name>CPT-main-panel.001</object-name>
+		<min-m>0</min-m>
+		<max-m>5</max-m>
+	</animation>
+	<animation>
+		<type>range</type>
+		<object-name>CPT-fake-panel</object-name>
+		<min-m>5</min-m>
+		<max-m>200</max-m>
+	</animation>
+
+
+</PropertyList>

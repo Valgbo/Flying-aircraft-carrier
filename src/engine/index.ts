@@ -84,3 +84,50 @@ export {
   IconWarning,
   type IconProps,
 } from '../ui/shell/icons';
+
+// ---- Sky, clouds, post-processing and adaptive quality (environment module) ----
+// The carrier's World / Clouds / PostFX / AdaptiveQuality are zero-prop wrappers around these
+// carrier-free components; tests/unit/engineBoundary.test.ts proves nothing here reaches the
+// carrier's sim or store.
+export { default as SkyWorld, type SkyLights, type SkyWorldProps } from '../scene/sky/SkyWorld';
+export { default as CloudLayer, type CloudLayerProps } from '../scene/sky/CloudLayer';
+export { default as PostFXView, type PostFXViewProps } from '../scene/postfx/PostFXView';
+export { createPostChain, type PostChain, type PostChainOptions } from '../scene/postfx/chain';
+export {
+  default as AdaptiveQualityMonitor,
+  type AdaptiveQualityMonitorProps,
+} from '../scene/AdaptiveQualityMonitor';
+export { createSkyEnv, type SkyClock, type SkyEnv } from '../scene/sky/skyEnv';
+export {
+  CLEAR_FOG_DENSITY,
+  CLEAR_VISIBILITY,
+  CLOUD_FOG_DENSITY,
+  CLOUD_VISIBILITY,
+  fogDensityFor,
+  fogDensityForVisibility,
+  skyWhiteout,
+  visibilityForFogDensity,
+} from '../scene/sky/atmosphere';
+export {
+  CLOUD_SEED,
+  DEFAULT_CLOUD_SHAPE,
+  cloudCoverAt,
+  createCloudLayout,
+  type CloudLayout,
+  type CloudShape,
+} from '../scene/sky/cloudLayout';
+export { getSkyState } from '../scene/sky/currentSky';
+export {
+  computeSkyState,
+  createSkyState,
+  daylightAt,
+  luminance,
+  moonDirectionAt,
+  sunDirectionAt,
+  wrapHours,
+  type SkyState,
+} from '../scene/sky/timeOfDay';
+export { acesFilmicToneMap } from '../scene/sky/toneMap';
+export { FRAME_PRIORITY } from '../config/frame';
+export { QUALITY_ORDER, lowerQuality } from '../config/quality';
+export type { QualityLevel } from '../state/types';

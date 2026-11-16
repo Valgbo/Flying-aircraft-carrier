@@ -11,8 +11,12 @@
  * public/a10/models/a10-meta.json when the converter runs.
  */
 export const A10_GEOMETRY = {
-  /** Muzzle of the firing barrel (on the centreline, below the nose). */
-  muzzle: { x: 0, y: -0.59, z: -7.81 },
+  /**
+   * Muzzle of the firing barrel (on the centreline, below the nose): the centre of the barrel
+   * mouth at X = 0 on the model's muzzle face (a10-meta.json gun.muzzle; was −0.59, −7.81 before
+   * the converter measured the barrel itself).
+   */
+  muzzle: { x: 0, y: -0.6, z: -7.816 },
   /**
    * Direction of the modelled barrel cluster axis (3.0° below -Z). The simulation's gun line
    * uses GAU8.gunLineDepression from data/gun.ts.
@@ -62,4 +66,28 @@ export const A10_GEOMETRY = {
   bellyY: -1.64,
   /** Fin tip height, Y, m. */
   finTopY: 2.455,
+  /**
+   * Pylon bottom slope about +X, rad (negative = nose down), index as `stations`. Stores hang at
+   * this attitude and leave the aircraft with it.
+   */
+  stationPitch: [
+    null, -0.0495, -0.0524, -0.0524, -0.0575, -0.0509, -0.0509, -0.0509, -0.0575, -0.0527, -0.0527,
+    -0.0495,
+  ],
+  /**
+   * Tyre contact points with the gear down and the struts uncompressed (the FlightGear model's
+   * gear stands 0.7 m taller than the real aircraft's), and the wheel radii, m.
+   */
+  gearContacts: {
+    nose: { x: 0.311, y: -2.646, z: -4.796, radius: 0.328 },
+    left: { x: -2.677, y: -2.712, z: 0.546, radius: 0.496 },
+    right: { x: 2.677, y: -2.712, z: 0.546, radius: 0.496 },
+  },
+  /** Engines: fan hub (on the spin axis) and the nozzle exit (aft end of the nacelle). */
+  engines: [
+    { fan: { x: -1.476, y: 0.965, z: 2.134 }, exhaust: { x: -1.476, y: 0.965, z: 5.179 } },
+    { fan: { x: 1.476, y: 0.965, z: 2.134 }, exhaust: { x: 1.476, y: 0.965, z: 5.179 } },
+  ],
+  /** Gun barrel cluster: a point on its spin axis (the front clamp ring), body frame. */
+  gunClusterAxisPoint: { x: -0.0489, y: -0.597, z: -7.783 },
 } as const;

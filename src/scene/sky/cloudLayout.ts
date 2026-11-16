@@ -28,6 +28,32 @@ const CLOUD_SPACING = 2700;
 const CLOUD_RADIUS_MIN = 430;
 const CLOUD_RADIUS_MAX = 1050;
 
+/**
+ * Where the layer sits and how it is spread out. The default is the carrier's deck of fair-weather
+ * cumulus over the sea; another app (the A-10 over land) passes its own.
+ */
+export interface CloudShape {
+  /** Cloud bases, m above sea level. */
+  baseMin: number;
+  baseMax: number;
+  /** No cloud top reaches above this, m above sea level. */
+  topMax: number;
+  /** Side of the grid cell each cloud is scattered in, m (sets the density of the layer). */
+  spacing: number;
+  /** Horizontal radius of a cluster, m. */
+  radiusMin: number;
+  radiusMax: number;
+}
+
+export const DEFAULT_CLOUD_SHAPE: Readonly<CloudShape> = {
+  baseMin: CLOUD_BASE_MIN,
+  baseMax: CLOUD_BASE_MAX,
+  topMax: CLOUD_TOP_MAX,
+  spacing: CLOUD_SPACING,
+  radiusMin: CLOUD_RADIUS_MIN,
+  radiusMax: CLOUD_RADIUS_MAX,
+};
+
 /** Sprites per cloud on average, and the hard cap for the whole layer. */
 const SPRITES_PER_CLOUD = 8.75;
 const MAX_SPRITES = 700;
@@ -55,6 +81,9 @@ export const SPRITE_STRIDE = 13;
 export interface CloudLayout {
   /** Side of the repeating tile, m. */
   tileSize: number;
+  /** Lowest cloud base and highest possible top of the layer's shape, m above sea level. */
+  baseMin: number;
+  topMax: number;
   cloudCount: number;
   /** `cloudCount` × CLOUD_STRIDE floats. */
   clouds: Float32Array;
@@ -72,11 +101,16 @@ export function spriteBudget(cloudCount: number): number {
  * Build the layer: `cloudCount` clouds on a jittered grid (even coverage, no clumps, no
  * regular pattern), each filled with sprites in proportion to its size.
  */
-export function createCloudLayout(cloudCount: number, seed: number = CLOUD_SEED): CloudLayout {
+export function createCloudLayout(
+  cloudCount: number,
+  seed: number = CLOUD_SEED,
+  shape: Readonly<CloudShape> = DEFAULT_CLOUD_SHAPE,
+): CloudLayout {
   const count = Math.max(1, Math.floor(cloudCount));
   const random = mulberry32(seed);
   const grid = Math.ceil(Math.sqrt(count));
-  const tileSize = grid * CLOUD_SPACING;
+  const spacing = shape.spacing;
+  const tileSize = grid * spacing;
 
   // pick `count` distinct grid cells (partial Fisher–Yates shuffle)
   const cells = new Uint16Array(grid * grid);
@@ -94,13 +128,13 @@ export function createCloudLayout(cloudCount: number, seed: number = CLOUD_SEED)
     const cellX = cells[i] % grid;
     const cellZ = Math.floor(cells[i] / grid);
     // squaring the random number makes small clouds common and big ones rare
-    const radius = lerp(CLOUD_RADIUS_MIN, CLOUD_RADIUS_MAX, random() ** 1.6);
-    const base = lerp(CLOUD_BASE_MIN, CLOUD_BASE_MAX, random());
-    const height = Math.min(radius * lerp(0.8, 1.25, random()), CLOUD_TOP_MAX - base);
+    const radius = lerp(shape.radiusMin, shape.radiusMax, random() ** 1.6);
+    const base = lerp(shape.baseMin, shape.baseMax, random());
+    const height = Math.min(radius * lerp(0.8, 1.25, random()), shape.topMax - base);
     const o = i * CLOUD_STRIDE;
-    clouds[o] = (cellX + 0.15 + 0.7 * random()) * CLOUD_SPACING;
+    clouds[o] = (cellX + 0.15 + 0.7 * random()) * spacing;
     clouds[o + 1] = base;
-    clouds[o + 2] = (cellZ + 0.15 + 0.7 * random()) * CLOUD_SPACING;
+    clouds[o + 2] = (cellZ + 0.15 + 0.7 * random()) * spacing;
     clouds[o + 3] = radius;
     clouds[o + 4] = height;
     radiusSum += radius;
@@ -176,7 +210,15 @@ export function createCloudLayout(cloudCount: number, seed: number = CLOUD_SEED)
     }
   }
 
-  return { tileSize, cloudCount: count, clouds, spriteCount, sprites };
+  return {
+    tileSize,
+    baseMin: shape.baseMin,
+    topMax: shape.topMax,
+    cloudCount: count,
+    clouds,
+    spriteCount,
+    sprites,
+  };
 }
 
 /**
@@ -223,7 +265,7 @@ export function cloudCoverAt(
   driftX: number,
   driftZ: number,
 ): number {
-  if (y < CLOUD_BASE_MIN - 200 || y > CLOUD_TOP_MAX + 200) return 0;
+  if (y < layout.baseMin - 200 || y > layout.topMax + 200) return 0;
   const { clouds, cloudCount, tileSize } = layout;
   let cover = 0;
   for (let i = 0; i < cloudCount; i++) {
