@@ -8,6 +8,7 @@ import { A10_GEOMETRY } from '../../data/geometry';
 import { getSim } from '../../state/runtime';
 import { useA10Store } from '../../state/store';
 import { A10_PRIORITY } from '../frame';
+import { cockpitCamera, cockpitViewState } from './cockpitCamera';
 
 const _eye = new Vector3();
 
@@ -22,6 +23,16 @@ export default function CameraRig() {
     camera.position.copy(_eye);
     camera.quaternion.copy(ac.orientation);
     const fov = useA10Store.getState().settings.fov;
+    cockpitViewState.active = useA10Store.getState().view === 'cockpit';
+    cockpitCamera.position.set(e.x, e.y, e.z);
+    cockpitCamera.quaternion.identity();
+    const aspect = 'aspect' in camera ? (camera as unknown as { aspect: number }).aspect : 16 / 9;
+    if (cockpitCamera.fov !== fov || cockpitCamera.aspect !== aspect) {
+      cockpitCamera.fov = fov;
+      cockpitCamera.aspect = aspect;
+      cockpitCamera.updateProjectionMatrix();
+    }
+    cockpitCamera.updateMatrixWorld();
     if ('fov' in camera && (camera as { fov: number }).fov !== fov) {
       (camera as unknown as { fov: number; updateProjectionMatrix(): void }).fov = fov;
       (camera as unknown as { updateProjectionMatrix(): void }).updateProjectionMatrix();

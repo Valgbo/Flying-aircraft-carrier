@@ -314,6 +314,11 @@ Rules:
   `THREE.Scene` in BODY coordinates (cockpit, plus the aircraft's own nose/wings/engines as
   seen from inside, using the aircraft module's model) and renders it in its pass with a camera
   at the eye (near 0.03 m, far 40 m). The HUD module owns its own scene(s).
+- **Cockpit camera and scene** (`view/cockpit/cockpitCamera.ts`, interface fixed, values owned
+  by the cockpit module): `cockpitScene` and `cockpitCamera` (body coordinates: position = head,
+  quaternion = head orientation relative to the body), `cockpitViewState.active`. The world
+  camera in the cockpit view = aircraft pose ∘ cockpit camera pose. The HUD reads the cockpit
+  camera so the symbology and the glass mask come from the same eye.
 - **Exterior model:** in outside views `AircraftView` draws the aircraft in the world scene; in
   the cockpit view it hides itself and the cockpit pass draws the body-frame instance.
 
