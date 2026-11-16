@@ -43,3 +43,44 @@ export { captureNextKey, cancelKeyCapture, isKeyCaptureActive } from '../control
 export { bindPointerDrag, type PointerDragHandlers } from '../controls/pointerDrag';
 export type { GamepadSnapshot, GamepadButtonSnapshot, GamepadCandidate } from '../controls/gamepad';
 export { keyLabel } from '../state/bindings';
+
+// Shell UI pieces shared with the A-10 overlay (src/a10/ui): store-free form controls, settings
+// rows, focus handling, formatting, the FPS readout and generic icons, with the two stylesheets
+// they need (prefix-scoped: shell-, settings-).
+import '../ui/shell/shell.css';
+import '../ui/shell/settings.css';
+export { KeyCap, KeyReference, PresetChips, Slider, Switch } from '../ui/shell/controls';
+export type { Preset, PresetChipsProps, SliderProps, SwitchProps } from '../ui/shell/controls';
+export { SelectRow, SettingsSection, SliderRow, ToggleRow } from '../ui/shell/settingsRows';
+export type { SelectRowProps, SliderRowProps, ToggleRowProps } from '../ui/shell/settingsRows';
+export { focusTrapTarget, gridStep, isArrowKey, type ArrowKey } from '../ui/shell/focusOrder';
+export { tabbableElements, useModalFocus, type ModalFocusOptions } from '../ui/shell/useModalFocus';
+export {
+  COARSE_POINTER_QUERY,
+  COMPACT_QUERY,
+  SHORT_QUERY,
+  matchesMedia,
+  useMediaQuery,
+} from '../ui/shell/useMediaQuery';
+export {
+  TIME_SLIDER_MAX,
+  TIME_SLIDER_STEP,
+  formatDeg,
+  formatMeters,
+  formatPercent,
+  formatRatio,
+  formatSignedDeg,
+  formatTimeOfDay,
+  rangeFraction,
+  snapToStep,
+} from '../ui/shell/format';
+export { default as FpsCounter } from '../ui/shell/FpsCounter';
+export {
+  IconArrowLeft,
+  IconChevronDown,
+  IconChevronRight,
+  IconClose,
+  IconSliders,
+  IconWarning,
+  type IconProps,
+} from '../ui/shell/icons';
