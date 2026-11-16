@@ -29,3 +29,17 @@ export {
   SmoothParam,
   NOISE_SECONDS,
 } from '../audio/audioGraph';
+
+// Audio and input helpers (carrier-free; see the input/audio reuse analysis).
+export {
+  volumeToGain,
+  offsetToPan,
+  bearingToPan,
+  PAN_WIDTH,
+  dopplerFactor,
+} from '../audio/audioMappings';
+export { responseCurve, RESPONSE_SOFTNESS } from '../controls/response';
+export { captureNextKey, cancelKeyCapture, isKeyCaptureActive } from '../controls/keyCapture';
+export { bindPointerDrag, type PointerDragHandlers } from '../controls/pointerDrag';
+export type { GamepadSnapshot, GamepadButtonSnapshot, GamepadCandidate } from '../controls/gamepad';
+export { keyLabel } from '../state/bindings';
