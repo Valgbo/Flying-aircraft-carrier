@@ -70,6 +70,20 @@ the instantaneous rate.
 
 ---
 
+### 2.5 Conflicts found in the FlightGear package
+
+Analysis of the FlightGear A-10 package (commit 72da115) against the plan's figures:
+
+| Quantity | Package | Plan | Used | Note |
+|---|---|---|---|---|
+| Combat mix | 4 API : 1 HEI (comment) | 5 API : 1 HEI | 5 : 1 | Both ratios are quoted publicly; settle when a primary source is reachable |
+| Muzzle velocity (API) | 3,250 ft/s = 991 m/s | ≈1,010 m/s | 1,010 m/s | The package's HEI comment gives 1,044 m/s |
+| Projectile mass | API 425 g, HEI 360 g | API ≈395 g, HEI ≈378 g | plan | Moves the 1,500 m time of flight by up to 3 % |
+| Engine thrust | YASim 18,000 lbf (tuned with its own drag) | 2 × 9,065 lbf | plan | The YASim value is not a real thrust |
+| Gun line | 0° (HUD gun cross = boresight); modelled barrel axis 3.0° down | ≈2° down | 2° | The 3-D model's barrel points 3° down |
+| Dispersion | ±0.13° uniform (≈4.6 mrad 80 % circle) | 5 mrad diameter, 80 % | plan | Agrees with the diameter reading |
+| AGM-65 motor | 5.34 kN × 40 s, marked "guess" | ≈1,150 km/h, > 22 km | plan | The package missile is ≈10 % too fast |
+
 ## 3. Measured model values
 
 Filled in from the modules' acceptance tests at each integration (see `tests/unit/a10/`).
