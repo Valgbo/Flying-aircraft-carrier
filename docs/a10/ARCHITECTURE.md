@@ -333,6 +333,11 @@ resolution/rate, post-processing, clouds, model detail. Read with `getA10Quality
 `useA10Quality()`. Adaptive downgrade (one step when < 45 fps for 3 s) is the environment
 module's job, reusing the carrier's monitor through `src/engine`.
 
+### Listener pose (`view/listener.ts`)
+
+`listenerPose` (position, quaternion, velocity, inCockpit) is the world camera's pose, copied by
+RenderPipeline every frame after the camera rig ran. Code outside the Canvas (audio) reads it.
+
 ### Frame hooks (`view/frame.ts`)
 
 `onBeforeSimSteps(fn(sim, realDt))` — input sampling. `onSimFrame(fn(events, sim, info))` —
