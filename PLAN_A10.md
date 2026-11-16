@@ -6,8 +6,10 @@ bomb, rocket and missile is a simulated body, and the sight cues on the head-up 
 are computed from the same physics. What works and what fails in the real aircraft should work
 and fail here, for the same reasons.
 
-It is an original simulator of a real aircraft, with its own terrain, scenarios, interface,
-art and sound. It does not copy any existing game.
+It is an original simulator of a real aircraft, with its own simulation code, terrain,
+scenarios and interface. The aircraft's 3D model and some of its sounds are reused, under the
+GPL and with credit, from the open-source FlightGear A-10 (section 3.1). Nothing is taken from
+a commercial game. The project itself is open source under the GPL.
 
 Abbreviations are explained in the glossary (section 20).
 
@@ -20,7 +22,7 @@ Abbreviations are explained in the glossary (section 20).
 | **Real weapons** | Each weapon reproduces its published numbers within the tolerances of section 16 and is used with the real procedure: master arm, HUD mode, weapon profile, sensor, release |
 | **The gun, done properly** | The GAU-8/A fires 65 individually simulated rounds per second with the real spin-up, dispersion, recoil, smoke and sound, and the pipper shows where they will land |
 | **Tank killing that obeys physics** | Armour thickness, impact angle and range decide every result. A frontal gun pass on a main battle tank fails, a steep pass onto the roof or engine deck works, a Maverick kills outright |
-| **The real sight picture** | A collimated HUD with A-10C symbology, and two multifunction displays with stores, targeting-pod, Maverick and map pages |
+| **The real sight picture** | A collimated HUD with the real symbology in a detailed 3D cockpit. For the A-10C, two multifunction displays with stores, targeting-pod, Maverick and map pages |
 | **Flies like a Hog** | Slow, tight-turning and slow to regain speed. It meets the public performance figures of section 5 |
 | **Just fly** | Thirty seconds after loading you are airborne near targets with weapons loaded. No start-up procedure, and in version 1 nothing shoots back |
 | **Runs in a browser** | 60 fps on a mid-range laptop at Medium quality, with keyboard and mouse, a gamepad, or a real stick and throttle |
@@ -77,9 +79,10 @@ The carrier app keeps its behaviour and its tests must stay green.
 | Simulation | Own fixed-step core in plain TypeScript. **No Rapier** | An aircraft and its weapons need their own equations, not a general rigid-body engine. Plain functions can be tested without a browser |
 | Terrain building | Web Worker | Keeps tile generation off the frame |
 | Sensor pictures | three.js render targets | Targeting-pod and Maverick video |
-| Audio | Web Audio API, synthesised | Same approach as the carrier, structured so that a recorded sample can replace a voice later |
-| Art | Generated in code | No licensing questions and no downloads |
-| New dependencies | None | |
+| Aircraft art | FlightGear's A-10, under the GPL: exterior, cockpit, pilot, weapons and pods, converted to glTF by a script in this repository | Free, detailed and to scale (section 3.1) |
+| Other art | Generated in code: terrain, vehicles, effects, display pages | No downloads and no licensing questions |
+| Audio | Web Audio API. Recordings for the gun, the engines and the cockpit tones where a free one exists, synthesis for the rest | Section 13 |
+| New dependencies | None at run time. The model converter is our own script | three.js already loads glTF |
 
 What the carrier app already provides:
 
@@ -93,6 +96,45 @@ What the carrier app already provides:
 The reused modules have few or no references to the carrier today. Milestone M0 gives them a
 small shared slice of the simulation state to read (time, environment, camera) and adds a lint
 rule that stops A-10 code and carrier code from importing each other. No carrier file moves.
+
+### 3.1 Free assets and the licence
+
+**Decided:** the project is open source under the GPL, so the aircraft model costs nothing.
+
+The source is the FlightGear A-10 as developed at `github.com/l0k1/A-10`, inspected at commit
+`72da115` of 15 November 2026. Its licence file is the GPL version 2, and some of its files
+say "or later". Its README credits Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf,
+JMaverick16, Zorka and SammySkycrafts.
+
+| In the package | Measured | Use here |
+|---|---|---|
+| Exterior | 52,000 triangles, 227 named parts, 16.25 m long, 1024² textures, several paint schemes | As it is. The moving parts are named and their hinges are in the model definition: split ailerons, flaps, slats, elevators, rudders, undercarriage, canopy, engine fans, gun barrels |
+| Cockpit | 76,000 triangles plus about forty instrument models. It is an A-10A cockpit with the armament control panel and the television monitor, and it includes the colour display of the A-10A+ | The whole tub. Section 7 covers what the A-10C needs |
+| Pilot and seat | 15,000 triangles | Outside views |
+| Weapons and pods | AGM-65, Mk-82, Mk-82 AIR, Mk-84, CBU-87, AIM-9M, LAU-68 pod with Hydra rocket, Litening pod, two jamming pods, triple rack | As they are. There is no GBU-12: it is made from the Mk-82 body with a guidance kit built in code |
+| Sounds | 33 files: a gun loop, engine fan, whine and jet loops, both stall tones, altitude warning, bomb release, canopy, wind | Section 13 |
+| Flight-model files | Geometry and mass (YASim), and a machine-generated set of stability numbers (JSBSim, Aeromatic) | Starting values only. They are estimates, and the checks of section 5 decide |
+
+How it is handled:
+
+- **Licence.** The repository gets a `LICENSE` file: GPL version 2 or later. That fits the
+  package and the dependencies of both apps. The A-10 app does not bundle Rapier or any other
+  Apache-licensed library, because Apache 2.0 and GPL version 2 do not combine.
+- **Source kept.** The original files we use are stored unchanged under
+  `third_party/flightgear-a10/`, with the package's `COPYING` and README and the commit they
+  came from. The GPL requires the editable form to stay available, and it makes the conversion
+  repeatable.
+- **Conversion.** `scripts/a10/convert-ac3d.mjs` reads the AC3D model files (a plain-text
+  format) and the model definition, and writes compact glTF files and web-sized textures into
+  `public/a10/`. Nothing is edited by hand.
+- **Credits.** `CREDITS.md` lists every third-party file with its author, source, licence and
+  what was changed, and the app has a credits screen. A test fails if a file under
+  `public/a10/` has no credits entry.
+- **What may come in.** GPL, CC0, CC BY and public-domain material only. No "NonCommercial"
+  licences, because they conflict with the GPL. No marketplace purchases, whose licences
+  forbid publishing the file. Nothing extracted from a commercial game.
+- **Loading.** Unlike the carrier app, this one downloads model and sound files. They load
+  after the menu, behind the existing loading screen. The budget is in section 14.
 
 ---
 
@@ -150,6 +192,10 @@ src/a10/
 tests/unit/a10/    # numeric acceptance tests (section 16)
 tests/e2e/a10/     # browser tests
 docs/a10/          # ARCHITECTURE.md (contracts), REFERENCE_DATA.md (sources)
+public/a10/                    # converted aircraft model, textures and sounds (generated)
+third_party/flightgear-a10/    # the original FlightGear files, COPYING, source commit
+scripts/a10/convert-ac3d.mjs   # AC3D to glTF converter
+LICENSE, CREDITS.md            # GPL version 2 or later; every third-party file credited
 ```
 
 ---
@@ -163,6 +209,9 @@ has to produce that, because it sets the rhythm of every attack.
 - **Model.** A rigid body with six degrees of freedom. Lift, drag, side force and moments come
   from coefficient tables against angle of attack, sideslip, control deflection, flap, speed
   brake and stores drag, including the stall and what follows it. Integrated at 120 Hz.
+- **Starting numbers.** The geometry, mass and stability estimates in the FlightGear package
+  (section 3.1) give the first set of coefficients. They are estimates, so the checks below
+  still decide.
 - **Engines.** Two TF34-GE-100A with spool lag, thrust that falls with altitude and speed, and
   fuel burn.
 - **Mass.** Empty weight plus fuel, ammunition and each store at its station. Centre of
@@ -212,7 +261,7 @@ sensors aligned, Master Arm at SAFE.
 | | The real gun | In the simulator |
 |---|---|---|
 | Rate of fire | 3,900 rounds per minute, fixed in the A-10: 65 per second | Each round leaves at its own exact time. At 300 kn the aircraft moves 2.4 m between rounds, so a burst is a line of separate impacts |
-| Spin-up | About half a second to full rate; roughly 50 rounds leave in the first second | The rate ramps the same way, and the drive whine rises and falls with it |
+| Spin-up | About half a second to full rate; roughly 50 rounds leave in the first second | The rate ramps the same way, the model's barrels turn with it, and the drive whine rises and falls |
 | Ammunition | The drum holds 1,174 and 1,150 is the usual load. Combat mix: five armour-piercing incendiary (PGU-14/B, depleted-uranium core) to one high-explosive incendiary (PGU-13/B) | 1,150 rounds in that order, each keeping its type. All-HEI and target-practice loads can be chosen. A full load is about 18 s of fire |
 | Ballistics | About 1,010 m/s at the muzzle; projectile ≈395 g (API), ≈378 g (HEI) | A point mass with Mach-dependent drag, gravity and wind, starting with muzzle velocity plus the aircraft's own velocity |
 | Dispersion | "5 mil, 80 %": four rounds in five inside a 5-milliradian circle | A random angular error per round, drawn to match. The aircraft's own movement during the burst spreads the pattern further, as it really does, and that part is not faked |
@@ -328,6 +377,7 @@ camera follows the missile to impact.
 
 - Eleven stations. What may hang where, and each store's weight and drag, follow public
   loading diagrams. Weight and drag change performance, and asymmetry needs trim.
+- The 3D models of the weapons, racks and pods come from the FlightGear package (section 3.1).
 - The stores page (DSMS) shows the inventory, the weapon profiles and the selected station,
   and offers selective jettison.
 - The loadout screen has presets and free choice, and shows total weight and drag before you
@@ -365,15 +415,26 @@ right, including the pipper that sits below the glass.
 terrain database (default), the radar altimeter or the barometric altimeter, chosen with the
 altitude-source switch. The last two are less accurate over hills, as in the aircraft.
 
-**Cockpit.** The front panel as the pilot sees it: HUD, up-front controller, the armament
-panel (Master Arm, GUN/PAC arm, laser arm, targeting-pod power, altitude source), two
-multifunction displays with twenty edge buttons each, standby attitude, airspeed and altitude,
-basic engine gauges, the canopy frame. Switches and display buttons can be clicked.
+**Cockpit.** FlightGear's cockpit model (section 3.1): tub, seat, canopy frame, stick,
+throttle and about forty instruments. Switches and display buttons can be clicked. It is an
+A-10A cockpit, and the first five milestones use it exactly as it comes: the HUD frame,
+Master Arm, the gun switches and the rounds counter are all there.
 
-**Display pages.** DSMS (stores), TGP (targeting pod), MAV (Maverick), TAD (moving map with
-your aircraft, steerpoints and the SPI).
+**A-10A or A-10C: decided at M6, not now.** Everything up to and including the gun and the
+tanks is the same for both.
 
-**SOI and SPI.** One display or the HUD is the sensor of interest (SOI): the slew and
+| | A-10C (what this plan describes) | A-10A (what the free cockpit is) |
+|---|---|---|
+| Front panel | Two multifunction displays with twenty edge buttons each, the up-front controller and the armament panel (Master Arm, GUN/PAC arm, laser arm, pod power, altitude source) are built into the FlightGear cockpit. The package's colour-display model serves as the bezel | As modelled: armament control panel with station buttons and release knobs, television monitor |
+| Weapon set-up | Stores page with profiles | The switches and knobs of the armament control panel |
+| Maverick picture | Right display | Television monitor |
+| Targeting pod and laser-guided bombs | Yes | No. They need the colour display of the A-10A+, or the A-10C |
+| Cost | About three days more cockpit work | Skips M7 and the laser-bomb half of M8: about a week and a half less |
+
+**Display pages (A-10C).** DSMS (stores), TGP (targeting pod), MAV (Maverick), TAD (moving
+map with your aircraft, steerpoints and the SPI).
+
+**SOI and SPI (A-10C).** One display or the HUD is the sensor of interest (SOI): the slew and
 target-management controls act on it. One point on the ground is the sensor point of interest
 (SPI): the pod, the Mavericks, CCRP bombing and the map can all be slaved to it. That is how a
 target found in the pod is handed to a Maverick, as in the aircraft.
@@ -515,19 +576,29 @@ mode and profile buttons, and tap-to-designate on an enlarged display.
 
 ## 13. Sound and effects
 
-**Sound.** Synthesised, as in the carrier app.
+**Sound.** Recordings where a free one exists, synthesis for the rest.
 
-- **Gun, in the cockpit.** A 65 Hz pulse train through the resonances of the airframe, a low
-  rumble, and the hydraulic drive's whine rising over the first half-second and falling after.
-- **Gun, from outside.** Sharper, with the crack of supersonic rounds.
+- **Gun recording.** The FlightGear package has a 1.5 s gun loop that repeats at about 70
+  shots per second, close to the real 65. It is clipped and has no beginning or end, so
+  version 1 wraps it in a synthesised spin-up, spin-down and low rumble. A cleaner live-fire
+  recording replaces it once one with a clear CC0, CC BY or public-domain status is in hand.
+  Freesound has several from a 2011 demonstration, and US military footage is another source.
+  Those sites cannot be reached from the build environment, so you download the file and the
+  build slices it into start, loop and tail.
+- **Gun, in the cockpit.** The recording, low-pass filtered, over a 65 Hz pulse train through
+  the resonances of the airframe, with the hydraulic drive's whine rising over the first
+  half-second and falling after.
+- **Gun, from outside.** The recording as it is, with the crack of supersonic rounds.
 - **Distance.** Every sound in the world arrives late by its distance at the speed of sound
   and loses its high frequencies with range. A bomb flashes, then booms. At the target the
   impacts come before the gun.
-- **Engines.** The high-bypass fan whine of the TF34 and a core rumble, following the spool.
+- **Engines.** The package's fan, whine and jet loops, pitched and mixed by the spool, for the
+  high-bypass sound of the TF34.
 - **Airframe.** Wind with speed, buffet near the stall, speed-brake rumble.
-- **Weapons.** The clunk of a bomb leaving, the whoosh of a Maverick or a rocket ripple.
-- **Cockpit.** Stall tones, over-g, master caution, altitude alert, and the voice warnings
-  "ALTITUDE" and "PULL UP".
+- **Weapons.** The package's bomb-release clunk; a synthesised whoosh for a Maverick or a
+  rocket ripple.
+- **Cockpit.** The package's steady and chopped stall tones and its altitude warning;
+  synthesised over-g and master-caution tones and the "PULL UP" voice warning.
 
 **Effects.**
 
@@ -550,6 +621,8 @@ mode and profile buttons, and tap-to-designate on an enlarged display.
 | Vehicles | Up to 80 alive |
 | Draw calls | Under 300 |
 | Triangles | Under 1.2 million on High, under 350,000 on Low |
+| Aircraft | Exterior 52,000 triangles, cockpit 76,000, most stores 2,000 to 8,000 (the CBU-87, at 23,000, is reduced). The cockpit is not drawn in distant outside views, and only the nose and wings are drawn from the cockpit |
+| Download | Aircraft model and textures under 10 MB, sounds under 3 MB, loaded after the menu |
 | Sensor pictures | 512 × 512 at 30 Hz on High, 256 × 256 at 15 Hz on Low; pod and Maverick update on alternate frames |
 | Particles | 20,000 on High, 4,000 on Low |
 | JavaScript | Under 1.2 MB gzipped (no Rapier) |
@@ -563,22 +636,23 @@ under 45 fps for three seconds.
 
 | # | Milestone | Deliverables | Est. |
 |---|---|---|---|
-| **M0** | Foundation | `/a10/` page; shared-engine exports with the carrier's tests green; fixed-step loop, seeded random numbers, state pools; data module and `REFERENCE_DATA.md`; `docs/a10/ARCHITECTURE.md`; test and sandbox harness | 2 days |
-| **M1** | Flight model | Aerodynamics, engines, flight controls, trim, flaps, speed brakes, atmosphere and wind, autopilot, warning logic; the checks of section 5 | 4–5 days |
+| **M0** | Foundation | `/a10/` page; shared-engine exports with the carrier's tests green; fixed-step loop, seeded random numbers, state pools; data module and `REFERENCE_DATA.md`; `docs/a10/ARCHITECTURE.md`; test and sandbox harness; `LICENSE` and `CREDITS.md`; the model converter, with the FlightGear aircraft on screen in a sandbox | 3 days |
+| **M1** | Flight model | Aerodynamics, engines, flight controls, trim, flaps, speed brakes, atmosphere and wind, autopilot, warning logic; the checks of section 5; the exterior model flying with its control surfaces, flaps, speed brakes and fans moving | 4–5 days |
 | **M2** | World | Height function, terrain tiles and textures, forests, roads, airbase, haze; terrain collision and line of sight; re-centring | 4–5 days |
-| **M3** | Cockpit and HUD | Cockpit, head look and zoom, collimated HUD with flight symbology, armament panel, display frames and page system, map page | 4–5 days |
+| **M3** | Cockpit and HUD | The FlightGear cockpit in place and lit, clickable switches, head look and zoom, collimated HUD with flight symbology, Master Arm and gun switches | 3–4 days |
 | **M4** | The gun | Gun mechanics, per-round ballistics, gun sight, PAC, recoil, smoke, impact effects, gun and impact sound; strafe pit with scoring | 5 days |
 | **M5** | Targets and damage | Vehicles, armour and component damage, kill states, fire and explosion effects, groups and columns, free hunt, hit log | 5 days |
 | | **Core loop complete: fly, find, strafe, destroy** | | **≈5 weeks** |
-| **M6** | Stores and unguided weapons | Loadout screen, stores page, weight and drag effects, Mk-82 in CCIP and CCRP, fuzing, blast and fragments, rockets and smoke marks | 5 days |
-| **M7** | Targeting pod | Sensor rendering (television and infrared), thermal model, track modes, SOI and SPI logic, laser | 4–5 days |
-| **M8** | Guided weapons | Maverick (video, lock logic, guidance), GBU-12, weapon and target cameras | 5–6 days |
+| **M6** | Stores and unguided weapons | **The variant is chosen here (section 7).** For the A-10C: the two displays, up-front controller and armament panel built into the cockpit, the display page system, the stores and map pages. For both: loadout screen, weight and drag effects, Mk-82 in CCIP and CCRP, fuzing, blast and fragments, rockets and smoke marks | 5 days, plus 3 for the A-10C panel |
+| **M7** | Targeting pod (A-10C) | Sensor rendering (television and infrared), thermal model, track modes, SOI and SPI logic, laser | 4–5 days |
+| **M8** | Guided weapons | Maverick (video, lock logic, guidance), GBU-12 (A-10C), weapon and target cameras | 5–6 days |
 | **M9** | Range and debrief | Scored events for every weapon, pass-by-pass debrief with impact plots, scenario options, rearm | 3–4 days |
-| **M10** | Feel pass | Sound mix, shake and g effects, warning tones and voice, effects and exterior polish, the remaining gun sights, fly-by camera | 4 days |
+| **M10** | Feel pass | Sound mix, shake and g effects, warning tones and voice, effects, aircraft materials and paint, the remaining gun sights, fly-by camera | 4 days |
 | **M11** | Controls and onboarding | Binding screen for sticks and throttles, response curves, realism presets, checklist strip, reduced touch layout | 4 days |
 | **M12** | QA and release | Performance pass, browser tests, other browsers, README, deployment | 2 days |
 
-**Total:** about 11 weeks for one developer. M1, M2 and M3 do not depend on each other once
+**Total:** about eleven and a half weeks for one developer as an A-10C, about nine and a half
+as an A-10A. M1, M2 and M3 do not depend on each other once
 M0's contract exists, and neither do M6, M7 and M8 once M4 and M5 exist, so parallel work
 shortens the calendar considerably.
 
@@ -612,6 +686,7 @@ browser, against the simulation core.
 | Rockets | Burn-out speed 739 m/s ± 3 % from a static launch; burn time 1.05 to 1.10 s |
 | Flight | The checks of section 5 |
 | Determinism | Same seed and input log: identical state after 60 s |
+| Assets | The converted aircraft keeps the source's part names and is within 1 % of its dimensions. Every file under `public/a10/` has an entry in `CREDITS.md` |
 
 **Browser tests (Playwright).** The page loads and draws. A scripted pilot flies a strafing
 pass and the target's state changes. Master Arm at SAFE blocks every release. The display
@@ -632,24 +707,32 @@ dedicated session comparing sight, sound and motion with cockpit video of the re
 | Terrain plus two sensor pictures is heavy for a browser | Quality presets, low sensor resolution and rate, automatic downgrade, the budget of section 14 measured at each milestone |
 | A collimated, clipped HUD is technically awkward | Prototype it in a sandbox at the start of M3, before the cockpit is built around it |
 | Flight-model tuning eats time | Tune to the short list of section 5 and stop |
-| A synthesised GAU-8 does not sound right | Time reserved in M10; the audio layer accepts a recorded sample if one is licensed later |
+| The free gun recording is rough: clipped and short | A synthesised spin-up, tail and rumble around it in M4. A cleaner CC0, CC BY or public-domain recording can replace it at any time |
 | The real switch logic is too much for a keyboard | The layout of section 12, mouse-stick mode, the checklist strip and the presets |
-| Code-generated aircraft looks crude | The cockpit comes first, because that is where you sit. The exterior is seen in outside views only and can be replaced by a licensed model |
+| The FlightGear model converts badly or looks dated under modern lighting | The converter and a screenshot check come in M0, before anything depends on them. A materials pass in M10. Parts built in code where a piece is missing |
+| A third-party file turns out to have the wrong licence | Only GPL, CC0, CC BY and public-domain files. The credits test. Originals and their source commit kept in the repository |
 | Targets are too hard to see on a monitor | Zoom view, dust and smoke, map markers by preset, the pod |
 | The A-10 work breaks the carrier app | No carrier file moves; a lint rule separates the two; the carrier's tests run in the same CI |
 
 ---
 
-## 18. Decisions to confirm
+## 18. Decisions
 
-The plan assumes the left column. Each can be changed before M0 at little cost.
+**Decided**
+
+| Decision | Outcome |
+|---|---|
+| Licence | Open source under the GPL |
+| Art and sound | The FlightGear A-10 model and sounds, free under the GPL. A cleaner public gun recording when one is in hand. Everything else generated in code. Nothing is bought |
+
+**Still open.** The plan assumes the middle column.
 
 | Decision | The plan assumes | Alternative |
 |---|---|---|
+| Licence wording | GPL version 2 or later for the whole repository, the carrier app included. It has to be in place before the model is committed in M0 | GPL version 2 or later for the A-10 app only, and another licence for the carrier app |
 | Where it lives | A second app in this repository at `/a10/`, sharing the carrier's foundation | Its own repository, taking `src/engine` and `src/a10` along. About one extra day |
-| Variant | A-10C: digital cockpit, targeting pod, laser-guided bombs | A-10A: gun, Mavericks on a television monitor, unguided bombs. Drops M7 and half of M8 |
+| Variant | Chosen at M6 (section 7). The plan describes the A-10C: two displays, targeting pod, laser-guided bombs | The A-10A exactly as the free cockpit models it: gun, Mavericks on a television monitor, unguided bombs and rockets. About a week and a half less |
 | Enemy fire | None in version 1 | Threats added after M12 |
-| Art and sound | Generated in code | A licensed aircraft model and recorded gun audio: more convincing, but they need sourcing and a licence check |
 | Devices | Desktop first, a reduced touch layout late | No touch at all, which saves about two days |
 
 ---
@@ -719,6 +802,12 @@ it in `docs/a10/REFERENCE_DATA.md`.
 
 **Sources**
 
+- Aircraft model and sounds: [FlightGear A-10 repository](https://github.com/l0k1/A-10),
+  [FlightGear wiki, A-10](https://wiki.flightgear.org/A-10),
+  [FlightGear add-on licence policy](https://wiki.flightgear.org/FGAddon)
+- Gun recordings to check: [Freesound, nicStage](https://freesound.org/people/nicStage/sounds/127737/),
+  [DVIDS usage terms](https://www.dvidshub.net/about/copyright)
+- Why nothing is bought: [TurboSquid licence](https://www.turbosquid.com/licensing)
 - GAU-8/A: [Wikipedia](https://en.wikipedia.org/wiki/GAU-8_Avenger),
   [General Dynamics OTS brochure](https://www.gd-ots.com/wp-content/uploads/2025/06/400003355-30mm-GAU-8-A-Gatling-Gun-Product-Brochure-2025-06.pdf),
   [FAS](https://man.fas.org/dod-101/sys/ac/equip/gau-8.htm)
@@ -753,6 +842,8 @@ it in `docs/a10/REFERENCE_DATA.md`.
 | CCIP | Continuously computed impact point: the HUD shows where the weapon would land if released now |
 | CCRP | Continuously computed release point: you designate the target, and the computer releases at the right moment |
 | DSMS | Digital stores management system: the display page for weapons and their profiles |
+| FlightGear | An open-source flight simulator. This project reuses the 3D model and sounds of its A-10 |
+| GPL | GNU General Public License: anyone may use, change and share the project, and must pass their changes on under the same licence |
 | HUD | Head-up display: the glass in front of the pilot with flight and aiming symbols |
 | Master Arm | The switch that makes weapon release possible at all |
 | mil, mrad | Milliradian: one metre across at a distance of 1,000 m |
