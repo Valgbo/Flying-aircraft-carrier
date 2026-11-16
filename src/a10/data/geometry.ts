@@ -1,30 +1,65 @@
 /**
- * Aircraft geometry the simulation needs, in the BODY frame (m, origin = reference CG; +X right,
- * +Y up, -Z nose). Owned by the AIRCRAFT (asset pipeline) module, which replaces the stand-in
- * values with values measured on the converted FlightGear model (public/a10/models/a10-meta.json)
- * and records how they were measured.
+ * Aircraft geometry the simulation needs, in the BODY frame (m; origin = the reference point
+ * R = FlightGear model (7.65, 0, 0.30), i.e. 25 % of the model wing's mean aerodynamic chord on
+ * the centreline; +X right, +Y up, -Z nose).
+ *
+ * Measured on the FlightGear A-10 model (github.com/l0k1/A-10 @ 72da115, GPL) by parsing its AC3D
+ * and XML files (see docs/a10/REFERENCE_DATA.md). Mapping from the AC3D file axes (+x aft, +y up,
+ * +z left): X = -z_ac, Y = y_ac - 0.30, Z = x_ac - 7.65.
+ *
+ * Owned by the AIRCRAFT (asset pipeline) module, which regenerates these values from
+ * public/a10/models/a10-meta.json when the converter runs.
  */
 export const A10_GEOMETRY = {
   /** Muzzle of the firing barrel (on the centreline, below the nose). */
-  muzzle: { x: 0, y: -0.75, z: -8.9 },
-  /** Pilot's design eye point. */
-  eye: { x: 0, y: 1.05, z: -4.15 },
-  /** HUD combiner glass centre and size (width, height), m. */
-  hudCenter: { x: 0, y: 1.0, z: -4.75 },
-  hudSize: { width: 0.17, height: 0.15 },
-  /** Station positions, index 1..11 (0 unused). */
+  muzzle: { x: 0, y: -0.59, z: -7.81 },
+  /**
+   * Direction of the modelled barrel cluster axis (3.0° below -Z). The simulation's gun line
+   * uses GAU8.gunLineDepression from data/gun.ts.
+   */
+  muzzleDirection: { x: 0, y: -0.0521, z: -0.9986 },
+  /** Pilot's design eye point (FlightGear cockpit view 0). */
+  eye: { x: 0, y: 1.2, z: -4.45 },
+  /** FlightGear's default cockpit view pitch (looking down at the panel), rad. */
+  eyeDefaultPitch: (-12.5 * Math.PI) / 180,
+  /** FlightGear's default cockpit field of view, degrees, on the WIDER screen axis. */
+  eyeDefaultFovDeg: 65,
+  /** HUD combiner glass, aft face: centre and size (width, height along the glass), m. */
+  hudCenter: { x: 0, y: 1.0776, z: -5.4589 },
+  hudSize: { width: 0.2375, height: 0.3302 },
+  /** HUD combiner glass corners (aft face): top-left, top-right, bottom-right, bottom-left. */
+  hudCorners: [
+    { x: -0.1188, y: 1.2334, z: -5.4042 },
+    { x: 0.1187, y: 1.2334, z: -5.4042 },
+    { x: 0.1187, y: 0.9218, z: -5.5136 },
+    { x: -0.1188, y: 0.9218, z: -5.5136 },
+  ],
+  /** Unit normal of the combiner glass, pointing toward the pilot. */
+  hudNormal: { x: 0, y: -0.3313, z: 0.9436 },
+  /**
+   * Pylon suspension points (pylon bottom), index 1..11 = stations 1 (left wing tip) … 6
+   * (centreline) … 11 (right wing tip); index 0 unused. Pylon bottoms slope ≈3° nose-down.
+   */
   stations: [
     null,
-    { x: -7.0, y: -0.35, z: 0.1 },
-    { x: -5.6, y: -0.4, z: 0.1 },
-    { x: -4.1, y: -0.45, z: 0.0 },
-    { x: -2.2, y: -0.75, z: -0.4 },
-    { x: -0.9, y: -1.0, z: -0.4 },
-    { x: 0, y: -1.05, z: -0.4 },
-    { x: 0.9, y: -1.0, z: -0.4 },
-    { x: 2.2, y: -0.75, z: -0.4 },
-    { x: 4.1, y: -0.45, z: 0.0 },
-    { x: 5.6, y: -0.4, z: 0.1 },
-    { x: 7.0, y: -0.35, z: 0.1 },
+    { x: -5.894, y: -0.357, z: -0.05 },
+    { x: -4.847, y: -0.537, z: -0.05 },
+    { x: -3.627, y: -0.676, z: -0.05 },
+    { x: -1.681, y: -0.781, z: -0.05 },
+    { x: -0.565, y: -0.783, z: -0.05 },
+    { x: 0.003, y: -0.783, z: -0.05 },
+    { x: 0.565, y: -0.783, z: -0.05 },
+    { x: 1.681, y: -0.781, z: -0.05 },
+    { x: 3.627, y: -0.675, z: -0.05 },
+    { x: 4.847, y: -0.537, z: -0.05 },
+    { x: 5.894, y: -0.357, z: -0.05 },
   ],
+  /** Nose tip and tail cone along Z, and the half-span to the wing tips, m. */
+  noseZ: -7.655,
+  tailZ: 8.407,
+  wingTipX: 8.904,
+  /** Lowest point of the fuselage with the gear up (belly), Y, m. */
+  bellyY: -1.64,
+  /** Fin tip height, Y, m. */
+  finTopY: 2.455,
 } as const;
