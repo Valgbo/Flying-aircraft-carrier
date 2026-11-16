@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Interactive 3D web app: fly and operate an original flying aircraft carrier lifted by four tilting jet turbines.",
+  "description": "Two browser simulators: an original flying aircraft carrier, and an A-10 Warthog with simulated weapons (/a10/).",
+  "license": "GPL-2.0-or-later",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

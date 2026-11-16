@@ -1,0 +1,11 @@
+/* A-10 app base layout. Tokens and base classes come from src/styles/global.css (--fac-*). */
+.a10-app {
+  position: fixed;
+  inset: 0;
+  background: #0b1208;
+}
+.a10-app > canvas,
+.a10-app > div:first-child {
+  position: absolute !important;
+  inset: 0;
+}
