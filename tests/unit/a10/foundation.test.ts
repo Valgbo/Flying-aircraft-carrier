@@ -16,8 +16,22 @@ import { Rng, createRngStreams } from '../../../src/a10/core/rng';
 import { createSim, drainEvents, runSim } from '../../../src/a10/core/sim';
 import type { SimEvent } from '../../../src/a10/core/types';
 import { createFlatTerrain, createTerrain, generateTerrainData } from '../../../src/a10/core/world';
+import type { Terrain } from '../../../src/a10/core/world/types';
 
 const DEG = Math.PI / 180;
+
+/** Generating a world takes seconds: build each seed once and share it between tests. */
+const worlds = new Map<number, Terrain>();
+function world(seed: number): Terrain {
+  let t = worlds.get(seed);
+  if (!t) {
+    t = createTerrain(generateTerrainData(seed));
+    worlds.set(seed, t);
+  }
+  return t;
+}
+/** Timeout for tests that generate a world (slow on a loaded machine). */
+const WORLD_TIMEOUT = 120_000;
 
 describe('frames', () => {
   it('heading 90° points the nose east, pitch up raises it, bank right lowers the right wing', () => {
@@ -105,8 +119,8 @@ describe('rng', () => {
 });
 
 describe('terrain stand-in contract', () => {
-  it('segment and ray hits land on the surface', () => {
-    const t = createTerrain(generateTerrainData(1));
+  it('segment and ray hits land on the surface', { timeout: WORLD_TIMEOUT }, () => {
+    const t = world(1);
     const hit = {
       point: new Vector3(),
       normal: new Vector3(),
@@ -130,9 +144,9 @@ describe('terrain stand-in contract', () => {
 });
 
 describe('sim loop', () => {
-  it('runs, stays finite and is deterministic', () => {
+  it('runs, stays finite and is deterministic', { timeout: WORLD_TIMEOUT }, () => {
     const run = () => {
-      const sim = createSim({ seed: 5, terrain: createTerrain(generateTerrainData(5)) });
+      const sim = createSim({ seed: 5, terrain: world(5) });
       runSim(sim, 10, (s) => {
         s.input.roll = s.time < 2 ? 0.3 : 0;
       });
@@ -148,8 +162,23 @@ describe('sim loop', () => {
     expect(a.events.length).toBe(0);
   });
 
-  it('places target groups for free hunt', () => {
-    const sim = createSim({ seed: 1, terrain: createTerrain(generateTerrainData(1)) });
+  it('starts trimmed in a dive when the air start asks for a path angle', () => {
+    const sim = createSim({
+      seed: 3,
+      terrain: createFlatTerrain(100),
+      start: { x: 0, z: 0, agl: 1500, heading: 0.5, speed: 150, gamma: -30 * DEG },
+    });
+    const ac = sim.aircraft;
+    expect(ac.flightPathAngle / DEG).toBeCloseTo(-30, 3);
+    // Straight flight along a 30° dive: the normal load factor is cos 30°.
+    expect(Math.abs(ac.gLoad - Math.cos(30 * DEG))).toBeLessThan(0.03);
+    runSim(sim, 1);
+    expect(Math.abs(ac.flightPathAngle / DEG + 30)).toBeLessThan(1.5);
+    expect(Math.abs(ac.bank / DEG)).toBeLessThan(2);
+  });
+
+  it('places target groups for free hunt', { timeout: WORLD_TIMEOUT }, () => {
+    const sim = createSim({ seed: 1, terrain: world(1) });
     expect(sim.targets.vehicles.length).toBeGreaterThan(0);
   });
 });

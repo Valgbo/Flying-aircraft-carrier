@@ -3,9 +3,10 @@
  * The UI calls these; they own the order of world generation, asset loading and sim start.
  */
 import { pushCommand } from '../core/sim';
-import { KT } from '../core/units';
+import { DEG, KT } from '../core/units';
+import { tasFromCas } from '../core/world';
 import { a10Flags } from './debugFlags';
-import { endFlight, getSim, prepareWorld, startFlight } from './runtime';
+import { endFlight, getSim, getTerrain, prepareWorld, startFlight } from './runtime';
 import { useA10Store } from './store';
 
 type Loader = (onProgress: (fraction: number, label: string) => void) => Promise<void>;
@@ -50,16 +51,22 @@ export async function beginFlight(): Promise<void> {
     await runLoaders();
     store.setLoading(1, 'Starting');
     const f = a10Flags;
+    const terrain = getTerrain();
     const sim = startFlight({
-      start: f.start
-        ? {
-            x: f.start.x,
-            z: f.start.z,
-            agl: f.start.agl,
-            heading: (f.start.heading * Math.PI) / 180,
-            speed: f.start.speedKt * KT,
-          }
-        : undefined,
+      start:
+        f.start && terrain
+          ? {
+              x: f.start.x,
+              z: f.start.z,
+              agl: f.start.agl,
+              heading: f.start.heading * DEG,
+              speed: tasFromCas(
+                f.start.speedKt * KT,
+                terrain.heightAt(f.start.x, f.start.z) + f.start.agl,
+              ),
+              gamma: f.start.pathDeg * DEG,
+            }
+          : undefined,
     });
     if (f.arm) {
       pushCommand(sim, { type: 'masterArm', value: 'ARM' });

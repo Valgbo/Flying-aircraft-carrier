@@ -170,9 +170,24 @@ system draws only from its own `sim.rng` stream.
   state change by polling if an event exists for it.
 - `Command` (types.ts) carries discrete pilot actions. The input layer resolves short/long
   presses (TMS/DMS/China hat/coolie: long = held ≥ 0.4 s) before queuing.
+- **Command values as the input layer queues them** (the avionics module must handle every
+  one): `masterArm` and `laserArm` arrive as explicit `'ARM'`/`'SAFE'` (the key toggles from the
+  current state); `gunPac` `'cycle'`; `tgpPower` `'toggle'`; `altSource` `'cycle'`;
+  `masterMode` `'next'`; `profile` ±1; `soi` an explicit `'HUD'|'LMFD'|'RMFD'`;
+  `tms`/`dms`/`coolie` `{dir, long}`; `chinaHat` `{fwd|aft, long}`; `sensorPicture` `'cycle'`;
+  `sensorZoom` ±1; `flaps` `0|1|2` (next position) or `'up'`/`'down'`; `gear` `'toggle'`;
+  `autopilot` `'toggle'`/`'mode'`; `altitudeAlert` in metres above the ground, 0 = off (steps
+  off, 200, 500, 1,000, 1,500, 2,000 ft); `steerpoint` ±1; `jettison` `{stations: 'all'}` only
+  after a 0.4 s hold. `mfdPage`, `osb` and `rearm` come from the cockpit and UI.
 - Continuous controls are in `PilotInput`: stick, pedals, two throttles, the two-stage gun
-  trigger (`trigger: 0 | 1 | 2`), weapon release (held), speed-brake switch, trim hat, slew,
-  laser button.
+  trigger (`trigger: 0 | 1 | 2`; 1 = PAC-1 detent, 2 = fire; the input layer already applies the
+  one-stage realism rule), weapon release (held), speed-brake switch (the key latches ±1 until
+  `aircraft.speedBrakeCmd` reaches 1 or 0, so that field must keep moving with the switch), trim
+  hat, slew, laser button.
+- **Event timing:** `gunStart` carries the exact sim time of the burst's first round and
+  `gunStop` the time of its last (sub-step accurate), so audio can start and stop the gun
+  sample-accurately. Switch and mode changes made by commands emit `switch {name, value}`
+  (audio plays the click).
 
 ### Allocation
 
@@ -209,6 +224,16 @@ Reads `sim.input`, `sim.avionics.gun` (PAC), `sim.stores` (mass, drag, asymmetry
 body-frame force/moment to `aircraft.externalForceBody/externalMomentBody`; `stepFlight` applies
 them once and clears them. **Sub-step interpolation:** `prevPosition/prevVelocity/
 prevOrientation` hold the state at the start of the last flight step.
+**Setters** (the only way other modules change flight state): `setFlapHandle(sim, 0|1|2)`,
+`setGear(sim, down)`, `autopilotCommand(sim, 'toggle'|'disengage'|'mode')`,
+`setAltitudeAlert(sim, metresAgl)`; also `engageAutopilot`, `disengageAutopilot`,
+`trimAircraft`, `levelFlightThrottle`, `predictRecoveryClearance`. Testbed (tests and the flight
+sandbox, import directly): `core/flight/testbed.ts`.
+Derived fields others read: `wind` (mean + gust at the aircraft), `dynamicPressure`, `gLoad`,
+`lateralG`, `axialG`, `stallAlpha`, `buffet` (0..1), `gLimitPositive/Negative`, `gearPosition`
+(0..1), `groundCollision {clearance, timeToImpact}` (HUD break-X), `pac {aimPoint, aimValid,
+errorAz, errorEl, …}`, `minG`/`maxG`. Fired rounds keep their spent cases on board (0.15 kg
+each), so a round fired lowers the aircraft's mass by ≈0.54 kg (API), not 0.69 kg.
 
 ### Weapons — `core/weapons`
 
@@ -221,6 +246,13 @@ functions that move live rounds (PLAN §6.1 rule 2).
 Gun fires when `input.trigger === 2` (or 1 when the realism flag `twoStageTrigger` is off and
 the trigger is pressed), `avionics.masterArm === 'ARM'`, `avionics.gunPac !== 'SAFE'`, rounds
 remain (or unlimited). Any master mode.
+What audio and the views rely on: `gun.rate` is the instantaneous rate (rounds/s) during spin-up
+and spin-down; `gun.firing` is true while rounds leave; `gunStart`/`gunStop` carry exact times
+(§3); `roundImpact` is emitted for every round that hits something, HEI included (audio and
+effects draw HEI bursts from `roundImpact` and ignore `detonation` kind `'hei'`, so an HEI round
+must not produce two bangs); `RoundPool.id` is unique per round (slots are reused, ids are not).
+Optional `StoresState` fields the flight module uses when present: `rollInertia` (Σ m·x², kg·m²)
+and `dragMoment` (Σ CdA·x, m³, yaw from asymmetric store drag).
 
 ### Avionics — `core/avionics`
 
@@ -230,6 +262,11 @@ of flight, min/max range flags) and `avionics.release: ReleaseSolution`. Command
 to another module's state (flaps, speed brake, autopilot, altitude alert → flight; jettison,
 rearm → weapons; TGP/MAV slew and track → sensors) are applied by `applyCommands` through that
 module's exported setter functions, never by writing the other module's private fields.
+`applyCommands` handles **every** `Command` with the values listed in §3, calls the flight
+setters (`setFlapHandle`, `setGear`, `autopilotCommand`, `setAltitudeAlert`) instead of writing
+`sim.aircraft` fields, and emits `switch {name, value}` for each armament-panel switch, master
+mode, profile, SOI, altitude-source and display change (audio clicks on them; nothing else emits
+them).
 
 ### Targets — `core/targets`
 
@@ -239,6 +276,9 @@ module's exported setter functions, never by writing the other module's private 
 `applyBlast(sim, position, chargeKg, fragmentKg?)` · `VEHICLE_SHAPES` (data/vehicles.ts).
 The targets module emits `vehicleDamaged` / `vehicleDestroyed` and appends `debrief.hits` and
 `debrief.kills`. The weapons module emits `roundImpact` (with the outcome it got back).
+Cook-offs and ammunition explosions emit `detonation` kind `'secondary'` with the `vehicleId`
+(audio then skips the `vehicleDestroyed` boom of that vehicle in the same frame, so the blast is
+heard once).
 
 ### Sensors — `core/sensors` (wave 2) · Debrief — `core/debrief` (wave 2)
 
@@ -342,6 +382,8 @@ module's job, reusing the carrier's monitor through `src/engine`.
 
 `listenerPose` (position, quaternion, velocity, inCockpit) is the world camera's pose, copied by
 RenderPipeline every frame after the camera rig ran. Code outside the Canvas (audio) reads it.
+`velocity` is a real-time finite difference of the camera position (it jumps when the view
+changes); the audio module measures its own listener velocity over sim time for Doppler.
 
 ### Frame hooks (`view/frame.ts`)
 
@@ -385,6 +427,23 @@ mouse, gamepad, any HID stick/throttle via the Gamepad API), dead zones, curves,
 trigger, short/long presses. Calls `applyTestInputOverride(sim.input)` last so tests can hold
 controls. Default bindings: PLAN §12.
 
+- **Gating.** *Live* = flight screen, not paused, settings closed, no binding capture (flight
+  controls and commands). *App* = flight screen, no dialog or capture (views, pause). When not
+  live, axes, the trigger and held buttons read 0, presses never fire (not even on release) and
+  the throttle levers freeze where they are.
+- **`viewInput`** (written by input, read by the camera rig and the cockpit): `lookX/lookY`
+  look rates −1..1 (+right, +up); `lookDeltaX/Y` mouse pixels accumulated until `consumeLook()`;
+  `zoomSteps` ±1 per wheel notch until `consumeZoom()`; `zoomHeld`, `lookAtSpi` held each
+  frame; `cursorFree` toggled by Left Alt; `pointerX/Y` the pointer in NDC while the cursor is
+  free; `click {x, y, button}` set on a canvas press only while `cursorFree` — the cockpit sets
+  it to `null` when it handled the click; `centerView` is true for exactly one frame per press.
+- **Escape.** The input layer never calls `preventDefault` on Escape and toggles pause after
+  dispatch, only for an Escape nobody prevented. UI components prevent the Escapes they use
+  (closing a dialog). Gamepad Start toggles pause directly.
+- **APIs:** `useBindings`/`getBindingsConfig()`/`subscribeBindings()` (`bindingsStore.ts`),
+  `isInputCaptureActive()`, `getControlsReference()`, `useControlsReference()` (re-renders on
+  rebinding), `controlKeys(controlId, 'keyboard'|'gamepad')`.
+
 ---
 
 ## 9. Assets
@@ -413,8 +472,12 @@ controls. Default bindings: PLAN §12.
 
 - **Sandboxes:** `/a10/?sandbox=<name>` (dev server) renders `src/a10/dev/sandboxes/<name>.tsx`.
 - **URL flags** (`state/debugFlags.ts`): `?screen=flight`, `?scenario=`, `?quality=`,
-  `?realism=`, `?seed=`, `?time=`, `?view=`, `?start=x,z,aglM,headingDeg,speedKt`, `?arm=1`,
-  `?paused=1`, `?mute=1`, `?ui=0`, `?fps=1`, `?sandbox=`.
+  `?realism=`, `?seed=`, `?time=`, `?view=`, `?start=x,z,aglM,headingDeg,speedKias[,pathDeg]`
+  (path angle + climb / − dive), `?arm=1`,
+  `?paused=1`, `?mute=1`, `?ui=0`, `?fps=1`, `?sandbox=`. Audio (read by the audio module only):
+  `?audiodebug=1` installs `window.__A10_AUDIO__` in a production build (always in dev:
+  `state()`, `levels()` per bus in dBFS, `voices()`, `nodeCount()`, `trims()`,
+  `setTrim(bus, v)`); `?audiomix=gun:1,engines:0.7` trims buses for the visit.
 - **Test hook:** `window.__A10__ = { store, getSim, getTerrain, command(c), setInput(patch|null) }`.
 - **Screenshots** (headless, software WebGL — slow; wait generously, force `?quality=low`):
 

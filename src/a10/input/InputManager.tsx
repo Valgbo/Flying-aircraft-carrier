@@ -1,54 +1,89 @@
 /**
- * Input: keyboard, mouse, gamepad and joystick → sim.input and commands. OWNED BY THE INPUT MODULE.
- * FOUNDATION STAND-IN: arrows fly, Page Up/Down throttle, Shift/Space trigger, Enter release,
- * 1 Master Arm, M master mode, Esc pause.
+ * Input: keyboard, mouse, gamepads and any stick, throttle or pedals → sim.input, commands and
+ * viewInput. OWNED BY THE INPUT MODULE (docs/a10/ARCHITECTURE.md §8). Mounted once by App.tsx.
+ *
+ * The work is in ./runtime.ts (DOM) and ./engine.ts (pure). Here: the lifetime (StrictMode-safe
+ * attach/detach), the per-frame hook (`onBeforeSimSteps`: devices are sampled and sim.input is
+ * written right before the steps, with the test override applied last), and two small overlays:
+ * the mouse-stick ring (mouse-stick mode) and the free-cursor badge.
  */
-import { useEffect } from 'react';
-import { pushCommand } from '../core/sim';
-import { getSim } from '../state/runtime';
-import { useA10Store } from '../state/store';
-import { applyTestInputOverride } from '../state/testHook';
+import { useEffect, useRef, useState } from 'react';
 import { onBeforeSimSteps } from '../view/frame';
+import { useBindings } from './bindingsStore';
+import { attachInputRuntime, type RuntimeStatus } from './runtime';
+import { bindingName } from './labels';
+import './input.css';
 
-const held = new Set<string>();
-let throttle = 0.85;
+const RING_RADIUS_PX = 64;
+
+interface Hints {
+  ring: boolean;
+  lockHint: boolean;
+  cursorFree: boolean;
+}
+
+const sameHints = (a: Hints, b: Hints) =>
+  a.ring === b.ring && a.lockHint === b.lockHint && a.cursorFree === b.cursorFree;
+
+function hintsOf(s: RuntimeStatus): Hints {
+  return {
+    ring: s.mouseStick && s.pointerLocked && !s.cursorFree,
+    lockHint: s.mouseStick && !s.pointerLocked && !s.cursorFree,
+    cursorFree: s.live && s.cursorFree,
+  };
+}
 
 export default function InputManager() {
+  const dotRef = useRef<HTMLDivElement>(null);
+  const [hints, setHints] = useState<Hints>({ ring: false, lockHint: false, cursorFree: false });
+  const hintsRef = useRef(hints);
+  const config = useBindings((s) => s.config);
+  const cursorKey = config.controls.cursorFree[0];
+
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      held.add(e.code);
-      const sim = getSim();
-      if (e.code === 'Escape') useA10Store.getState().togglePause();
-      if (!sim) return;
-      if (e.code === 'Digit1') pushCommand(sim, { type: 'masterArm', value: 'cycle' });
-      if (e.code === 'KeyM') pushCommand(sim, { type: 'masterMode', value: 'next' });
-    };
-    const up = (e: KeyboardEvent) => held.delete(e.code);
-    const blur = () => held.clear();
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    window.addEventListener('blur', blur);
-    const off = onBeforeSimSteps((sim, dt) => {
-      const i = sim.input;
-      i.pitch = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0);
-      i.roll = (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0);
-      i.rudder = (held.has('KeyX') ? 1 : 0) - (held.has('KeyZ') ? 1 : 0);
-      if (held.has('PageUp')) throttle = Math.min(1, throttle + dt * 0.5);
-      if (held.has('PageDown')) throttle = Math.max(0, throttle - dt * 0.5);
-      i.throttle[0] = throttle;
-      i.throttle[1] = throttle;
-      i.trigger = held.has('Space') ? 2 : held.has('ShiftLeft') ? 1 : 0;
-      i.weaponRelease = held.has('Enter');
-      i.speedBrake = held.has('KeyB') ? 1 : held.has('KeyN') ? -1 : 0;
-      applyTestInputOverride(i);
+    const runtime = attachInputRuntime({
+      onFrame: (out, status) => {
+        const next = hintsOf(status);
+        if (!sameHints(next, hintsRef.current)) {
+          hintsRef.current = next;
+          setHints(next);
+        }
+        const dot = dotRef.current;
+        if (dot && next.ring) {
+          const x = out.mouseStickX * RING_RADIUS_PX;
+          const y = out.mouseStickY * RING_RADIUS_PX;
+          dot.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        }
+      },
+    });
+    const off = onBeforeSimSteps((sim, realDt) => {
+      runtime.frame(realDt, sim);
     });
     return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-      window.removeEventListener('blur', blur);
       off();
+      runtime.detach();
     };
   }, []);
-  return null;
+
+  return (
+    <div className="a10in-overlay" aria-hidden={!hints.cursorFree && !hints.lockHint}>
+      {hints.ring && (
+        <div className="a10in-stick" data-testid="mouse-stick">
+          <div className="a10in-stick__cross" />
+          <div className="a10in-stick__dot" ref={dotRef} />
+        </div>
+      )}
+      {hints.lockHint && (
+        <div className="a10in-badge" role="status">
+          Click the view to fly with the mouse
+        </div>
+      )}
+      {hints.cursorFree && (
+        <div className="a10in-badge" role="status" data-testid="cursor-free">
+          Cursor free: click switches in the cockpit
+          {cursorKey ? ` · ${bindingName(cursorKey, config)} to fly` : ''}
+        </div>
+      )}
+    </div>
+  );
 }

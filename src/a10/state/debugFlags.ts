@@ -8,7 +8,8 @@
  *   ?seed=<n>                             world seed for this visit
  *   ?time=<hours>                         time of day for this visit
  *   ?view=cockpit|chase|flyby|orbit       initial view
- *   ?start=<x>,<z>,<aglM>,<headingDeg>,<speedKt>   air start
+ *   ?start=<x>,<z>,<aglM>,<headingDeg>,<speedKias>[,<pathDeg>]   air start (path angle
+ *                                         + climb / − dive, default level)
  *   ?arm=1                                start with Master Arm ARM and GUNS mode
  *   ?paused=1                             start paused
  *   ?mute=1  ?ui=0  ?fps=1
@@ -23,7 +24,8 @@ export interface A10DebugFlags {
   seed?: number;
   time?: number;
   view?: string;
-  start?: { x: number; z: number; agl: number; heading: number; speedKt: number };
+  /** Air start: heading and path angle in degrees, speed in knots INDICATED. */
+  start?: { x: number; z: number; agl: number; heading: number; speedKt: number; pathDeg: number };
   arm: boolean;
   paused: boolean;
   mute: boolean;
@@ -43,9 +45,9 @@ function parse(search: string): A10DebugFlags {
   let start: A10DebugFlags['start'];
   const s = p.get('start');
   if (s) {
-    const [x, z, agl, heading, speedKt] = s.split(',').map(Number);
-    if ([x, z, agl, heading, speedKt].every(Number.isFinite))
-      start = { x, z, agl, heading, speedKt };
+    const [x, z, agl, heading, speedKt, pathDeg = 0] = s.split(',').map(Number);
+    if ([x, z, agl, heading, speedKt, pathDeg].every(Number.isFinite))
+      start = { x, z, agl, heading, speedKt, pathDeg };
   }
   return {
     screen: p.get('screen') ?? undefined,

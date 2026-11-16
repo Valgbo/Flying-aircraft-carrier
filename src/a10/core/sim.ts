@@ -34,7 +34,7 @@ import {
   stepStores,
 } from './weapons';
 import { FT, KT } from './units';
-import { createWorldState, stepWorld } from './world';
+import { createWorldState, stepWorld, tasFromCas } from './world';
 import type { Terrain } from './world/types';
 
 export function realismFlags(preset: RealismPreset): RealismFlags {
@@ -74,14 +74,24 @@ export function createPilotInput(): PilotInput {
 
 export interface CreateSimOptions extends Partial<SimOptions> {
   terrain: Terrain;
-  /** Where to start; default: the terrain's suggested start at 8,000 ft and 250 kn. */
+  /** Where to start; default: the terrain's suggested start at 8,000 ft and 250 KIAS. */
   start?: AirStart;
 }
 
-/** Default air start (PLAN_A10.md §5): 8,000 ft above sea level, 250 kn, toward the first target area. */
+/**
+ * Default air start (PLAN_A10.md §5): 8,000 ft above sea level, 250 kn indicated (≈283 kn true),
+ * level, toward the first target area.
+ */
 export function defaultAirStart(terrain: Terrain): AirStart {
   const { x, z, heading } = terrain.start;
-  return { x, z, agl: 8000 * FT - terrain.heightAt(x, z), heading, speed: 250 * KT };
+  const altitude = 8000 * FT;
+  return {
+    x,
+    z,
+    agl: altitude - terrain.heightAt(x, z),
+    heading,
+    speed: tasFromCas(250 * KT, altitude),
+  };
 }
 
 export function createSim(opts: CreateSimOptions): Sim {

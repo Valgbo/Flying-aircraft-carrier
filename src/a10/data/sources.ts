@@ -101,6 +101,34 @@ export const SOURCES = {
     title: 'DCS A-10C wiki: Maverick procedure',
     url: 'https://wikiwiki.jp/dcsa10c/%E3%83%88%E3%83%AC%E3%83%BC%E3%83%8B%E3%83%B3%E3%82%B0/Training-Maverick',
   },
+  dcsA10Manual: {
+    title:
+      'Eagle Dynamics, DCS: A-10C Warthog flight manual (hobbyist simulator documentation; quotes the real flight manual)',
+    url: 'https://www.digitalcombatsimulator.com/',
+  },
+  milF8785c: {
+    title:
+      'MIL-F-8785C, Military Specification: Flying Qualities of Piloted Airplanes (1980), turbulence models',
+    url: 'https://everyspec.com/',
+  },
+  gomanKhrabrov1994: {
+    title:
+      'Goman & Khrabrov, State-space representation of aerodynamic characteristics of an aircraft at high angles of attack, J. Aircraft 31(5), 1994',
+    url: 'https://doi.org/10.2514/3.46618',
+  },
+  viternaCorrigan1982: {
+    title:
+      'Viterna & Corrigan, Fixed pitch rotor performance of large horizontal axis wind turbines, NASA CP-2230, 1982 (post-stall model)',
+    url: 'https://ntrs.nasa.gov/',
+  },
+  mattingly2002: {
+    title: 'Mattingly, Heiser & Pratt, Aircraft Engine Design, 2nd ed., AIAA, 2002 (thrust lapse)',
+    url: 'https://doi.org/10.2514/4.861444',
+  },
+  far25: {
+    title: '14 CFR 25.103 (stall speed) and 33.73 (engine acceleration)',
+    url: 'https://www.ecfr.gov/current/title-14/part-25/section-25.103',
+  },
   plan: { title: 'PLAN_A10.md (this project): design decision', url: 'PLAN_A10.md' },
 } as const;
 

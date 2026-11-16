@@ -1,0 +1,129 @@
+{
+  "files": {
+    "gun-loop.wav": {
+      "title": "GAU-8/A firing loop (played at 65/69.7 of its speed to match the real 65 rounds/s)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/gau-8.wav",
+      "original": "third_party/flightgear-a10/Sounds/gau-8.wav",
+      "originalSha256": "8dbf326b2b44edd6ff8c990199c48162a3c7c813ff1fa3f74dd48123d9e0724b",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 44.1 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 40 Hz; low-pass 14 kHz; cut to a 1.345 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "engine-fan.wav": {
+      "title": "TF34 fan layer, outside",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/fan2.wav",
+      "original": "third_party/flightgear-a10/Sounds/fan2.wav",
+      "originalSha256": "e04f82057b0094086d3046bc29fd64a3a1fdac64eb5a7b2ed43e603c8840df7b",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 32 kHz WAV; DC removed; high-pass 30 Hz; cut to a 3.973 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "engine-fan-inside.wav": {
+      "title": "TF34 fan layer heard in the cockpit",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/fan3.wav",
+      "original": "third_party/flightgear-a10/Sounds/fan3.wav",
+      "originalSha256": "464d67ed998e29771219afc1f72c253bd070c63c8c9ebdbbe5b69851fc259c5b",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 16 kHz WAV; DC removed; high-pass 30 Hz; cut to a 3.997 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "engine-whine.wav": {
+      "title": "TF34 high whine (fan blade-passing tone), outside",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/whine.wav",
+      "original": "third_party/flightgear-a10/Sounds/whine.wav",
+      "originalSha256": "69cda98dacd826af2a6de07e57af525af68e271b7e0685dabca756609d035cfd",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 32 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 80 Hz; cut to a 2.771 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "engine-whine-low.wav": {
+      "title": "TF34 core whine",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/whine2.wav",
+      "original": "third_party/flightgear-a10/Sounds/whine2.wav",
+      "originalSha256": "70220c8a626ccce7d0d86c1f2f44683edc6201453b3a7573b6794aa3d6ad6ded",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 60 Hz; cut to a 2.917 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "engine-jet.wav": {
+      "title": "TF34 exhaust roar",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/jet.wav",
+      "original": "third_party/flightgear-a10/Sounds/jet.wav",
+      "originalSha256": "210f356636a6e73bf2df76cb87e60e412c3dbb57c90e438f20c77f71aea12491",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 25 Hz; cut to a 4.724 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "wind.wav": {
+      "title": "Airflow over the canopy",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/wind.wav",
+      "original": "third_party/flightgear-a10/Sounds/wind.wav",
+      "originalSha256": "d50f9c9ef248226f64c8449ea40336959fabbb2ae23825199322f79e33eb4c38",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 25 Hz; cut to a 3.156 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "stall-steady.wav": {
+      "title": "Steady stall warning tone (approaching the stall)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/stall-600-continue.wav",
+      "original": "third_party/flightgear-a10/Sounds/stall-600-continue.wav",
+      "originalSha256": "4011156af61fb8bdee7ce376e9522294516dd0637688e3d30855ebda9716f73f",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; cut to a 0.507 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS"
+    },
+    "stall-chopped.wav": {
+      "title": "Chopped stall warning tone (at the stall)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/stall-600-chopped.wav",
+      "original": "third_party/flightgear-a10/Sounds/stall-600-chopped.wav",
+      "originalSha256": "6937b3bea7ec4f6278ec99af5d9f3479c1b0b764a1511dd2a4d2b034fe8d3330",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; kept whole as a loop; peak-normalised to -1 dBFS"
+    },
+    "altitude.wav": {
+      "title": "Altitude alert voice (\"ALTITUDE, ALTITUDE\")",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/altitude.wav",
+      "original": "third_party/flightgear-a10/Sounds/altitude.wav",
+      "originalSha256": "ad2ba2bb120a223d58e9e1365645e7b89e0409300560d76a4a415f4f49b3ae3d",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 80 Hz; silence trimmed; peak-normalised to -1 dBFS"
+    },
+    "bomb-release.wav": {
+      "title": "Store release clunk (ejector rack)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/bomb_release.wav",
+      "original": "third_party/flightgear-a10/Sounds/bomb_release.wav",
+      "originalSha256": "2860201624533104644bf38400a5ed13260b9a976c5137babb9118ffb7cebc21",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 32 Hz; silence trimmed; peak-normalised to -1 dBFS"
+    },
+    "click.wav": {
+      "title": "Cockpit switch (toggle)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/click.wav",
+      "original": "third_party/flightgear-a10/Sounds/click.wav",
+      "originalSha256": "a797a293428afe1e9999a5ffccd1ad7b9b581d427189de02caf66f389a70a31b",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 40 Hz; silence trimmed; peak-normalised to -1 dBFS"
+    },
+    "click2.wav": {
+      "title": "Cockpit switch (push button)",
+      "author": "The FlightGear A-10 contributors (Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts)",
+      "source": "https://github.com/l0k1/A-10 (commit 72da115), Sounds/click2.wav",
+      "original": "third_party/flightgear-a10/Sounds/click2.wav",
+      "originalSha256": "4c9e0a0f9a4b75c56b714144da3532b4164b64dda8e152a9af8ac94d80fc2bf3",
+      "licence": "GPL-2.0 (the FlightGear A-10 package COPYING)",
+      "changes": "converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 40 Hz; silence trimmed; peak-normalised to -1 dBFS"
+    },
+    "pull-up.wav": {
+      "title": "Ground-collision voice warning (\"PULL UP\")",
+      "author": "Generated for this project with CMU Flite (voice cmu_us_slt) via FFmpeg",
+      "source": "scripts/a10/sounds.mjs: flite text \"Pull up.\", voice slt",
+      "licence": "GPL-2.0-or-later (this project); the Flite engine and the cmu_us_slt voice (CMU ARCTIC) are under BSD-style free licences",
+      "changes": "telephone-band filter 280–3600 Hz; silence trimmed; peak-normalised to -1 dBFS; mono 16-bit 22.05 kHz"
+    }
+  },
+  "about": "Credits for public/a10/sounds/, written by scripts/a10/sounds.mjs. Merge into CREDITS.md (one line per file)."
+}
