@@ -389,9 +389,12 @@ controls. Default bindings: PLAN §12.
   range). `data/geometry.ts` holds the values the simulation needs, generated from it.
 - **Sounds** (`public/a10/sounds/`): WAV, mono, converted by a script from the FlightGear files
   (and later public recordings), budget < 3 MB.
-- **URLs** resolve against the page: `new URL('models/x.glb', pageBase)` where the page base is
-  `/a10/` (relative paths keep GitHub Pages project sites working). Loaders live in
-  `src/a10/assets/`.
+- **URLs**: `a10Asset('models/x.glb')` (`src/a10/assets/urls.ts`, foundation) resolves against
+  the one literal anchor `new URL('/a10/assets.json', import.meta.url)`, which Vite rewrites
+  correctly in dev and in the build at any deploy path. Never build asset URLs from
+  `import.meta.env.BASE_URL` or from a template literal inside `new URL(...)`: both break
+  silently. Loaders live in `src/a10/assets/` (aircraft module).
+- **Page URL**: always `/a10/` with the slash (a dev/preview plugin redirects `/a10`).
 - **Credits**: every file under `public/a10/` has an entry in `CREDITS.md`; a unit test checks it.
 
 ---
@@ -446,7 +449,7 @@ Several agents edit this tree at once.
 | weapons | `core/weapons/**`, `data/gun.ts`, `data/munitions.ts`, `tests/unit/a10/{gun,ballistics,weapons}*.test.ts` |
 | targets | `core/targets/**`, `data/vehicles.ts`, `tests/unit/a10/{targets,armour,damage}*.test.ts` |
 | avionics | `core/avionics/**`, `tests/unit/a10/{avionics,firecontrol}*.test.ts` |
-| aircraft (assets) | `scripts/a10/convert*`, `third_party/**`, `public/a10/models/**`, `src/a10/assets/**`, `view/aircraft/**`, `data/geometry.ts`, `CREDITS.md`, `tests/unit/a10/assets*.test.ts`, `dev/sandboxes/aircraft*.tsx` |
+| aircraft (assets) | `scripts/a10/convert*`, `third_party/**`, `public/a10/models/**`, `src/a10/assets/**` (except `urls.ts`), `view/aircraft/**`, `data/geometry.ts`, `CREDITS.md`, `tests/unit/a10/assets*.test.ts`, `dev/sandboxes/aircraft*.tsx` |
 | environment + terrain view | `view/environment/**`, `view/terrain/**`, the sky/cloud/post refactor in `src/scene/**` and `src/engine/**` exports for it, `dev/sandboxes/{terrain,environment}*.tsx` |
 | cockpit | `view/cockpit/**` (cockpit scene and pass, camera rig, clickable switches, instruments), `dev/sandboxes/cockpit*.tsx` |
 | hud | `view/hud/**`, `tests/unit/a10/hud*.test.ts`, `dev/sandboxes/hud*.tsx` |

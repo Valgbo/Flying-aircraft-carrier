@@ -75,7 +75,17 @@ const boundaries = {
 };
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'test-results', 'playwright-report', '.shots'] },
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      'test-results',
+      'playwright-report',
+      '.shots',
+      'public/a10',
+      'third_party',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
