@@ -68,6 +68,20 @@ export interface WeaponRecord {
   dud: boolean;
   /** Released inside the fragment envelope. */
   fragmentWarning: boolean;
+
+  // ---- wave 2 (ARCHITECTURE §12.6) ----
+  /** Store type, station and how it was delivered. */
+  store: string;
+  station: number;
+  delivery: 'CCIP' | 'CCRP' | 'MAV' | 'ROCKET' | 'JETTISON';
+  /** Aim point of the release and the impact point (NaN while in flight). */
+  aim: { x: number; y: number; z: number };
+  aimValid: boolean;
+  impact: { x: number; y: number; z: number };
+  /** A Master Arm TRAIN release: nothing left the aircraft. */
+  simulated: boolean;
+  /** The store body's id (0 for a simulated release). */
+  bodyId: number;
 }
 
 export interface DebriefState {

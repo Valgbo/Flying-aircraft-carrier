@@ -9,6 +9,7 @@
  *   segmentHitVehicle(sim, p0, p1, out)               nearest armour plate crossed by a segment
  *   resolveRoundHit(sim, hit, type, velocity, out)    what a 30 mm round does to that plate
  *   applyBlast(sim, position, chargeKg, fragmentKg?)  blast and fragments of a detonation
+ *   applyWarheadHit(sim, hit, warhead, weapon, id)    a missile's shaped charge (wave 2)
  *   VEHICLE_SHAPES, VEHICLE_MODELS                    shapes, armour plates, components
  */
 import { VEHICLE_MODELS, VEHICLE_SHAPES } from '../../data/vehicles';
@@ -22,6 +23,7 @@ export { populateScenario, digIn, spawnGroup, type Placement } from './scenario'
 export { stepTargets } from './behaviour';
 export { segmentHitVehicle, segmentHitVehicleAll } from './hit';
 export { resolveRoundHit } from './damage';
+export { applyWarheadHit, type WarheadStrike } from './warheads';
 export {
   applyBlast,
   blastImpulse,

@@ -34,6 +34,16 @@ export interface TgpState {
   laserCode: number;
   /** Last laser range, m (0 = none). */
   laserRange: number;
+
+  // ---- wave 2 (ARCHITECTURE §12.5) ----
+  /** Line of sight in the aircraft's body frame: azimuth (+ right) and elevation (+ up), rad. */
+  gimbalAz: number;
+  gimbalEl: number;
+  /** The laser is latched on (fires without holding the button). */
+  latched: boolean;
+  /** Where the laser beam meets a vehicle or the ground while it marks (LGB seekers read it). */
+  spot: Vector3;
+  spotValid: boolean;
 }
 
 export interface MaverickSeekerState {
@@ -51,6 +61,13 @@ export interface MaverickSeekerState {
   lockPoint: Vector3;
   /** Launch constraints met (in range, inside gimbal limits, locked). */
   inZone: boolean;
+
+  // ---- wave 2 (ARCHITECTURE §12.5) ----
+  /** Seeker line of sight in the aircraft's body frame, rad. */
+  gimbalAz: number;
+  gimbalEl: number;
+  /** Contrast of the locked (or gated) object against its background, 0..1. */
+  contrast: number;
 }
 
 export interface SensorsState {

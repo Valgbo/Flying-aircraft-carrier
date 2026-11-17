@@ -116,6 +116,10 @@ export interface WeaponProfile {
   armingTime: number;
   /** Name shown on the DSMS and HUD (≤ 8 characters), e.g. 'MK82LD'. Defaults to the store. */
   name?: string;
+  /** Low or high drag (Mk-82 AIR: the ballute opens); default 'LD'. Wave 2. */
+  drag?: 'LD' | 'HD';
+  /** GBU-12: the laser code the bomb's seeker looks for (default 1688). Wave 2. */
+  laserCode?: number;
 }
 
 /** Sensor point of interest: the one ground point every sensor and weapon can slave to. */

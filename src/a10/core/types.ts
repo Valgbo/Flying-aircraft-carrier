@@ -124,6 +124,8 @@ export type SimEvent =
       /** Detonated on (or close to) a vehicle. */
       vehicleId: number;
       surface: SurfaceKind;
+      /** The store body that detonated (bombs, rockets, missiles, duds; wave 2). */
+      bodyId?: number;
     }
   | {
       type: 'vehicleDamaged';

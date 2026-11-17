@@ -3,7 +3,9 @@
  * Owned by the WEAPONS module (core/weapons). See docs/a10/ARCHITECTURE.md §4 and PLAN_A10.md §6.
  */
 import type { Quaternion, Vector3 } from 'three';
+import type { FuzeOption } from '../avionics/types';
 import type { ReleaseConditions } from '../debrief/types';
+import type { Vec3Like } from '../types';
 
 /** 30 mm round types. Numeric so they fit in typed arrays. */
 export const RoundType = {
@@ -144,6 +146,8 @@ export interface StationState {
   rack: StoreType | null;
   /** Stores still on this station, in release order. */
   stores: StoreType[];
+  /** Rocket pods: rockets left in the pod (the pod stays when they are gone). Wave 2. */
+  rockets?: number;
 }
 
 export interface StoresState {
@@ -160,6 +164,38 @@ export interface StoresState {
   rollInertia?: number;
   /** Yawing-moment arm of the stores drag: Σ CdA·x, m³ (+ = more drag on the right wing). */
   dragMoment?: number;
+  /**
+   * Releases decided by the avionics, waiting for the weapons module (ARCHITECTURE §12.1).
+   * Avionics pushes; `stepStores` executes each at its exact time and removes it.
+   */
+  releaseQueue: ReleaseRequest[];
+}
+
+/** How a store was released (ARCHITECTURE §12.1). */
+export type ReleaseDelivery = 'CCIP' | 'CCRP' | 'MAV' | 'ROCKET' | 'JETTISON';
+
+/** One store to release, decided by the avionics and executed by the weapons module (§12.1). */
+export interface ReleaseRequest {
+  /** Sim time of the release, s (now or later: ripple pulses are queued ahead). */
+  time: number;
+  station: number;
+  /** The store that leaves (for rocket pods the pod type: one rocket per request). */
+  store: StoreType;
+  /** Weapon profile id ('' for jettison). */
+  profile: string;
+  delivery: ReleaseDelivery;
+  /** Aim point: the CCIP pipper's ground point, the designated point, the SPI or a lock point. */
+  aim: Vec3Like;
+  aimValid: boolean;
+  /** Fuze option and arming time (s) from the profile. */
+  fuze: FuzeOption;
+  armingTime: number;
+  /** Mk-82 AIR: the ballute opens (high-drag delivery). */
+  highDrag: boolean;
+  /** GBU-12: the seeker's laser code. */
+  laserCode: number;
+  /** Maverick: the vehicle the seeker is locked on (-1 none). */
+  lockVehicle: number;
 }
 
 export type StoreBodyKind =
@@ -183,6 +219,27 @@ export interface StoreBody {
   armed: boolean;
   /** Free-form per-weapon state owned by the weapons module (guidance, seeker…). */
   data: Record<string, number>;
+
+  // ---- wave 2 (ARCHITECTURE §12.2) ----
+  delivery: ReleaseDelivery;
+  /** Aim point of the release (debrief miss distance; guidance start). */
+  aim: Vector3;
+  aimValid: boolean;
+  /** Mk-82 AIR: the ballute is open (after its delay on a high-drag release). */
+  highDrag: boolean;
+  /** The fuze arms at releaseTime + armingTime. */
+  armingTime: number;
+  /** GBU-12: the seeker's laser code. */
+  laserCode: number;
+  /** Guidance target kept by the guided module (§12.3); valid while it has one. */
+  guidance: {
+    mode: 'NONE' | 'LASER' | 'TV' | 'IR';
+    vehicleId: number;
+    point: Vector3;
+    valid: boolean;
+  };
+  /** Index of its record in debrief.weapons (-1 none). */
+  record: number;
 }
 
 export interface ProjectileState {

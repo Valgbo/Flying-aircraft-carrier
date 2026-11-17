@@ -337,7 +337,8 @@ small `'secondary'` detonations for a while after exploding.
 
 ### Sensors — `core/sensors` (wave 2) · Debrief — `core/debrief` (wave 2)
 
-State constructors and step functions as in their `index.ts`.
+State constructors and step functions as in their `index.ts`; their wave-2 contracts are §12.5
+and §12.6.
 
 ---
 
@@ -630,3 +631,212 @@ Several agents edit this tree at once.
 | audio | `src/a10/audio/**`, `public/a10/sounds/**`, `scripts/a10/sound*`, `tests/unit/a10/audio*.test.ts` |
 | input | `src/a10/input/**` (except the `viewInput.ts` interface, which it fills), `tests/unit/a10/input*.test.ts` |
 | ui | `src/a10/ui/**`, `tests/unit/a10/ui*.test.ts`, `tests/e2e/a10/**` |
+
+---
+
+## 12. Wave 2 (M6–M9): stores, targeting pod, guided weapons, range and debrief
+
+The variant is the **A-10C** (PLAN §7, decided at M6): two MFCDs (the left one left of the ADI,
+replacing the A-10A gauges there; the right one at the TV monitor), the armament panel (AHCP)
+and the up-front controller (UFC) as clickable parts; the DSMS, TGP, MAV, TAD, STAT and MSG
+pages; SOI/SPI as in §4 Avionics. Everything in §1–§11 still holds. New and changed interfaces:
+
+### 12.1 The release chain (avionics decides, weapons executes)
+
+- **Who decides.** Avionics owns every release decision: the pickle button
+  (`input.weaponRelease`), CCIP (immediate, or consent release when the pipper is below the
+  glass), CCRP (release when the computed release point is reached while the button is held),
+  pairs and ripples (one request per store, timed by the profile's spacing over the ground
+  speed), rockets (single or ripple), Maverick launch (button held ≈1 s with a valid lock inside
+  the launch zone), jettison. Master Arm `SAFE` blocks every release; `TRAIN` releases nothing
+  (the HUD and the debrief show a simulated release: `debrief.weapons` record with
+  `simulated: true`). A refused release posts a `message` (e.g. `MAV NOT LOCKED`).
+- **The queue.** `StoresState.releaseQueue: ReleaseRequest[]` (weapons/types.ts). Avionics
+  pushes requests in `applyCommands` (jettison) and `stepFireControl` (step 9); weapons executes
+  them in `stepStores` (step 5 of a later step) once `request.time` falls inside the step, at the
+  exact time (pose interpolated between `prev*` and the current state, like the gun), and removes
+  them. A request whose station no longer holds its store is dropped with a `message`.
+
+```ts
+export type ReleaseDelivery = 'CCIP' | 'CCRP' | 'MAV' | 'ROCKET' | 'JETTISON';
+export interface ReleaseRequest {
+  /** Sim time of the release, s (now or later: ripple pulses are queued ahead). */
+  time: number;
+  station: number;
+  /** The store that leaves (for rocket pods the pod type: one rocket per request). */
+  store: StoreType;
+  /** Profile id ('' for jettison). */
+  profile: string;
+  delivery: ReleaseDelivery;
+  /** Aim point (CCIP pipper ground point, the designated point, the SPI, a lock point). */
+  aim: Vec3Like;
+  aimValid: boolean;
+  /** Fuze: option and arming time from the profile, s. */
+  fuze: FuzeOption;
+  armingTime: number;
+  /** Mk-82 AIR: the ballute opens (high drag). */
+  highDrag: boolean;
+  /** GBU-12: the seeker's laser code. */
+  laserCode: number;
+  /** Maverick: the locked vehicle (-1 none) — the seeker hands its track to the missile. */
+  lockVehicle: number;
+}
+```
+
+- **What weapons does on a release:** removes the store from its station (a rocket pod's
+  `StationState.rockets` count goes down instead), spawns a `StoreBody`, updates the stores
+  totals (the flight's `updateMassProperties` runs every step), emits `storeReleased {station,
+  store, bodyId}` (and `motorIgnition {bodyId}` for rockets and missiles), and appends a
+  `WeaponRecord` to `debrief.weapons` with the release conditions and the aim point (§12.6).
+  Jettisoned stores fall as unarmed bodies (`fuze` never arms: `detonation` kind `'dud'`).
+
+### 12.2 Store bodies and their physics (weapons)
+
+`ProjectileState.bodies: StoreBody[]` (existing) gains:
+
+```ts
+  delivery: ReleaseDelivery;
+  aim: Vector3; aimValid: boolean;
+  highDrag: boolean;           // Mk-82 AIR ballute open (after its delay)
+  armingTime: number;          // the fuze arms at releaseTime + armingTime
+  laserCode: number;
+  /** Guidance target (guided module): mode, vehicle and point; valid while it has one. */
+  guidance: { mode: 'NONE' | 'LASER' | 'TV' | 'IR'; vehicleId: number; point: Vector3; valid: boolean };
+  /** Index of its record in debrief.weapons (-1 none). */
+  record: number;
+```
+
+- Point mass with Mach-dependent drag per store type (low-drag fins, the AIR ballute, rocket
+  and missile airframes), wind at the body (`windAt`), ISA density, gravity; orientation follows
+  the relative wind with a lag (weathercocking) — views read `position`, `orientation`,
+  `velocity`, `kind`, `type`, `motorTime`, `highDrag`. Rockets: Mk 66 thrust curve (burn
+  1.05–1.10 s; 739 m/s ± 3 % at burn-out from a static launch), launch dispersion, turning into
+  the wind during the burn. Bodies hit the ground (`terrain.segmentHit`) or a vehicle
+  (`segmentHitVehicle`) along their path each step.
+- **Fuze and effect:** an armed body detonates on impact: `detonation {kind: 'bomb' |
+  'rocket' | 'missile' | 'whitePhosphorus', charge, vehicleId, surface, bodyId}` and
+  `applyBlast(sim, point, chargeKg, caseKg, weaponName, body.id)`; an unarmed one is a dud
+  (`detonation` kind `'dud'`, charge 0, no blast). Direct hits on a vehicle: as above at the
+  hit point (the blast table treats contact); Maverick warheads call
+  `applyWarheadHit` (§12.4). A body is removed from `bodies` in the step it detonates; views
+  drop their drawing on its `detonation` (by `bodyId`) or when the id disappears.
+- **The same physics for the computer** (PLAN §6.1 rule 2): weapons registers every unguided
+  store's model with avionics' `registerStoreBallistics(key, model)` at module load, key =
+  store type, or `` `${store}/HD` `` for the high-drag configuration (`WeaponProfile.drag`:
+  `'LD' | 'HD'`; `WeaponProfile.laserCode` for the GBU-12). `BallisticModel.integrate(pos, vel,
+  wind, dt, t)` has a 5th argument `t` (seconds since release, for the motor burn and the ballute
+  delay); the live bodies call the very same function.
+
+### 12.3 Guided weapons (weapons/guided)
+
+- `core/weapons/guided/index.ts` (guided module; a foundation stand-in flies everything
+  ballistic) exports, called by the stores module's body integration for bodies whose `kind` is
+  `'missile'` or `'laserBomb'`:
+  - `guidanceAccel(sim, body, dt, out: Vector3): void` — commanded acceleration (world, m/s²),
+    within the weapon's g and gimbal limits (zero when it has no target: it flies ballistic);
+  - `motorThrust(body, t): number` — thrust along the body axis, N (0 for bombs);
+  - `onLaunch(sim, body, request)` — hands the lock (Maverick) or the code (GBU-12) to the body.
+- **Maverick** (D: imaging infrared, H: TV; G/K as data): rail launch, boost + sustain fitted to
+  ≈1,150 km/h and > 22 km aerodynamic range, proportional navigation with g and seeker gimbal
+  limits, its own seeker keeps the lock (breaks on lost line of sight: terrain, trees, smoke;
+  then flies to the last point), impact fuze; the shaped charge kills any vehicle it hits.
+- **GBU-12**: ballistic until its seeker sees a spot with its code (`sim.sensors.tgp.spot`,
+  `spotValid`, `laserCode`, in its field of view, line of sight clear); then bang-bang canards
+  (full deflection toward the spot, costing energy through induced drag); a lost spot leaves it
+  ballistic. Lased from release at long range it falls short; lased for the last ≈10 s it hits.
+
+### 12.4 Targets additions (wave-2 maintenance owner of core/targets)
+
+- `applyWarheadHit(sim, hit: VehicleHit, warhead: WarheadStrike, weapon: string, sourceId:
+  number): void` (`core/targets/warheads.ts`; `WarheadStrike = { kind: 'shapedCharge';
+  penetrationMm; chargeKg }`; the foundation stand-in applies only the blast) — a shaped-charge jet
+  at the hit point (penetrates any plate it can, then behind-armour effects as for a round with
+  far greater lethality), plus the warhead's blast. Logged like any hit (one kill per vehicle).
+- The free-hunt and range scenarios stay as in wave 1; the tactical lane's column and hulks are
+  the Maverick / LGB targets.
+
+### 12.5 Sensors (core/sensors)
+
+`stepSensors` (step 8) reads `avionics.sensorRequests`, `slaveRequest`, `tgpPower`, `laserArm`,
+`soi`, `spi`, `input.slewX/Y` (when the TGP or MAV page is the SOI) and `input.laser`.
+
+- **TGP** (`TgpState`, existing fields kept): power and warm-up; gimbal limits and masking by
+  the aircraft's own wing and fuselage (`masked`); slew (rate scaled by the field of view); INR /
+  AREA / POINT track (POINT holds a moving vehicle); WIDE/NARROW fields of view with electronic
+  zoom; picture CCD / WHOT / BHOT. Adds: `gimbalAz`, `gimbalEl` (rad, body frame), `latched`
+  (laser latch), **`spot: Vector3`, `spotValid`** (where the laser beam meets the ground or a
+  vehicle while lasing; LGB seekers and the debrief read it), `laserRange` on each lase.
+  Laser fires when `laserArm === 'ARM'` (TRAIN: ranging only, no spot), the pod is tracking and
+  `input.laser` is held or latched; emits `laser {on}`.
+- **Maverick seekers** (`MaverickSeekerState` per loaded missile, existing fields kept): power
+  (alignment ≈3 min after power-on; aligned at an air start), slew, slave to the SPI, WIDE/NARROW,
+  lock (`lock {sensor: 'MAV', on}` events). Adds `gimbalAz`, `gimbalEl`, `contrast` (0..1 of the
+  locked or gate contents), `inZone` (range and gimbal limits for a launch). Lock needs: enough
+  angular size inside the tracking gate, contrast above the threshold (thermal for D from
+  `vehicle.heat` and fires; visual for H from daylight, haze and the vehicle's paint vs the
+  ground), line of sight (terrain + trees) and range (tank-sized: ≈3–7 nmi, tunable). An IR
+  seeker can be captured by a burning wreck beside the target.
+- **Shared contrast model** (core/sensors): `targetContrast(sim, vehicleId, band: 'IR' | 'TV',
+  from: Vector3): number` (a foundation stand-in exists) — the sensor-view picture uses the same
+  inputs (heat, fire, time of day, haze) so what looks hot on the display is what the seeker can
+  lock.
+
+### 12.6 Debrief and range (core/debrief; the debrief screen)
+
+- Appenders: weapons → `bursts` (gun) and `weapons` (stores: on release, completed on impact
+  with `impactTime`, `impact`, `missDistance`, `missClock`, `dud`, `fragmentWarning`); avionics
+  → a `simulated: true` record for a Master Arm TRAIN release; targets → `hits`, `kills`.
+- `WeaponRecord` (debrief/types.ts) has the wave-2 fields `store`, `station`, `delivery`, `aim`,
+  `aimValid`, `impact`, `simulated`, `bodyId` (in the code now).
+- `stepDebrief` (debrief module) derives **passes** (roll-in to pull-off, with each pass's
+  weapons, bursts, hits and kills) and **range scores**: strafe pit (hits out of rounds per
+  pass and panel, open- and cease-fire range, fouls for firing inside the foul line or below
+  the minimum altitude), bombing circle (miss distance and clock of each bomb, the session
+  average), tactical lane (kills per weapon). Types live in debrief/types.ts (debrief module).
+- The debrief screen (after each pass on request and at the end of a flight) shows per pass:
+  the weapon, release conditions (dive, speed, slant range, height, g), an overhead plot of the
+  impacts against the target, and what each hit did.
+
+### 12.7 Views
+
+- **Sensor pictures** (`view/sensors/**`, sensor-view module): offscreen passes (orders 0–99)
+  render the TGP and the selected Maverick's picture into render targets at the quality's sensor
+  resolution and rate, using the terrain's `uThermal` hook and the vehicles' `setThermalMode`
+  (restored afterwards), with gain, noise and the lower frame rate. Published as
+  `getSensorPicture('TGP' | 'MAV'): SensorPictureInfo | null` (`view/sensors/pictures.ts`:
+  `{ texture, valid, fov, picture }`; the foundation stand-in returns null).
+- **Displays** (`view/mfd/**`, hud-mfd module): composes each MFCD (page symbology + OSB labels,
+  sensor picture underneath on TGP/MAV pages) into its own render target and shows it with the
+  cockpit's `DisplaySurface.setPicture`; pages DSMS, TGP, MAV, TAD (moving map: own aircraft,
+  steerpoints, SPI, target-area markers when `realism.mapMarkers`), STAT, MSG. OSB labels come
+  from avionics' OSB tables.
+- **HUD wave 2** (`view/hud/**`, hud-mfd module): CCIP bomb/rocket pipper with the bomb fall
+  line, delay cue and consent release, minimum-range / fuze cue, CCRP azimuth steering line,
+  release cue, time to release and to impact, SPI marker, TGP and MAV line-of-sight diamonds.
+- **Cockpit A-10C** (`view/cockpit/**`, cockpit module): shows the left MFCD; MFCD bezels with
+  20 clickable OSBs each (`osb` commands) and their rockers; the AHCP switches in place of the
+  added box where the model allows; UFC keys for the steerpoint and laser-code entry the
+  avionics module supports; the weapon camera follows the newest store body, the target camera
+  the last vehicle attacked.
+- **Stores presentation** (`view/stores/**`, plus `view/effects/**`, `view/aircraft/**`,
+  `src/a10/assets/**` and `src/a10/audio/**` for wave 2; stores-view module): pylon stores follow
+  `sim.stores` (they leave on release), flying bodies with the store models (rocket motor plume
+  and smoke trail, Maverick launch smoke and trail, GBU-12 canards, the Mk-82 AIR ballute),
+  Mk-82, rocket and Maverick detonations, white-phosphorus smoke marks that last minutes,
+  craters; release, rocket-motor, missile and explosion sounds.
+
+### 12.8 Ownership (wave 2)
+
+| Module | Owns |
+|---|---|
+| stores (weapons) | `core/weapons/**` except `guided/**`, `data/gun.ts`, `data/munitions.ts`, `tests/unit/a10/{gun,ballistics,weapons,stores,bombs,rockets}*.test.ts` |
+| guided | `core/weapons/guided/**`, `data/guided.ts`, `tests/unit/a10/{guided,maverick,lgb}*.test.ts` |
+| avionics | `core/avionics/**`, `data/avionics.ts`, `tests/unit/a10/{avionics,firecontrol,release}*.test.ts` |
+| sensors | `core/sensors/**`, `data/sensors.ts`, `tests/unit/a10/sensors*.test.ts` |
+| sensor view | `view/sensors/**`, `dev/sandboxes/sensors*.tsx`, `tests/unit/a10/sensorView*.test.ts` |
+| hud-mfd | `view/hud/**`, `view/mfd/**`, `dev/sandboxes/{hud,mfd}*.tsx`, `tests/unit/a10/{hud,mfd}*.test.ts` |
+| cockpit | `view/cockpit/**`, `dev/sandboxes/cockpit*.tsx`, `tests/unit/a10/cockpit*.test.ts` |
+| debrief + range | `core/debrief/**`, `src/a10/ui/**` (debrief screen and range scenario options; the rest of the UI too in wave 2), `tests/unit/a10/{debrief,range,ui}*.test.ts`, `tests/e2e/a10/**` |
+| stores view | `view/stores/**`, `view/effects/**`, `view/vehicles/**`, `view/aircraft/**`, `src/a10/assets/**` (except `urls.ts`), `src/a10/audio/**`, `public/a10/sounds/**`, `scripts/a10/sound*`, `tests/unit/a10/{effects,vehicles,audio,assets,storesView}*.test.ts` |
+| maintenance (wave-1 fixes, targets additions) | `core/targets/**`, `core/flight/**`, `core/world/**`, `src/a10/input/**`, `data/{vehicles,aircraft}.ts`, `view/{terrain,environment}/**`, their tests |
+| foundation | as in §11 |

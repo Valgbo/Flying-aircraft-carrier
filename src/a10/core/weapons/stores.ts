@@ -44,7 +44,12 @@ export function createStoresState(
   for (let s = 1; s <= STATION_COUNT; s++) {
     const list = preset[s] ?? [];
     const rack = list.length > 0 && isRackType(list[0]) ? list[0] : null;
-    stations.push({ station: s, rack, stores: rack ? list.slice(1) : [...list] });
+    const stores = rack ? list.slice(1) : [...list];
+    const station: StationState = { station: s, rack, stores };
+    // Rocket pods hang loaded: their rockets are counted down as they are fired (wave 2).
+    const pod = stores.find((t) => STORES[t]?.rockets !== undefined);
+    if (pod) station.rockets = STORES[pod].rockets;
+    stations.push(station);
   }
   const state: StoresState = {
     stations,
@@ -54,6 +59,7 @@ export function createStoresState(
     lateralMoment: 0,
     rollInertia: 0,
     dragMoment: 0,
+    releaseQueue: [],
   };
   updateStoresTotals(state);
   return state;

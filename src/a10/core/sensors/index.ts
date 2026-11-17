@@ -26,6 +26,11 @@ export function createSensorsState(): SensorsState {
       lasing: false,
       laserCode: 1688,
       laserRange: 0,
+      gimbalAz: 0,
+      gimbalEl: -Math.PI / 2,
+      latched: false,
+      spot: new Vector3(),
+      spotValid: false,
     },
     mavericks: [],
     selectedMaverick: -1,
@@ -33,3 +38,22 @@ export function createSensorsState(): SensorsState {
 }
 
 export function stepSensors(_sim: Sim, _dt: number): void {}
+
+/**
+ * Contrast of a vehicle against its background for a sensor band, 0..1, seen from `from`
+ * (ARCHITECTURE §12.5). The seekers lock on it and the sensor pictures use the same inputs.
+ * FOUNDATION STAND-IN: a crude guess from the vehicle's heat (IR) or a constant (TV).
+ */
+export function targetContrast(
+  sim: Sim,
+  vehicleId: number,
+  band: 'IR' | 'TV',
+  _from: Vector3,
+): number {
+  const v = sim.targets.vehicles.find((x) => x.id === vehicleId);
+  if (!v) return 0;
+  if (band === 'TV') return 0.5;
+  // Hottest part above ambient (K), saturating at ≈40 K; a fire is always hot.
+  const h = Math.max(v.heat.engine, v.heat.exhaust, v.heat.running, v.heat.hull);
+  return Math.min(1, Math.max(v.fire, h / 40));
+}

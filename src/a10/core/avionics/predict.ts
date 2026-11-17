@@ -22,8 +22,12 @@ import { createTerrainHit, groundSegmentHit, type FireControlGround } from './gr
 
 /** A body the computer can fly: the weapons module's own integrator for that body. */
 export interface BallisticModel {
-  /** Advance `pos` and `vel` (world, m and m/s) in place by `dt`, in an air mass moving at `wind`. */
-  integrate(pos: Vector3, vel: Vector3, wind: Vector3, dt: number): void;
+  /**
+   * Advance `pos` and `vel` (world, m and m/s) in place by `dt`, in an air mass moving at `wind`.
+   * `t` is the time since release (or firing) at the start of the step, s: stores use it for the
+   * motor burn and the ballute delay (ARCHITECTURE §12.2); rounds may ignore it.
+   */
+  integrate(pos: Vector3, vel: Vector3, wind: Vector3, dt: number, t: number): void;
 }
 
 export interface ImpactPrediction {
@@ -100,7 +104,7 @@ export function predictImpact(
   /** Height of the current chord's first point. */
   let chordStartY = _p.y;
   for (;;) {
-    model.integrate(_p, _v, wind, dt);
+    model.integrate(_p, _v, wind, dt, t);
     t += dt;
     n++;
     predictorStats.steps++;
