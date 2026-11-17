@@ -5,6 +5,7 @@
  * FOUNDATION STAND-IN (wave 2): no guidance, no motor — the bodies fly ballistic.
  */
 import type { Vector3 } from 'three';
+import type { MaverickSeekerState } from '../../sensors/types';
 import type { Sim } from '../../types';
 import type { ReleaseRequest, StoreBody } from '../types';
 
@@ -22,4 +23,14 @@ export function motorThrust(_body: StoreBody, _t: number): number {
 export function onLaunch(_sim: Sim, body: StoreBody, request: ReleaseRequest): void {
   body.laserCode = request.laserCode;
   body.guidance.vehicleId = request.lockVehicle;
+}
+
+/**
+ * Whether a Maverick can be launched with this seeker state: null when it can, otherwise the
+ * reason the avionics shows ('MAV NOT LOCKED', 'MAV GIMBAL LIMIT', 'MAV OUT OF RANGE'…).
+ */
+export function maverickCanLaunch(_sim: Sim, seeker: MaverickSeekerState): string | null {
+  if (!seeker.powered || seeker.align > 0) return 'MAV NOT READY';
+  if (!seeker.locked) return 'MAV NOT LOCKED';
+  return seeker.inZone ? null : 'MAV OUT OF ZONE';
 }

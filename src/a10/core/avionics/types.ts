@@ -86,6 +86,18 @@ export interface ReleaseSolution {
   belowGlass: boolean;
   /** The release cue: release happens this step (consent held and solution reached). */
   releaseNow: boolean;
+
+  // ---- wave 2 (ARCHITECTURE §12.7: what the HUD draws) ----
+  /**
+   * The designated point: the target of a consent (delayed CCIP) release after the pickle press,
+   * or the CCRP target (the SPI). Valid while there is one.
+   */
+  designated: Vector3;
+  designatedValid: boolean;
+  /** CCRP: azimuth steering error, rad (+ = steer right to fly over the release point). */
+  azimuthError: number;
+  /** CCRP: the solution cue's angle above (+) the velocity vector along the steering line, rad; 0 = release. */
+  cueEl: number;
 }
 
 /** A bomb / rocket delivery: continuously computed impact or release point. */

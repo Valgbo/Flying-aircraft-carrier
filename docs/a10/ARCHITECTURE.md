@@ -736,6 +736,9 @@ export interface ReleaseRequest {
     within the weapon's g and gimbal limits (zero when it has no target: it flies ballistic);
   - `motorThrust(body, t): number` — thrust along the body axis, N (0 for bombs);
   - `onLaunch(sim, body, request)` — hands the lock (Maverick) or the code (GBU-12) to the body.
+  - `maverickCanLaunch(sim, seeker: MaverickSeekerState): string | null` — null when a launch is
+    possible, else the reason avionics shows (`'MAV NOT LOCKED'`, `'MAV GIMBAL LIMIT'`…); the
+    avionics launch logic calls it.
 - **Maverick** (D: imaging infrared, H: TV; G/K as data): rail launch, boost + sustain fitted to
   ≈1,150 km/h and > 22 km aerodynamic range, proportional navigation with g and seeker gimbal
   limits, its own seeker keeps the lock (breaks on lost line of sight: terrain, trees, smoke;
@@ -810,6 +813,11 @@ export interface ReleaseRequest {
   cockpit's `DisplaySurface.setPicture`; pages DSMS, TGP, MAV, TAD (moving map: own aircraft,
   steerpoints, SPI, target-area markers when `realism.mapMarkers`), STAT, MSG. OSB labels come
   from avionics' OSB tables.
+- **What avionics gives the HUD** (`ReleaseSolution`, in the code now): `valid`, `impact`, `az`/`el`
+  (pipper or target from the eye), `timeToRelease`, `timeOfFall`, `belowMinimum`, `belowGlass`,
+  `releaseNow`, `designated`/`designatedValid` (consent target or CCRP target), `azimuthError`
+  (CCRP steering, + = steer right), `cueEl` (CCRP solution cue above the velocity vector, 0 =
+  release).
 - **HUD wave 2** (`view/hud/**`, hud-mfd module): CCIP bomb/rocket pipper with the bomb fall
   line, delay cue and consent release, minimum-range / fuze cue, CCRP azimuth steering line,
   release cue, time to release and to impact, SPI marker, TGP and MAV line-of-sight diamonds.

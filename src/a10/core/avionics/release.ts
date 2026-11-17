@@ -116,6 +116,10 @@ export function createReleaseSolution(): ReleaseSolution {
     belowMinimum: false,
     belowGlass: false,
     releaseNow: false,
+    designated: new Vector3(),
+    designatedValid: false,
+    azimuthError: 0,
+    cueEl: 0,
   };
 }
 
