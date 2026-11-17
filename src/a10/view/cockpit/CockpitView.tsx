@@ -66,6 +66,9 @@ export function useCockpit(source: () => Sim | null): void {
       model = new CockpitModel(cockpitScene, t);
       state.model = model;
       cockpitHandle.current = model;
+      if (import.meta.env.DEV && typeof window !== 'undefined')
+        (window as unknown as { __A10_COCKPIT_VIEW__?: typeof cockpitHandle }).__A10_COCKPIT_VIEW__ =
+          cockpitHandle;
     });
     return () => {
       off();
