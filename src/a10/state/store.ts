@@ -5,6 +5,7 @@
  */
 import { create } from 'zustand';
 import type { RealismPreset, ScenarioKind } from '../core/types';
+import type { AmmoLoad } from '../core/weapons/types';
 
 export type A10Screen = 'menu' | 'loadout' | 'loading' | 'flight' | 'debrief' | 'credits';
 export type QualityLevel = 'low' | 'medium' | 'high';
@@ -165,6 +166,8 @@ export interface A10Store {
   view: ViewMode;
   scenario: ScenarioKind;
   loadoutId: string;
+  /** The gun's ammunition load for the next flight (the loadout screen sets it). */
+  ammoLoad: AmmoLoad;
   /** Bumped on every (re)start of a flight; components key on it. */
   flightNonce: number;
   loading: { progress: number; label: string };
@@ -183,6 +186,7 @@ export interface A10Store {
   setView(view: ViewMode): void;
   setScenario(scenario: ScenarioKind): void;
   setLoadout(id: string): void;
+  setAmmoLoad(load: AmmoLoad): void;
   bumpFlight(): void;
   setLoading(progress: number, label: string): void;
   pushMessage(text: string, level?: UiMessage['level'], ttlMs?: number): void;
@@ -200,6 +204,7 @@ export const useA10Store = create<A10Store>((set, get) => ({
   view: 'cockpit',
   scenario: 'freeHunt',
   loadoutId: 'tankHunter',
+  ammoLoad: 'combatMix',
   flightNonce: 0,
   loading: { progress: 0, label: '' },
   messages: [],
@@ -223,6 +228,7 @@ export const useA10Store = create<A10Store>((set, get) => ({
   setView: (view) => set({ view }),
   setScenario: (scenario) => set({ scenario }),
   setLoadout: (loadoutId) => set({ loadoutId }),
+  setAmmoLoad: (ammoLoad) => set({ ammoLoad }),
   bumpFlight: () => set({ flightNonce: get().flightNonce + 1 }),
   setLoading: (progress, label) => set({ loading: { progress, label } }),
   pushMessage: (text, level = 'info', ttlMs = 3500) => {

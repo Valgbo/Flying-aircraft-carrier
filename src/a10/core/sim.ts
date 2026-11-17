@@ -101,6 +101,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     realism: opts.realism ?? realismFlags('authentic'),
     loadoutId: opts.loadoutId ?? 'tankHunter',
     customLoadout: opts.customLoadout,
+    ammoLoad: opts.ammoLoad ?? 'combatMix',
   };
   const world = createWorldState(opts.terrain);
   const start = opts.start ?? defaultAirStart(opts.terrain);
@@ -113,7 +114,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     commands: [],
     aircraft: createAircraftState(opts.terrain, start),
     avionics: createAvionicsState(),
-    gun: createGunState(),
+    gun: createGunState(options.ammoLoad),
     stores: createStoresState(options.loadoutId, options.customLoadout),
     projectiles: createProjectileState(),
     world,

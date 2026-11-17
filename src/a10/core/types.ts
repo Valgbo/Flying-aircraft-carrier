@@ -23,7 +23,14 @@ import type {
   VehicleCondition,
   VehicleKind,
 } from './targets/types';
-import type { GunState, ProjectileState, RoundType, StoresState, StoreType } from './weapons/types';
+import type {
+  AmmoLoad,
+  GunState,
+  ProjectileState,
+  RoundType,
+  StoresState,
+  StoreType,
+} from './weapons/types';
 import type { SurfaceKind, WorldState } from './world/types';
 
 /** Continuous pilot controls, written by the input layer once per frame, read by every step. */
@@ -174,6 +181,8 @@ export interface SimOptions {
   loadoutId: string;
   /** Custom loadout: station number → store list (rack first). */
   customLoadout?: Record<number, StoreType[]>;
+  /** The gun's ammunition load (default: the combat mix). */
+  ammoLoad?: AmmoLoad;
 }
 
 export interface Sim {

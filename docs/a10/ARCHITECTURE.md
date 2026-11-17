@@ -407,7 +407,8 @@ bloom → vignette → ACES; the carrier persists settings under `fac-settings-v
 - **Store** `useA10Store` (`state/store.ts`): `screen` (`menu` · `loadout` · `loading` ·
   `flight` · `debrief` · `credits`), `paused`, `settings` (persisted under `a10-settings-v1`,
   validated by `sanitizeSettings`, per-visit URL overrides via `overrideSettings`), `telemetry`
-  (≈10 Hz snapshot in display units), `view`, `scenario`, `loadoutId`, `flightNonce`,
+  (≈10 Hz snapshot in display units), `view`, `scenario`, `loadoutId`, `ammoLoad` (the gun
+  load for the next flight; `setAmmoLoad`, passed to `SimOptions.ammoLoad`), `flightNonce`,
   `loading`, `messages` (`pushMessage(text, level, ttl)`), `settingsOpen`, `helpOpen`.
 - **Runtime** (`state/runtime.ts`): `getSim()`, `getTerrain()`, `onTerrain()`,
   `prepareWorld(seed)`, `startFlight(opts)`, `endFlight()`. The live sim is never in the store.
@@ -487,6 +488,10 @@ node scripts/shot.mjs --url "http://127.0.0.1:<port>/a10/?screen=flight&quality=
 ```
 
   Always LOOK at your screenshots.
+
+Tests that need Node APIs (`node:fs`, `node:path`) are named `*.node.test.ts`; they are
+type-checked by `tsconfig.node.json` (Node types) instead of `tsconfig.app.json`. Other unit
+tests read repository files with `import.meta.glob`.
 
 ### Checks before a module is done
 

@@ -52,6 +52,7 @@ export function startFlight(opts: Partial<CreateSimOptions> = {}): Sim {
     realism: opts.realism ?? realismFlags(store.settings.realism),
     loadoutId: opts.loadoutId ?? store.loadoutId,
     customLoadout: opts.customLoadout,
+    ammoLoad: opts.ammoLoad ?? store.ammoLoad,
     start: opts.start,
   });
   sim.world.timeOfDay = store.settings.timeOfDay;
