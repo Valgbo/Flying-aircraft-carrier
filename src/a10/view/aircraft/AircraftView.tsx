@@ -19,10 +19,11 @@ import {
   updateAircraftInstance,
   type AircraftInstance,
 } from '../../assets';
-import { getSim } from '../../state/runtime';
 import { useA10Store } from '../../state/store';
+import { viewSim } from '../effects/simSource';
 import { a10Env } from '../environment/env';
 import { getA10Quality } from '../quality';
+import { placeAircraft } from './pose';
 
 export default function AircraftView() {
   const scene = useThree((s) => s.scene);
@@ -51,12 +52,12 @@ export default function AircraftView() {
 
   useFrame((state) => {
     if (!inst) return;
-    const sim = getSim();
+    const sim = viewSim();
     const outside = useA10Store.getState().view !== 'cockpit';
     inst.root.visible = !!sim && outside;
     if (!sim || !outside) return;
-    inst.root.position.copy(sim.aircraft.position);
-    inst.root.quaternion.copy(sim.aircraft.orientation);
+    // between the last two steps, like the cameras (FC-4: no judder at 75–165 Hz)
+    placeAircraft(inst.root, sim);
     const q = getA10Quality();
     setAircraftShadows(inst, q.shadows && q.level === 'high');
     updateAircraftInstance(inst, sim, a10Env.daylight);

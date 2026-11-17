@@ -17,6 +17,7 @@ import {
   roundModel,
   stepError,
   stepFireControl,
+  storeBallistics,
   createFireControlGround,
   createImpactPrediction,
   updateFireControlGround,
@@ -657,6 +658,9 @@ describe('store fire control (structure)', () => {
     const terrain = createFlatTerrain(0);
     const sim = createSim({ terrain, scenario: 'empty', loadoutId: 'rangeTraining', seed: 4 });
     const av = sim.avionics;
+    // The weapons module registers its own Mk-82 model at load: take it out for this test.
+    const real = storeBallistics('MK-82');
+    registerStoreBallistics('MK-82', null);
     holdAt(sim, { diveDeg: 30, tasKt: 300, aoaDeg: 2, headingDeg: 0 }, new Vector3(0, 1500, 0), 0);
     stepFireControl(sim, SIM_DT);
     const mk82 = av.profiles.find((p) => p.store === 'MK-82');
@@ -690,5 +694,6 @@ describe('store fire control (structure)', () => {
     }
     stepFireControl(sim, SIM_DT);
     expect(av.release.valid).toBe(false);
+    registerStoreBallistics('MK-82', real);
   });
 });

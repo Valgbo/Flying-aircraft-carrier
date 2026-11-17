@@ -101,7 +101,8 @@ export function persistLoadoutChoices(): void {
   });
 }
 
-export type PauseView = 'main' | 'controls';
+/** The pause menu's pages: the buttons, the controls reference, the debrief so far. */
+export type PauseView = 'main' | 'controls' | 'debrief';
 
 export interface A10UiState {
   /** Which page of the pause menu is showing. */

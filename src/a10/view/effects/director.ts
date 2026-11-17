@@ -22,23 +22,31 @@ import type { Vehicle, VehicleKind } from '../../core/targets/types';
 import type { SurfaceKind } from '../../core/world/types';
 import type { FrameInfo } from '../frame';
 import { addShake, setVibration } from '../shake';
+import { WP_MARK } from '../stores/look';
 import { DECAL } from './decals';
 import { fxRandom as R } from './noise';
 import { PK } from './particleKinds';
 import {
   cookOffPop,
+  detonationRecipe,
   dud,
   explosion,
+  flash,
   impactGround,
   impactVehicle,
+  sparks,
   whitePhosphorus,
   type DetonationKind,
   type FxContext,
 } from './recipes';
+import { surfaceFx } from './surfaces';
 
 const SPEED_OF_SOUND = 343;
 
-const EMIT = { none: 0, wp: 1, groundFire: 2, crashFire: 3 } as const;
+const EMIT = { none: 0, wp: 1, groundFire: 2, crashFire: 3, dustCloud: 4 } as const;
+
+/** The dust and smoke a bomb raises keeps coming off the crater for this long, s. */
+const DUST_CLOUD_LIFE = 35;
 
 interface FireState {
   id: number;
@@ -98,6 +106,8 @@ export class EffectsDirector {
   private readonly eLife = new Float32Array(EffectsDirector.EMITTERS);
   private readonly eStrength = new Float32Array(EffectsDirector.EMITTERS);
   private readonly eAcc = new Float32Array(EffectsDirector.EMITTERS);
+  /** Colour of what the emitter gives off (dust clouds: the soil's dust). */
+  private readonly eColour = new Float32Array(EffectsDirector.EMITTERS * 3);
 
   // scheduled pops (fixed pool)
   private static readonly POPS = 48;
@@ -244,24 +254,37 @@ export class EffectsDirector {
     const ctx = this.ctx;
     const terrain = sim.world.terrain;
     terrain.normalAt(x, z, _n);
-    if (kind === 'whitePhosphorus') {
+    const recipe = detonationRecipe(kind, charge);
+    if (recipe === 'none') return;
+    if (recipe === 'whitePhosphorus') {
       whitePhosphorus(ctx, x, y, z, surface);
-      this.addEmitter(EMIT.wp, x, this.groundAt(x, z), z, 75, 1);
+      // the mark: burning phosphorus on the ground feeding a white cloud for minutes, the main
+      // splash and a few smaller ones around it
+      const g = this.groundAt(x, z);
+      this.addEmitter(EMIT.wp, x, g, z, WP_MARK.duration, 1);
       for (let i = 0; i < 3; i++) {
         const a = R.next() * Math.PI * 2;
         const r = R.range(5, 14);
         const gx = x + Math.cos(a) * r;
         const gz = z + Math.sin(a) * r;
-        this.addEmitter(EMIT.wp, gx, this.groundAt(gx, gz), gz, R.range(20, 45), 0.3);
+        this.addEmitter(
+          EMIT.wp,
+          gx,
+          this.groundAt(gx, gz),
+          gz,
+          WP_MARK.duration * R.range(0.25, 0.5),
+          0.3,
+        );
       }
       this.queueShake(x, y, z, 2, delay);
       return;
     }
-    if (kind === 'dud') {
+    if (recipe === 'dud') {
       dud(ctx, x, y, z, surface, Math.min(2, 0.6 + 0.15 * Math.cbrt(Math.max(1, charge))));
       return;
     }
     const v = vehicleId > 0 ? findVehicle(sim, vehicleId) : null;
+    if (recipe === 'missileHit' && v) this.shapedChargeJet(x, y, z, v);
     if (kind === 'secondary' && v) {
       const last = this.bigBlast.get(vehicleId);
       if (last !== undefined && Math.abs(t - last) < 1.5) {
@@ -299,8 +322,49 @@ export class EffectsDirector {
         ny: _n.y,
         nz: _n.z,
       });
+      if (recipe === 'bombBurst') {
+        // the soil and smoke a bomb throws up hang over the crater and drift off for half a
+        // minute: what leads the eye to a bomb's impact from kilometres away
+        const sf = surfaceFx(surface);
+        const g = this.groundAt(x, z);
+        if (!sf.water && y - g < 6) {
+          const k = this.addEmitter(
+            EMIT.dustCloud,
+            x,
+            g,
+            z,
+            DUST_CLOUD_LIFE,
+            Math.min(1.6, Math.cbrt(charge / 96)),
+          );
+          const c = vehicleId > 0 ? 0.45 : 1;
+          this.eColour[k * 3] = sf.dust[0] * c;
+          this.eColour[k * 3 + 1] = sf.dust[1] * c;
+          this.eColour[k * 3 + 2] = sf.dust[2] * c;
+        }
+      }
     }
     this.queueShake(x, y, z, charge, delay);
+  }
+
+  /**
+   * A Maverick's shaped charge striking a vehicle: the jet's white flash through the hull and a
+   * spray of spall and burning fragments out of it, before the warhead's own burst. What the
+   * vehicle does next (its fire, its ammunition) comes from the targets module.
+   */
+  private shapedChargeJet(x: number, y: number, z: number, v: Vehicle): void {
+    const ctx = this.ctx;
+    const { ps } = ctx;
+    ps.groundY = this.groundAt(x, z);
+    const shape = VEHICLE_SHAPES[v.kind];
+    const top = shape.hullClearance + shape.hullHeight;
+    flash(ctx, x, y, z, 9, 0.07, 1.8);
+    const w = ps.spawn(PK.glint, x, y, z, 0, 0, 0, 4, 6, 0.12);
+    ps.emissive(w, 1.4);
+    sparks(ctx, x, y + 0.3, z, 0, 1, 0, Math.round(40 * ctx.detail), 1.4, 20, 90, 0.4, 1.6);
+    // the hatches and the turret ring blow out: a burst of fire from the top of the hull
+    const fy = Math.max(y, v.position.y + top);
+    const j = ps.spawn(PK.fireball, v.position.x, fy, v.position.z, 0, 9, 0, 1.2, 4.5, 0.9);
+    ps.emissive(j, 1.1);
   }
 
   /** The ammunition or fuel of a vehicle going up (catastrophic kill). */
@@ -413,6 +477,7 @@ export class EffectsDirector {
     }
   }
 
+  /** Start a persistent emitter (the oldest one gives way when all are busy); its slot. */
   private addEmitter(
     kind: number,
     x: number,
@@ -420,7 +485,7 @@ export class EffectsDirector {
     z: number,
     life: number,
     strength: number,
-  ): void {
+  ): number {
     let pick = -1;
     let oldest = -1;
     for (let i = 0; i < this.eKind.length; i++) {
@@ -442,6 +507,7 @@ export class EffectsDirector {
     this.eLife[pick] = life;
     this.eStrength[pick] = strength;
     this.eAcc[pick] = 0;
+    return pick;
   }
 
   private queueShake(x: number, y: number, z: number, charge: number, delay: number): void {
@@ -847,21 +913,48 @@ export class EffectsDirector {
       ps.groundY = y;
       ps.delay = 0;
       if (kind === EMIT.wp) {
-        this.eAcc[i] += (0.5 + 3.5 * fade * fade) * s * detail * dt;
+        // most of the phosphorus burns in the first minute; pieces smoulder on for minutes
+        const tau = 60 * WP_MARK.earlyShare;
+        const shape = 0.22 + 0.78 * Math.exp(-age / tau);
+        const tail = Math.min(1, (life - age) / 30);
+        this.eAcc[i] += WP_MARK.rate * shape * tail * s * Math.max(0.6, detail) * dt;
         while (this.eAcc[i] >= 1) {
           this.eAcc[i] -= 1;
-          ps.spawn(
-            PK.wpSmoke,
-            x + R.signed(1.5),
-            y + 0.8,
-            z + R.signed(1.5),
+          const j = ps.spawn(
+            PK.wpMark,
+            x + R.signed(2.5),
+            y + 1.5,
+            z + R.signed(2.5),
             R.signed(1),
-            R.range(1, 3),
+            R.range(1, 2.5),
             R.signed(1),
-            R.range(1.5, 2.5) * (0.5 + s),
-            R.range(8, 14) * (0.5 + 0.5 * s),
-            R.range(25, 45),
+            WP_MARK.puffS0 * R.range(0.8, 1.2) * (0.5 + 0.5 * s),
+            WP_MARK.puffS1 * R.range(0.8, 1.2) * (0.4 + 0.6 * s),
+            WP_MARK.puffLife * R.range(0.8, 1.2),
           );
+          ps.opacity(j, 0.85 + 0.15 * shape);
+        }
+      } else if (kind === EMIT.dustCloud) {
+        // the dust settling out of a bomb's cloud and the smoke of its crater, drifting downwind
+        this.eAcc[i] += 4.5 * s * Math.exp(-age / 7) * detail * dt;
+        while (this.eAcc[i] >= 1) {
+          this.eAcc[i] -= 1;
+          const r = R.range(2, 10) * s;
+          const a = R.next() * Math.PI * 2;
+          const j = ps.spawn(
+            PK.dust,
+            x + Math.cos(a) * r,
+            y + R.range(3, 18) * s,
+            z + Math.sin(a) * r,
+            R.signed(1.5),
+            R.range(0.5, 2),
+            R.signed(1.5),
+            R.range(8, 12) * s,
+            R.range(22, 34) * s,
+            R.range(18, 30),
+          );
+          const o = i * 3;
+          ps.color(j, this.eColour[o], this.eColour[o + 1], this.eColour[o + 2], 0.55);
         }
       } else {
         // ground fire (debris, fuel) or the aircraft's own wreck

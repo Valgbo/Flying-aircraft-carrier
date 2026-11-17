@@ -7,20 +7,29 @@
  * follows the measured geometry. Two text columns with straight margins frame the middle,
  * where the velocity vector, the pitch ladder, the gun cross and the reticle move:
  *
- *   annunciations (GUN INVALID, CCIP INVALID) — top, above the gun cross
+ *   annunciations (GUN INVALID, CCIP INVALID, CCRP INVALID) — top, above the gun cross
  *   airspeed (kt)                                          barometric altitude (ft)
  *   g                                                      R radar altitude (< 5,000 ft AGL)
- *   max g (once above 2.5 g)
- *   master mode
+ *   max g (once above 2.5 g), or REL / TOF countdown
+ *   master mode  * (the HUD is the sensor of interest)     SPI source (SPI STPT, SPI TGP …)
  *   Master Arm                                             steerpoint name
- *   gun / PAC state (or the weapon profile)                range (nm)
- *   rounds                                                 time to go
+ *   gun / PAC state, or the weapon profile's name          range (nm)
+ *   rounds, or stores left and the release mode            time to go
  *                   heading tape, heading index, steerpoint bearing
  */
 import { FIRE_CONTROL } from '../../data/avionics';
 import { A10_GEOMETRY } from '../../data/geometry';
 import { GAU8 } from '../../data/gun';
-import { DEG, glassField, type Box, type GlassCorners, type GlassField } from './hudMath';
+import type { SourceNote } from '../../data/sources';
+import {
+  DEG,
+  glassField,
+  planeFromDir,
+  type Box,
+  type GlassCorners,
+  type GlassField,
+  type Segment,
+} from './hudMath';
 
 /** The combiner glass corners (body frame), as the clipping math expects them. */
 export const HUD_GLASS: GlassCorners = [
@@ -58,6 +67,33 @@ export const HUD_SIZES = {
   minRangeCue: 0.0042,
   /** CCIP bomb reticle radius. */
   bombReticleRadius: 0.012,
+  /** CCIP rocket reticle radius. */
+  rocketReticleRadius: 0.012,
+  /** Projected bomb impact line (PBIL): dash and gap when the pipper is below the glass. */
+  pbilDash: 0.6 * DEG,
+  pbilGap: 0.4 * DEG,
+  /** The dashed PBIL is drawn at most this far beyond the delay cue (the glass hides the rest). */
+  pbilBeyond: 6 * DEG,
+  /** Minimum range staple: half-length across the PBIL and its legs toward the pipper. */
+  staple: 0.45 * DEG,
+  stapleLeg: 0.25 * DEG,
+  /** Delay cue: half-length across the PBIL, and its height above the glass's bottom edge. */
+  delayCue: 0.9 * DEG,
+  delayCueMargin: 0.5 * DEG,
+  /** Designated target (consent release): half-size of the TD box. */
+  tdBox: 0.45 * DEG,
+  /** CCRP solution cue (a small circle on the steering line) and the release-cue bar. */
+  cueRadius: 0.3 * DEG,
+  /** SPI diamond (half-diagonal), the off-field SPI square (half-size), the range readout gap. */
+  spiDiamond: 0.5 * DEG,
+  spiSquare: 0.6 * DEG,
+  /** Targeting-pod line-of-sight diamond and the tail it grows as the SPI generator. */
+  tgpDiamond: 0.4 * DEG,
+  tgpTail: 0.5 * DEG,
+  /** Maverick seeker line of sight: the "wagon wheel" (circle with spokes). */
+  mavWheel: 0.45 * DEG,
+  /** Relaxed realism: smallest half-size of a vehicle box. */
+  vehicleBoxMin: 0.25 * DEG,
   /** Heading tape: degrees of heading per HUD-plane unit (5° of heading per 1° of HUD). */
   tapeDegPerUnit: 5 / DEG,
   tapeMajorTick: 0.5 * DEG,
@@ -72,7 +108,61 @@ export const HUD_WIDTHS = {
   rangeBar: 2.4,
   breakX: 3,
   bearing: 1.8,
+  delayCue: 1.6,
+  staple: 1.4,
+  releaseCue: 2.4,
 } as const;
+
+/**
+ * Behaviour of the store symbology (PLAN_A10.md §6.5–6.7, §7), from public descriptions of the
+ * A-10C HUD (hobbyist simulator documentation; the pages themselves could not be opened from
+ * the build machine, so these come from search summaries of them).
+ */
+export const HUD_STORE_SYMBOLS = {
+  /** The CCRP solution cue waits at the top of the steering line until this many seconds before
+   * release, then falls to the velocity vector (used only when avionics gives no cue angle), s. */
+  cueFallTime: 5,
+  /** How long the release cue stays up after a store leaves, s. */
+  releaseCueHold: 0.6,
+  /** Relaxed realism: vehicles are boxed out to this slant range, m. */
+  vehicleBoxRange: 8000,
+} as const;
+
+/** Where each wave-2 symbol's look and behaviour comes from (ARCHITECTURE §5: sources). */
+export const HUD_SYMBOL_NOTES: Record<string, SourceNote> = {
+  pbil: {
+    source: 'hoggitHud',
+    confidence: 'approximate',
+    note: 'CCIP bombs: the projected bomb impact line runs from the velocity vector to the reticle; dashed when the pipper is below the HUD field of view',
+  },
+  staple: {
+    source: 'hoggitHud',
+    confidence: 'approximate',
+    note: 'minimum range staple on the PBIL: the reticle must stay below it for a valid release; placed here at the pipper position the minimum release altitude would give (vacuum time-of-fall ratio)',
+  },
+  delayCue: {
+    source: 'dcsA10Manual',
+    confidence: 'estimate',
+    note: 'delay cue on the PBIL when the pipper is below the glass; pressing the release designates the ground under it (consent release, PLAN §6.5). Its height above the glass edge is our choice, so it stays visible',
+  },
+  ccrp: {
+    source: 'hoggitHud',
+    confidence: 'approximate',
+    note: 'azimuth steering line with a solution cue and the time to release beside it; the cue falls in the last 5 s to release',
+  },
+  sensors: {
+    source: 'hoggitHud',
+    confidence: 'approximate',
+    note: 'TGP line-of-sight diamond (a tail when the pod is the SPI), Maverick line of sight as a wagon wheel, off-HUD SPI as a dashed square at the edge, SPI source at the bottom of the HUD, asterisk when the HUD is the SOI',
+  },
+  cueFallTime: { source: 'hoggitHud', confidence: 'approximate' },
+  releaseCueHold: { source: 'plan', confidence: 'estimate', note: 'design' },
+  vehicleBoxRange: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'PLAN §2 relaxed preset: boxes on the HUD',
+  },
+};
 
 /** Range scales of the gun sight. */
 export const GUN_SIGHT = {
@@ -117,6 +207,12 @@ export interface HudLayout {
   /** The CCRP azimuth steering line spans this elevation range (plane y). */
   aslTop: number;
   aslBottom: number;
+  /**
+   * The bottom edge of the glass seen from the layout's eye (the design eye: the symbol
+   * generator's field), as a HUD-plane segment from the left to the right corner. "Below the
+   * glass" for the CCIP cues means below this line.
+   */
+  glassBottom: Segment;
 }
 
 /** Half-width of the field at an elevation (linear between the top and bottom edges). */
@@ -147,6 +243,16 @@ export function computeHudLayout(
   // The text band: from above the heading tape to just over the top line of the columns.
   const ladderBottom = Math.tan(f.bottom + 3.0 * DEG);
   const bandTop = Math.tan(line0El + (HUD_LINES - 1) * S.line + S.text / 2 + 0.2 * DEG);
+  // The glass's bottom corners seen from the eye (straight line in the HUD plane).
+  const bl = { x: 0, y: 0 };
+  const br = { x: 0, y: 0 };
+  const rel = (c: { x: number; y: number; z: number }) => ({
+    x: c.x - eye.x,
+    y: c.y - eye.y,
+    z: c.z - eye.z,
+  });
+  planeFromDir(rel(glass[3]), bl);
+  planeFromDir(rel(glass[2]), br);
   return {
     field: f,
     tvvBox: {
@@ -188,5 +294,6 @@ export function computeHudLayout(
     },
     aslTop: Math.tan(f.top - 0.3 * DEG),
     aslBottom: Math.tan(f.bottom + 3.0 * DEG),
+    glassBottom: { x0: bl.x, y0: bl.y, x1: br.x, y1: br.y },
   };
 }

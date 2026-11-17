@@ -10,7 +10,12 @@
  * Fluid-Dynamic Drag, ch. 13). The tank-hunter load (≈3,040 kg) adds 0.43 m², a fifth of the
  * clean aircraft's zero-lift drag area, and in the flight model lowers the level top speed at
  * sea level from 381 to 354 kn.
+ *
+ * Wave 2 adds, at the end of the file, what a store does once it has left: its free-flight drag
+ * against Mach number, how the rack pushes it away, the Mk-82 AIR ballute, the Mk 66 rocket
+ * motor, warheads and fuzes, and the fragment envelope used for the safe-escape warning.
  */
+import { FT, LBF } from '../core/units';
 import type { StoreType } from '../core/weapons/types';
 import type { SourceNote } from './sources';
 
@@ -47,6 +52,8 @@ export const HYDRA70 = {
   m156Mass: 4.4,
   /** Tubes in a LAU-131 or LAU-68 pod. */
   podTubes: 7,
+  /** Speed at motor burn-out from a static launch (Mk 66 with an M151), m/s (PLAN §16). */
+  burnoutSpeed: 739,
 } as const;
 
 export const HYDRA70_NOTES: Record<keyof typeof HYDRA70, SourceNote> = {
@@ -58,6 +65,11 @@ export const HYDRA70_NOTES: Record<keyof typeof HYDRA70, SourceNote> = {
   },
   m156Mass: { source: 'wikiHydra', confidence: 'approximate', note: '≈9.7 lb with fuze' },
   podTubes: { source: 'gdotsHydra', confidence: 'confirmed' },
+  burnoutSpeed: {
+    source: 'gdotsHydra',
+    confidence: 'confirmed',
+    note: '739 m/s (2,425 ft/s) at burn-out, static launch (PLAN §19)',
+  },
 };
 
 const M151_ROCKET = HYDRA70.motorMass + HYDRA70.m151Mass;
@@ -516,4 +528,638 @@ export const LOADOUT_NOTES: SourceNote = {
   source: 'plan',
   confidence: 'approximate',
   note: 'PLAN §6.8 tank hunter; outboard ECM pod + AIM-9 pair as public A-10C photographs show',
+};
+
+// =================================================================================================
+// Wave 2: released stores in free flight (PLAN §6.1, §6.5–§6.7, §6.9; ARCHITECTURE §12.1, §12.2)
+// =================================================================================================
+
+/**
+ * Drag coefficient against Mach number: [Mach, Cd] pairs, increasing Mach, Cd on the store's
+ * reference area π·d²/4 (its body diameter). Beyond the last Mach the last value holds.
+ */
+export type DragCurve = ReadonlyArray<readonly [number, number]>;
+
+/**
+ * Mk 82 with the Mk 15-type conical fin assembly ("low drag"). Subsonic Cd ≈ 0.2 is the sum of
+ * skin friction on a fineness-8 body (≈0.09), the four fins (≈0.02), the small base behind the
+ * tail cone, the nose fuze and the lugs (Hoerner, Fluid-Dynamic Drag, ch. 3, 13); the transonic
+ * rise to ≈0.6 and the supersonic fall-off have the shape of finned bodies of revolution
+ * (Hoerner ch. 16). The measured Mk 82 tables (DSTO-TR-0554, AD A329921) were not reachable.
+ */
+export const MK82_DRAG: DragCurve = [
+  [0, 0.2],
+  [0.6, 0.2],
+  [0.7, 0.21],
+  [0.8, 0.24],
+  [0.85, 0.28],
+  [0.9, 0.36],
+  [0.95, 0.47],
+  [1.0, 0.56],
+  [1.05, 0.6],
+  [1.1, 0.6],
+  [1.2, 0.57],
+  [1.5, 0.5],
+  [2.0, 0.42],
+  [3.0, 0.34],
+];
+
+/**
+ * GBU-12: the Mk 82 body with the Paveway II seeker head, its four canards and the large folding
+ * wings of the air-foil group, which add skin friction and interference drag (about 1.65 × the
+ * low-drag Mk 82). The canards' manoeuvring (induced) drag is the guided module's.
+ */
+export const GBU12_DRAG: DragCurve = [
+  [0, 0.33],
+  [0.6, 0.33],
+  [0.7, 0.35],
+  [0.8, 0.4],
+  [0.9, 0.55],
+  [1.0, 0.8],
+  [1.1, 0.85],
+  [1.3, 0.8],
+  [2.0, 0.65],
+];
+
+/** AGM-65 airframe (glass seeker dome, long-chord cruciform wings and tail), power off. */
+export const MAVERICK_DRAG: DragCurve = [
+  [0, 0.34],
+  [0.7, 0.36],
+  [0.85, 0.42],
+  [0.95, 0.6],
+  [1.05, 0.8],
+  [1.2, 0.76],
+  [1.5, 0.66],
+  [2.0, 0.56],
+];
+
+/**
+ * Hydra 70 (Mk 66 motor, wrap-around fins, M151 / M156 head), power off. The transonic peak and
+ * the slow supersonic fall-off are those of a finned 2.75-inch rocket; while the motor burns the
+ * plume fills the base (MK66.plumeDrag).
+ */
+export const HYDRA70_DRAG: DragCurve = [
+  [0, 0.38],
+  [0.6, 0.38],
+  [0.8, 0.42],
+  [0.9, 0.5],
+  [1.0, 0.7],
+  [1.1, 0.76],
+  [1.2, 0.74],
+  [1.5, 0.64],
+  [2.0, 0.53],
+  [2.5, 0.46],
+  [3.0, 0.41],
+  [4.0, 0.35],
+];
+
+/** SUU-66/B dispenser of the CBU-97 (blunt nose, folding tail fins), before it opens. */
+export const CBU97_DRAG: DragCurve = [
+  [0, 0.28],
+  [0.7, 0.3],
+  [0.85, 0.38],
+  [0.95, 0.55],
+  [1.05, 0.75],
+  [1.2, 0.72],
+  [2.0, 0.55],
+];
+
+export const DRAG_CURVE_NOTES: Record<
+  'MK82_DRAG' | 'GBU12_DRAG' | 'MAVERICK_DRAG' | 'HYDRA70_DRAG' | 'CBU97_DRAG',
+  SourceNote
+> = {
+  MK82_DRAG: {
+    source: 'hoernerDrag',
+    confidence: 'estimate',
+    note: 'component build-up (Hoerner ch. 3, 13, 16); DSTO-TR-0554 Mk 82 tables not reachable',
+  },
+  GBU12_DRAG: {
+    source: 'hoernerDrag',
+    confidence: 'estimate',
+    note: 'Mk 82 body + seeker head, canards and wings: ≈1.65 × the low-drag bomb',
+  },
+  MAVERICK_DRAG: {
+    source: 'hoernerDrag',
+    confidence: 'estimate',
+    note: 'missile body with cruciform wings; the guided module may supply its own',
+  },
+  HYDRA70_DRAG: {
+    source: 'hoernerDrag',
+    confidence: 'estimate',
+    note: 'finned 2.75-inch rocket; the motor fit (MK66.propellantMass) absorbs the power-on drag',
+  },
+  CBU97_DRAG: { source: 'hoernerDrag', confidence: 'estimate', note: 'blunt finned dispenser' },
+};
+
+/** How a store leaves its station. */
+export type LaunchKind =
+  /** A cartridge ejector (MAU-40/A pylon rack, TER-9/A) pushes it down, away from the aircraft. */
+  | 'ejector'
+  /** A launcher rail (LAU-117, LAU-88): the motor carries it off; no ejection. */
+  | 'rail'
+  /** A rocket-pod tube (LAU-131, LAU-68): the motor accelerates it along the tube. */
+  | 'tube';
+
+/** A weapon's free flight. */
+export interface StoreFlightData {
+  /** Drag curve and the diameter its Cd refers to, m. */
+  drag: DragCurve;
+  referenceDiameter: number;
+  /** Multiplier on the curve (a configuration of the same airframe). */
+  dragFactor: number;
+  launch: LaunchKind;
+  /**
+   * Time constant with which the body's axis turns into the relative wind, s (first-order lag;
+   * the drawn attitude only: the point-mass motion does not depend on it).
+   */
+  weathercockTime: number;
+  /** Name in the hit, kill and weapon records (the store, or the rocket's warhead). */
+  name: string;
+}
+
+/** Free flight of every store that can be released (racks and pods only fall when jettisoned). */
+export const STORE_FLIGHT: Partial<Record<StoreType, StoreFlightData>> = {
+  'MK-82': {
+    drag: MK82_DRAG,
+    referenceDiameter: 0.273,
+    dragFactor: 1,
+    launch: 'ejector',
+    weathercockTime: 0.35,
+    name: 'MK-82',
+  },
+  'MK-82AIR': {
+    drag: MK82_DRAG,
+    referenceDiameter: 0.273,
+    dragFactor: 1.15,
+    launch: 'ejector',
+    weathercockTime: 0.35,
+    name: 'MK-82AIR',
+  },
+  'GBU-12': {
+    drag: GBU12_DRAG,
+    referenceDiameter: 0.273,
+    dragFactor: 1,
+    launch: 'ejector',
+    weathercockTime: 0.3,
+    name: 'GBU-12',
+  },
+  'CBU-97': {
+    drag: CBU97_DRAG,
+    referenceDiameter: 0.4,
+    dragFactor: 1,
+    launch: 'ejector',
+    weathercockTime: 0.35,
+    name: 'CBU-97',
+  },
+  'AGM-65D': {
+    drag: MAVERICK_DRAG,
+    referenceDiameter: 0.305,
+    dragFactor: 1,
+    launch: 'rail',
+    weathercockTime: 0.1,
+    name: 'AGM-65D',
+  },
+  'AGM-65H': {
+    drag: MAVERICK_DRAG,
+    referenceDiameter: 0.305,
+    dragFactor: 1,
+    launch: 'rail',
+    weathercockTime: 0.1,
+    name: 'AGM-65H',
+  },
+  'AGM-65G': {
+    drag: MAVERICK_DRAG,
+    referenceDiameter: 0.305,
+    dragFactor: 1,
+    launch: 'rail',
+    weathercockTime: 0.1,
+    name: 'AGM-65G',
+  },
+  'AGM-65K': {
+    drag: MAVERICK_DRAG,
+    referenceDiameter: 0.305,
+    dragFactor: 1,
+    launch: 'rail',
+    weathercockTime: 0.1,
+    name: 'AGM-65K',
+  },
+  'LAU-131-M151': {
+    drag: HYDRA70_DRAG,
+    referenceDiameter: 0.07,
+    dragFactor: 1,
+    launch: 'tube',
+    weathercockTime: 0.05,
+    name: 'M151',
+  },
+  'LAU-131-M156': {
+    drag: HYDRA70_DRAG,
+    referenceDiameter: 0.07,
+    dragFactor: 1,
+    launch: 'tube',
+    weathercockTime: 0.05,
+    name: 'M156',
+  },
+  'LAU-68-M151': {
+    drag: HYDRA70_DRAG,
+    referenceDiameter: 0.07,
+    dragFactor: 1,
+    launch: 'tube',
+    weathercockTime: 0.05,
+    name: 'M151',
+  },
+  'LAU-68-M156': {
+    drag: HYDRA70_DRAG,
+    referenceDiameter: 0.07,
+    dragFactor: 1,
+    launch: 'tube',
+    weathercockTime: 0.05,
+    name: 'M156',
+  },
+};
+
+export const STORE_FLIGHT_NOTES: SourceNote = {
+  source: 'hoernerDrag',
+  confidence: 'estimate',
+  note:
+    'curves above; Mk 82 AIR in low drag: the BSU-49 canister tail drags ≈15 % more than the ' +
+    'conical fins; weathercock lags from the stores’ static margins (≈1–3 Hz at release speeds)',
+};
+
+/**
+ * Cartridge ejectors (MAU-40/A in the pylons, TER-9/A): the cartridges' gas does roughly the same
+ * work on any store, so the ejection speed falls as 1/√mass. The reference is 20 ft/s for a
+ * 500-lb bomb; a TER with three Mk 82s jettisoned from the pylon leaves at ≈3.4 m/s.
+ */
+export const EJECTOR = {
+  /** Work done on the store, J: 20 ft/s for a 241 kg Mk 82 (½·241·6.10²). */
+  energy: 0.5 * 241 * (20 * FT) ** 2,
+  /** Fastest ejection, m/s (the piston stroke limits a light store). */
+  maxVelocity: 25 * FT,
+} as const;
+
+export const EJECTOR_NOTES: Record<keyof typeof EJECTOR, SourceNote> = {
+  energy: {
+    source: 'flightgearA10',
+    confidence: 'approximate',
+    note:
+      'FlightGear payload file: Mk 82 ejector 20 ft/s; L3Harris quotes 20 ft/s for 500-lb ' +
+      'stores (BRU-55 class); constant ejector work is our model',
+  },
+  maxVelocity: { source: 'plan', confidence: 'estimate' },
+};
+
+/**
+ * The Mk 82 AIR's BSU-49/B tail: a high-drag release pulls the ballute (a nylon balloon-
+ * parachute) out of its canister; it fills and slows the bomb hard (≈8 g at 450 kn), so it
+ * falls steeply far behind the aircraft — the low-level delivery the A-10 escapes from.
+ */
+export const BSU49 = {
+  /** Drag area of the inflated ballute, m² (≈1.2 m across, Cd ≈ 0.55), on top of the bomb's. */
+  dragArea: 0.6,
+  /** Time from release to the start of inflation, s. */
+  openStart: 0.2,
+  /** Time from release to full inflation, s. */
+  openFull: 0.5,
+} as const;
+
+export const BSU49_NOTES: Record<keyof typeof BSU49, SourceNote> = {
+  dragArea: {
+    source: 'flightgearA10',
+    confidence: 'estimate',
+    note:
+      'inflated diameter ≈1.2 m from photographs, ballute Cd ≈0.5–0.9; FlightGear guesses +0.31 m² ' +
+      '(delta Cd 5.25 on 0.63 ft²); no public drag figure found',
+  },
+  openStart: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'brief: opens ≈0.2–0.5 s after release (the Eglin deployment test, ADTC 1559W055, was not ' +
+      'reachable; FlightGear uses 0.65 s)',
+  },
+  openFull: { source: 'plan', confidence: 'estimate' },
+};
+
+/**
+ * Mk 66 Mod 4 rocket motor (Hydra 70). The thrust curve has the published total impulse and
+ * burn time; its shape (a fast rise, a slightly regressive plateau, a short tail-off) is that of
+ * a cast double-base grain. The propellant burnt is fitted so a static launch with an M151
+ * burns out at 739 m/s (≈3.0 kg, specific impulse ≈229 s, typical of double-base propellant):
+ * the static-launch test checks it. The mass falls in proportion to the impulse delivered.
+ */
+export const MK66 = {
+  /** Total impulse, N·s (1,515 lbf·s, Mod 4 at 77 °F). */
+  totalImpulse: 1515 * LBF,
+  /** Burn time, s. */
+  burnTime: 1.07,
+  /** Average thrust, N (1,415 lbf): totalImpulse / burnTime. */
+  averageThrust: 1415 * LBF,
+  /** Shape of the thrust curve: [time s, thrust / average] knots, scaled to totalImpulse. */
+  thrustShape: [
+    [0, 0],
+    [0.015, 1.1],
+    [0.5, 1.03],
+    [1.0, 0.96],
+    [1.07, 0],
+  ] as ReadonlyArray<readonly [number, number]>,
+  /** Propellant burnt, kg (fitted, see above). */
+  propellantMass: 3.0,
+  /** Distance the rocket moves in the launch tube before it flies free, m. */
+  tubeTravel: 1.5,
+  /** Drag while the motor burns, as a share of the power-off drag (the plume fills the base). */
+  plumeDrag: 0.8,
+  /**
+   * Launch dispersion, rad per axis (σ of the direction the rocket takes as it leaves the tube:
+   * tip-off and thrust misalignment, most of it in the first 0.1 s).
+   */
+  dispersion: 0.0035,
+} as const;
+
+export const MK66_NOTES: Record<keyof typeof MK66, SourceNote> = {
+  totalImpulse: {
+    source: 'gdotsHydra',
+    confidence: 'confirmed',
+    note: 'Mod 4: 1,515 lbf·s (674 daN·s) at 77 °F',
+  },
+  burnTime: { source: 'gdotsHydra', confidence: 'confirmed', note: '1.07 s (PLAN: 1.05–1.10 s)' },
+  averageThrust: {
+    source: 'gdotsHydra',
+    confidence: 'confirmed',
+    note: '1,415 lbf (6.29 kN) Mod 4; Mod 2/3: 1,335 lbf',
+  },
+  thrustShape: { source: 'plan', confidence: 'estimate', note: 'cast double-base grain' },
+  propellantMass: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'fitted to the 739 m/s static burn-out (no public propellant weight found)',
+  },
+  tubeTravel: { source: 'plan', confidence: 'estimate', note: 'LAU-131/A tube ≈1.7 m long' },
+  plumeDrag: { source: 'hoernerDrag', confidence: 'estimate', note: 'base drag removed while burning' },
+  dispersion: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'fixed-wing launch at 300 kn; the Army’s 2003 NDIA Hydra briefing gives 29 mil CEP for ' +
+      'helicopter launches, where low launch speed and pylon motion dominate',
+  },
+};
+
+/** What a store's warhead does when its fuze functions. */
+export interface WarheadData {
+  /** Explosive fill as TNT equivalent, kg (0: none). */
+  charge: number;
+  /** Mass of the case that breaks into fragments, kg. */
+  caseMass: number;
+  /** Detonation event kind. */
+  kind: 'bomb' | 'rocket' | 'missile' | 'whitePhosphorus' | 'dud';
+  /**
+   * Distance from the fuze in the nose back to the centre of the charge, m: an instantaneous
+   * burst on the ground happens this far back along the path, above the surface.
+   */
+  chargeOffset: number;
+  /** Shaped-charge jet penetration, mm RHA (Maverick D/H); 0 = blast and fragments only. */
+  penetrationMm: number;
+  /**
+   * Fuzing: 'profile' (bombs: nose instantaneous or tail delay from the weapon profile),
+   * 'instant' (rocket and shaped-charge nose fuzes), 'delay' (a penetrating warhead).
+   */
+  fuze: 'profile' | 'instant' | 'delay';
+}
+
+/** Mk 82: 87 kg of Tritonal (≈96 kg TNT by blast) in a 125 kg fragmenting steel case. */
+const MK82_WARHEAD: WarheadData = {
+  charge: 96,
+  caseMass: 125,
+  kind: 'bomb',
+  chargeOffset: 1.0,
+  penetrationMm: 0,
+  fuze: 'profile',
+};
+
+/** Warheads of the stores that can be released (CBU-97 submunitions are a later milestone). */
+export const WARHEADS: Partial<Record<StoreType, WarheadData>> = {
+  'MK-82': MK82_WARHEAD,
+  'MK-82AIR': MK82_WARHEAD,
+  'GBU-12': MK82_WARHEAD,
+  'CBU-97': {
+    charge: 0,
+    caseMass: 0,
+    kind: 'dud',
+    chargeOffset: 0,
+    penetrationMm: 0,
+    fuze: 'instant',
+  },
+  'LAU-131-M151': {
+    charge: 1.15,
+    caseMass: 2.7,
+    kind: 'rocket',
+    chargeOffset: 0.25,
+    penetrationMm: 0,
+    fuze: 'instant',
+  },
+  'LAU-68-M151': {
+    charge: 1.15,
+    caseMass: 2.7,
+    kind: 'rocket',
+    chargeOffset: 0.25,
+    penetrationMm: 0,
+    fuze: 'instant',
+  },
+  'LAU-131-M156': {
+    charge: 0.12,
+    caseMass: 1.0,
+    kind: 'whitePhosphorus',
+    chargeOffset: 0.25,
+    penetrationMm: 0,
+    fuze: 'instant',
+  },
+  'LAU-68-M156': {
+    charge: 0.12,
+    caseMass: 1.0,
+    kind: 'whitePhosphorus',
+    chargeOffset: 0.25,
+    penetrationMm: 0,
+    fuze: 'instant',
+  },
+  'AGM-65D': {
+    charge: 39,
+    caseMass: 15,
+    kind: 'missile',
+    chargeOffset: 0.6,
+    penetrationMm: 1000,
+    fuze: 'instant',
+  },
+  'AGM-65H': {
+    charge: 39,
+    caseMass: 15,
+    kind: 'missile',
+    chargeOffset: 0.6,
+    penetrationMm: 1000,
+    fuze: 'instant',
+  },
+  'AGM-65G': {
+    charge: 45,
+    caseMass: 90,
+    kind: 'missile',
+    chargeOffset: 0.9,
+    penetrationMm: 0,
+    fuze: 'delay',
+  },
+  'AGM-65K': {
+    charge: 45,
+    caseMass: 90,
+    kind: 'missile',
+    chargeOffset: 0.9,
+    penetrationMm: 0,
+    fuze: 'delay',
+  },
+};
+
+export const WARHEAD_NOTES: Record<string, SourceNote> = {
+  'MK-82': {
+    source: 'wikiMk82',
+    confidence: 'approximate',
+    note:
+      '87 kg Tritonal × ≈1.1 (TNT equivalence by blast, UFC 3-340-02) = 96 kg; case 125 kg; the ' +
+      'targets blast table (BLAST.mk82*) is calibrated to these',
+  },
+  'CBU-97': {
+    source: 'wikiCbu97',
+    confidence: 'estimate',
+    note: 'PLAN §6.9 later weapon: the dispenser is flown, its BLU-108s are not (lands inert)',
+  },
+  M151: {
+    source: 'wikiHydra',
+    confidence: 'approximate',
+    note:
+      '2.3 lb (1.04 kg) Comp B-4 × ≈1.1 = 1.15 kg TNT; 4.2 kg warhead with fuze, ≈2.7 kg of ' +
+      'fragmenting case',
+  },
+  M156: {
+    source: 'wikiHydra',
+    confidence: 'estimate',
+    note: '≈1 kg of white phosphorus with a small burster (≈0.1 kg Comp B); thin case',
+  },
+  'AGM-65D/H': {
+    source: 'wikiAgm65',
+    confidence: 'estimate',
+    note:
+      'WDU-20/B 57 kg shaped charge (PLAN §19): ≈35 kg fill; the jet defeats any tank ' +
+      '(≈1,000 mm RHA assumed). The guided module may own these numbers (data/guided.ts)',
+  },
+  'AGM-65G/K': {
+    source: 'wikiAgm65',
+    confidence: 'estimate',
+    note: 'WDU-24/B 136 kg penetrating blast warhead (PLAN §19): ≈40 kg fill, delayed fuze',
+  },
+};
+
+/**
+ * Bomb fuzes (PLAN §6.5): the profile sets NOSE (instantaneous), TAIL (a short delay) or N/T
+ * (both armed: the nose functions first). A delayed burst on the ground happens after the bomb
+ * has buried itself (a metre or two in soil), which sends part of the energy into the crater and
+ * stops most fragments; in water it bursts under the surface.
+ */
+export const FUZE = {
+  /** Delay of the tail fuze, s. */
+  tailDelay: 0.025,
+  /** A delayed burst in the ground: share of the air blast (TNT equivalent) that acts above it. */
+  buriedBlast: 0.6,
+  /** …and share of the fragmenting case whose fragments get out of the ground. */
+  buriedFragments: 0.25,
+  /** A delayed burst under water: share of the air blast; no fragments get out. */
+  underwaterBlast: 0.3,
+} as const;
+
+export const FUZE_NOTES: Record<keyof typeof FUZE, SourceNote> = {
+  tailDelay: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'FMU-139 / M905 short-delay settings (10–60 ms)',
+  },
+  buriedBlast: {
+    source: 'ufc334002',
+    confidence: 'estimate',
+    note: 'shallow-buried burst: a large part of the energy goes into cratering',
+  },
+  buriedFragments: { source: 'plan', confidence: 'estimate' },
+  underwaterBlast: { source: 'plan', confidence: 'estimate' },
+};
+
+/**
+ * Safe escape (PLAN §6.5): a release is flagged when the aircraft is inside the fragment
+ * envelope of its own weapon when it detonates. The envelope is the distance at which the
+ * expected number of HAZARDOUS fragments (those still carrying hazardousEnergy) striking the
+ * aircraft's presented area falls to hitProbability. Fragments follow the targets module's model
+ * (Mott masses, Gurney speed, drag; half of them go into the ground). For the Mk 82 this gives
+ * ≈350 m (see the test).
+ */
+export const SAFE_ESCAPE = {
+  /** Kinetic energy of a hazardous fragment, J (58 ft·lbf). */
+  hazardousEnergy: 58 * FT * LBF,
+  /** The A-10's mean presented area to fragments from below and the side, m². */
+  presentedArea: 30,
+  /** Expected hazardous hits accepted at the envelope edge (1 in 100, a combat risk level). */
+  hitProbability: 0.01,
+} as const;
+
+export const SAFE_ESCAPE_NOTES: Record<keyof typeof SAFE_ESCAPE, SourceNote> = {
+  hazardousEnergy: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'DoD 6055.09-M: a hazardous fragment has 58 ft-lb (79 J) of kinetic energy',
+  },
+  presentedArea: { source: 'plan', confidence: 'estimate', note: 'A-10 planform 47 m² wing' },
+  hitProbability: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'combat risk 1 %; peacetime safe-escape criteria use 0.1 % (envelope ≈540 m for a Mk 82)',
+  },
+};
+
+/**
+ * A jettisoned rack, pod or launcher tumbles: its drag area is half the broadside drag of a
+ * cylinder of its length and diameter (Cd ≈ 1.2 broadside, small end-on), averaged over attitudes.
+ */
+export const TUMBLE = {
+  /** Broadside drag coefficient of a cylinder, on length × diameter. */
+  broadsideCd: 1.2,
+  /** Average share of the broadside drag while tumbling. */
+  meanShare: 0.5,
+} as const;
+
+export const TUMBLE_NOTES: Record<keyof typeof TUMBLE, SourceNote> = {
+  broadsideCd: { source: 'hoernerDrag', confidence: 'approximate', note: 'Hoerner ch. 3' },
+  meanShare: { source: 'plan', confidence: 'estimate' },
+};
+
+/** Store bodies in flight (PLAN §14). */
+export const STORE_BODY = {
+  /** A body still flying this long after release is removed, s. */
+  maxLifetime: 180,
+  /** Bodies kept ready for reuse (more are made only if more fly at once). */
+  poolSize: 32,
+  /**
+   * Step of the fire-control predictor for bombs and dispensers, s: within 0.05 m (low drag) and
+   * 0.15 m (high drag) of the live 1/120 s integration over CCIP dives of 10–60° and level
+   * releases from 500 to 20,000 ft (stores test).
+   */
+  predictorStepBomb: 1 / 8,
+  /** …for rockets, s: within 0.15 m (the burn is integrated in 1/60 s pieces at any step). */
+  predictorStepRocket: 1 / 15,
+} as const;
+
+export const STORE_BODY_NOTES: Record<keyof typeof STORE_BODY, SourceNote> = {
+  maxLifetime: { source: 'plan', confidence: 'estimate', note: 'design' },
+  poolSize: { source: 'plan', confidence: 'estimate', note: 'design (PLAN §14: no allocation)' },
+  predictorStepBomb: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'design: within 0.5 m of the live SIM_DT integration (measured ≤ 0.15 m)',
+  },
+  predictorStepRocket: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'design: within 0.5 m of the live SIM_DT integration (measured ≤ 0.15 m)',
+  },
 };

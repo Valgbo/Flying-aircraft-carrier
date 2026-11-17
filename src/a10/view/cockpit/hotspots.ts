@@ -1,15 +1,14 @@
 /**
- * The "A-10C box": small labelled switches for the controls the FlightGear A-10A cockpit does
- * not have (switches.ts lists them): LASER ARM (ARM / SAFE / TRAIN), TGP power (ON / OFF), ALT
- * SCE (BARO / DELTA / RADAR) in the top row; the autopilot's ENGAGE and MODE buttons and the
- * altitude alert (ALT ALERT, its setting in a small window) in the bottom row.
- * OWNED BY THE COCKPIT MODULE.
+ * The autopilot box: the low-altitude autopilot's ENGAGE button and MODE selector (PATH,
+ * ALT/HDG, ALT), which the FlightGear A-10A cockpit has no clickable part for. OWNED BY THE
+ * COCKPIT MODULE. (Wave 1's "A-10C box" also held LASER ARM, TGP and ALT SCE — now on the AHCP,
+ * ahcp.ts — and the altitude alert — now the UFC's ALT ALRT key, ufc.ts.)
  *
  * It is built in code — a small housing with a face plate (stencilled labels on a canvas texture,
- * redrawn only when a read-out changes), toggle levers that show their position and push
- * buttons with lamps — and mounted as an add-on box on the left end of the instrument panel,
- * in the open corner between the HUD control panel and the canopy, turned toward the pilot's
- * eye (BOX_POSE). Each switch has a generous click box in the box's frame for the picker.
+ * redrawn only when a read-out changes) and push buttons with lamps — and mounted as an add-on
+ * box on the left end of the instrument panel, in the open corner between the left MFCD and the
+ * canopy, turned toward the pilot's eye (BOX_POSE). Each button has a generous click box in the
+ * box's frame for the picker.
  */
 import {
   BoxGeometry,
@@ -41,34 +40,19 @@ export interface HotspotDef {
 }
 
 /** Face size and housing depth, m. */
-export const BOX_SIZE = { width: 0.118, height: 0.094, depth: 0.03 } as const;
+export const BOX_SIZE = { width: 0.08, height: 0.052, depth: 0.03 } as const;
+/** The face's grid of buttons. */
+const COLUMNS = 2;
+const ROWS = 1;
 
 export const HOTSPOTS: readonly HotspotDef[] = [
-  {
-    id: 'laserArm',
-    kind: 'toggle3',
-    label: 'LASER',
-    positions: ['ARM', 'SAFE', 'TRAIN'],
-    col: 0,
-    row: 0,
-  },
-  { id: 'tgpPower', kind: 'toggle2', label: 'TGP', positions: ['ON', 'OFF'], col: 1, row: 0 },
-  {
-    id: 'altSource',
-    kind: 'toggle3',
-    label: 'ALT SCE',
-    positions: ['BARO', 'DELTA', 'RADAR'],
-    col: 2,
-    row: 0,
-  },
-  { id: 'autopilot', kind: 'button', label: 'AP', positions: [], col: 0, row: 1 },
-  { id: 'autopilotMode', kind: 'button', label: 'AP MODE', positions: [], col: 1, row: 1 },
-  { id: 'altitudeAlert', kind: 'button', label: 'ALT ALERT', positions: [], col: 2, row: 1 },
+  { id: 'autopilot', kind: 'button', label: 'AP', positions: [], col: 0, row: 0 },
+  { id: 'autopilotMode', kind: 'button', label: 'AP MODE', positions: [], col: 1, row: 0 },
 ];
 
 /**
  * Where the box sits, BODY frame: the centre of its face, and its turn toward the eye (yaw to
- * the right, then tilt back). The panel's left end is at x ≈ −0.34 m here; the canopy glass at
+ * the right, then tilt back). The left MFCD's bezel ends at x ≈ −0.326 m; the canopy glass is at
  * x ≈ −0.45 m.
  */
 export const BOX_POSE = {
@@ -79,8 +63,8 @@ export const BOX_POSE = {
 
 /** Centre of a switch on the face (face frame, m: + right, + up). */
 export function switchCentre(def: HotspotDef, out: Vector3): Vector3 {
-  const cw = BOX_SIZE.width / 3;
-  const ch = BOX_SIZE.height / 2;
+  const cw = BOX_SIZE.width / COLUMNS;
+  const ch = BOX_SIZE.height / ROWS;
   return out.set(
     -BOX_SIZE.width / 2 + cw * (def.col + 0.5),
     BOX_SIZE.height / 2 - ch * (def.row + 0.5) - 0.004,
@@ -111,11 +95,6 @@ function leverIndex(def: HotspotDef, s: CockpitSwitchState): number {
     default:
       return 0;
   }
-}
-
-export function altAlertText(m: number): string {
-  if (!(m > 1)) return 'OFF';
-  return `${Math.round(m / 0.3048 / 10) * 10}`;
 }
 
 export function apModeText(mode: string): string {
@@ -266,10 +245,8 @@ export class HotspotBox {
         s.autopilotEngaged ? 1.4 : 0,
         s.autopilotEngaged ? 0.25 : 0,
       );
-    const alt = this.lamps.get('altitudeAlert');
-    if (alt) alt.emissive.setRGB(s.altitudeAlert > 1 ? 1.2 : 0, s.altitudeAlert > 1 ? 0.75 : 0, 0);
     this.face.emissive.setRGB(night * 0.55, night * 0.45, night * 0.32);
-    const key = `${s.autopilotMode}|${altAlertText(s.altitudeAlert)}`;
+    const key = s.autopilotMode;
     if (key !== this.lastKey) {
       this.lastKey = key;
       this.paint(s);
@@ -288,10 +265,10 @@ export class HotspotBox {
     ctx.strokeStyle = '#41464a';
     ctx.lineWidth = 4;
     ctx.strokeRect(2, 2, W - 4, H - 4);
-    // the row divider
+    // the column divider
     ctx.beginPath();
-    ctx.moveTo(10, H / 2);
-    ctx.lineTo(W - 10, H / 2);
+    ctx.moveTo(W / 2, 10);
+    ctx.lineTo(W / 2, H - 10);
     ctx.stroke();
     ctx.fillStyle = '#16181a';
     for (const [x, y] of [
@@ -324,12 +301,7 @@ export class HotspotBox {
           ctx.fillText(name, x + 0.0012 * px, yy);
         });
       } else {
-        const text =
-          def.id === 'autopilotMode'
-            ? apModeText(s.autopilotMode)
-            : def.id === 'altitudeAlert'
-              ? altAlertText(s.altitudeAlert)
-              : 'ENGAGE';
+        const text = def.id === 'autopilotMode' ? apModeText(s.autopilotMode) : 'ENGAGE';
         const wy = y + 0.0125 * px;
         if (def.id === 'autopilot') {
           ctx.font = 'bold 14px Arial, Helvetica, sans-serif';

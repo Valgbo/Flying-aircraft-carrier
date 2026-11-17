@@ -3,7 +3,8 @@
  * around the control and a label with its name and position). OWNED BY THE COCKPIT MODULE.
  *
  * Every control is a box in the local frame of a node of the cockpit model (FlightGear's pick
- * boxes from meta.pick, the bounds of a moving part, or a hotspot of the A-10C box). A ray from
+ * boxes from meta.pick, the bounds of a moving part) or of one of the panels built in code (the
+ * MFCDs' faces, the AHCP, the UFC, the autopilot box). A ray from
  * the cockpit camera through the pointer is tested against the boxes in their own frames, so
  * moving parts (the gear handle, the flap lever) stay clickable wherever they are.
  */
@@ -29,14 +30,19 @@ import {
   type PerspectiveCamera,
   type Scene,
 } from 'three';
-import type { CockpitControlId } from './switches';
+import type { ClickId } from './clickables';
 
 export interface PickTarget {
-  id: CockpitControlId;
+  id: ClickId;
   label: string;
   /** The node whose local frame the box is in. */
   frame: Object3D;
   box: Box3;
+  /**
+   * Margin around the box, m (default PICK_PAD; rows of small buttons use less so that
+   * neighbours do not overlap).
+   */
+  pad?: number;
 }
 
 /** Extra margin around every box, m (small switches are hard to hit otherwise). */
@@ -72,7 +78,7 @@ export function pickTarget(targets: readonly PickTarget[], ray: Ray): PickTarget
     if (!isShown(t.frame)) continue;
     _inv.copy(t.frame.matrixWorld).invert();
     _local.copy(ray).applyMatrix4(_inv);
-    _box.copy(t.box).expandByScalar(PICK_PAD);
+    _box.copy(t.box).expandByScalar(t.pad ?? PICK_PAD);
     if (!_local.intersectBox(_box, _hit)) continue;
     // distance along the original ray (the frame may be scaled)
     _hit.applyMatrix4(t.frame.matrixWorld);
@@ -166,7 +172,7 @@ export class PickHighlight {
       return;
     }
     this.group.visible = true;
-    _box.copy(t.box).expandByScalar(PICK_PAD * 0.5);
+    _box.copy(t.box).expandByScalar((t.pad ?? PICK_PAD) * 0.5);
     _box.getCenter(_centre);
     _box.getSize(_size);
     _m.makeScale(Math.max(_size.x, 1e-3), Math.max(_size.y, 1e-3), Math.max(_size.z, 1e-3));

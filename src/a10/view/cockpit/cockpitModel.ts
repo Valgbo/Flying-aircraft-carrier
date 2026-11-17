@@ -2,7 +2,15 @@
  * Everything the cockpit pass draws, in BODY coordinates: the FlightGear cockpit with its
  * instruments driven by the simulation, the pilot's own airframe seen from the seat (canopy bow,
  * nose, wings, engines, tail), the ejection seat, the cockpit lighting and shadows, the glass,
- * the display surfaces, the A-10C box of hotspot switches and the pick highlight.
+ * the A-10C front panel built onto the A-10A one — the two MFCDs with their OSBs and display
+ * surfaces (mfcd.ts, displays.ts), the armament HUD control panel (ahcp.ts) and the up-front
+ * controller (ufc.ts) — the autopilot box (hotspots.ts) and the pick highlight.
+ *
+ * The A-10A instruments the A-10C panel covers (the television monitor's frame and screen, the
+ * standby ADI, AoA gauge, clock, UHF read-out, HUD control panel and master-caution lamp under
+ * the left MFCD, the armament control panel's switches, lamps and counters under the AHCP) are
+ * hidden and their animations are not bound (COVERED_BY_A10C); their faces are part of the
+ * cockpit's one merged static mesh, which the new panels stand in front of.
  * OWNED BY THE COCKPIT MODULE. Built once when the aircraft models have loaded; CockpitView
  * updates it every frame and draws `cockpitScene` in the cockpit render pass.
  *
@@ -39,11 +47,24 @@ import {
 } from '../../assets';
 import type { Sim } from '../../core/types';
 import { a10Env } from '../environment/env';
+import { drawPose } from '../frame';
 import { a10Lights } from '../environment/envState';
 import { AltimeterCounter } from './altimeterCounter';
 import { createDisplaySurfaces, disposeDisplaySurfaces, type DisplaySurface } from './displays';
 import { createCanopyGlass, createCombinerGlass, updateGlass } from './glass';
+import { Ahcp, ahcpSwitch, clickDecor, type AhcpDecorId, type AhcpLiveId } from './ahcp';
+import {
+  allAhcpClickIds,
+  allOsbClickIds,
+  allUfcClickIds,
+  clickHoverText,
+  parseOsb,
+  ufcKeyOf,
+  type ClickId,
+} from './clickables';
 import { HotspotBox } from './hotspots';
+import { MfcdPanels, mfcdScreenCorners } from './mfcd';
+import { Ufc } from './ufc';
 import { createInstrumentDriver, PROP, resetGMeter, type InstrumentDriver } from './instruments';
 import { CockpitLights, type CockpitLightingInput } from './lighting';
 import {
@@ -53,16 +74,26 @@ import {
   rayFromCamera,
   type PickTarget,
 } from './picking';
-import {
-  COCKPIT_CONTROLS,
-  controlStateText,
-  createSwitchState,
-  readSwitchState,
-  type CockpitControlId,
-} from './switches';
+import { COCKPIT_CONTROLS, createSwitchState, readSwitchState } from './switches';
 
-/** Nodes of the cockpit file never drawn: FlightGear's HUD canvas quad and 3-D gun cross, the TV's own screen (a display surface replaces it). */
-const HIDDEN_NODES = ['hud-screen', 'gun-cross', 'CPT-video-screen'];
+/** Nodes of the cockpit file never drawn: FlightGear's HUD canvas quad and 3-D gun cross. */
+const HIDDEN_NODES = ['hud-screen', 'gun-cross'];
+/**
+ * The A-10A parts the A-10C panel covers (the MFCDs, the AHCP): hidden, and their animations
+ * are not bound (the instrument driver skips them).
+ */
+export const COVERED_BY_A10C = [
+  'CPT-video',
+  'stdby-adi',
+  'A-10-AoA-gauge',
+  'A-10-chronometer',
+  'A-10-uhf-disp',
+  'A-10-hud-panel',
+  'A-10-master-caution',
+  'A-10-armament-panel',
+];
+/** How often the hover label of the control under the cursor is rebuilt, s. */
+const HOVER_REFRESH = 0.1;
 /** Textures that do not glow at dusk (floor, structure). */
 const NO_GLOW = new Set(['cpt-floor', 'cpt-floor-rivets', 'panel-grey-central-struct']);
 /** Instrument glow colour at full night (× the texture: white markings glow, black faces do not). */
@@ -76,6 +107,8 @@ export interface CockpitFrameInput {
   sim: Sim;
   /** Simulated seconds this frame (0 while paused). */
   simDt: number;
+  /** Real seconds since the last frame (button animations run while paused too). */
+  realDt: number;
   /** Shadow map on (Medium, High) and its size. */
   shadows: boolean;
   shadowMapSize: number;
@@ -83,6 +116,9 @@ export interface CockpitFrameInput {
 
 const _sunBody = new Vector3();
 const _q = new Quaternion();
+/** The aircraft's drawn pose (the cockpit is lit from the attitude the world camera uses). */
+const _drawPos = new Vector3();
+const _drawQuat = new Quaternion();
 const _interior = new Color();
 const _ray = new Ray();
 
@@ -93,6 +129,12 @@ export class CockpitModel {
   readonly driver: InstrumentDriver;
   readonly lights: CockpitLights;
   readonly box: HotspotBox;
+  /** The A-10C's two MFCD bezels with their OSBs. */
+  readonly mfcds: MfcdPanels;
+  /** The A-10C armament HUD control panel. */
+  readonly ahcp: Ahcp;
+  /** The A-10C up-front controller. */
+  readonly ufc: Ufc;
   readonly highlight: PickHighlight;
   readonly targets: PickTarget[] = [];
   readonly displays: { left: DisplaySurface; right: DisplaySurface };
@@ -120,9 +162,9 @@ export class CockpitModel {
     shadows: false,
     shadowMapSize: 1024,
   };
-  /** The hover label: rebuilt only when the control or its position changes. */
+  /** The hover label: rebuilt when the control changes and every HOVER_REFRESH s. */
   private hoverId: string | null = null;
-  private hoverState = '';
+  private hoverAge = 0;
   private hoverText = '';
 
   constructor(scene: Scene, templates: AircraftTemplates) {
@@ -134,6 +176,14 @@ export class CockpitModel {
     for (const n of HIDDEN_NODES) {
       const o = root.getObjectByName(n);
       if (o) o.visible = false;
+    }
+    const covered: Object3D[] = [];
+    for (const n of COVERED_BY_A10C) {
+      const o = root.getObjectByName(n);
+      if (o) {
+        o.visible = false;
+        covered.push(o);
+      }
     }
 
     // own materials (and own textures for the drums)
@@ -172,7 +222,7 @@ export class CockpitModel {
     });
     scene.add(root);
     root.updateMatrixWorld(true);
-    this.driver = createInstrumentDriver(root, meta);
+    this.driver = createInstrumentDriver(root, meta, (o) => insideAny(o, covered));
 
     // the pilot's own airframe, from the inside (no stores: they hang below the wing)
     this.airframe = createAircraftInstance({ forCockpit: true, stores: false, templates });
@@ -198,11 +248,34 @@ export class CockpitModel {
       if ((o as Mesh).isMesh) this.receivers.push(o as Mesh);
     });
 
+    // the A-10C front panel
+    this.mfcds = new MfcdPanels();
+    this.ahcp = new Ahcp();
+    this.ufc = new Ufc();
+    for (const g of [this.mfcds.group, this.ahcp.group, this.ufc.group]) scene.add(g);
+    for (const o of [
+      this.mfcds.bezel,
+      this.mfcds.caps,
+      this.ahcp.plate,
+      this.ahcp.levers,
+      this.ufc.plate,
+      this.ufc.caps,
+    ])
+      this.receivers.push(o);
+    this.displays = createDisplaySurfaces(scene, {
+      left: mfcdScreenCorners('L'),
+      right: mfcdScreenCorners('R'),
+    });
+
     this.lights = new CockpitLights(scene);
     this.airframe.root.updateMatrixWorld(true);
-    this.lights.setProxy(buildShadowProxy(root, this.airframe.root, seat));
-
-    this.displays = createDisplaySurfaces(scene, meta.displays.tv?.corners);
+    this.lights.setProxy(
+      buildShadowProxy(root, this.airframe.root, seat, [
+        this.mfcds.bezel,
+        this.ahcp.plate,
+        this.ufc.plate,
+      ]),
+    );
 
     this.altimeter = new AltimeterCounter();
     scene.add(this.altimeter.group);
@@ -212,7 +285,7 @@ export class CockpitModel {
     scene.add(this.box.group);
     this.box.group.updateMatrixWorld(true);
 
-    // click targets
+    // click targets: the switches, then every OSB, UFC key and AHCP switch not among them
     for (const c of COCKPIT_CONTROLS) {
       const t = c.target;
       if (t.kind === 'pick') {
@@ -225,12 +298,13 @@ export class CockpitModel {
           frame,
           box: new Box3(new Vector3(...p.box.min), new Vector3(...p.box.max)),
         });
-      } else if (t.kind === 'mesh') {
+      } else if (t.kind === 'mesh' || t.kind === 'meshTop') {
         const frame = root.getObjectByName(t.node);
         if (!frame) continue;
         const box = boundsInFrame(frame, new Box3());
+        if (t.kind === 'meshTop') box.min.y = Math.max(box.min.y, box.max.y - t.height);
         if (!box.isEmpty()) this.targets.push({ id: c.id, label: c.label, frame, box });
-      } else {
+      } else if (t.kind === 'hotspot') {
         const h = this.box.targets.find((x) => x.id === c.id);
         if (h)
           this.targets.push({
@@ -241,19 +315,57 @@ export class CockpitModel {
           });
       }
     }
+    const min = new Vector3();
+    const max = new Vector3();
+    for (const id of allAhcpClickIds()) {
+      const sw = id.startsWith('ahcp:') ? (id.slice(5) as AhcpDecorId) : (id as AhcpLiveId);
+      this.ahcp.switchBox(sw, min, max);
+      this.targets.push({
+        id,
+        label: ahcpSwitch(sw).label,
+        frame: this.ahcp.frame,
+        box: new Box3(min.clone(), max.clone()),
+        pad: 0.002,
+      });
+    }
+    for (const id of allUfcClickIds()) {
+      const key = ufcKeyOf(id);
+      if (!key) continue;
+      this.ufc.keyBox(key, min, max);
+      this.targets.push({
+        id,
+        label: key,
+        frame: this.ufc.frame,
+        box: new Box3(min.clone(), max.clone()),
+        pad: 0.001,
+      });
+    }
+    for (const id of allOsbClickIds()) {
+      const osb = parseOsb(id);
+      if (!osb) continue;
+      this.mfcds.osbBox(osb.button, min, max);
+      this.targets.push({
+        id,
+        label: id,
+        frame: this.mfcds.faces[osb.display],
+        box: new Box3(min.clone(), max.clone()),
+        pad: 0.0015,
+      });
+    }
     this.highlight = new PickHighlight(scene);
   }
 
   /** Read the simulation into everything (call once per frame before drawing). */
   update(f: CockpitFrameInput): void {
     const sim = f.sim;
-    const ac = sim.aircraft;
     readSwitchState(sim, this.switchState);
     this.driver.update(sim, f.simDt);
     this.altimeter.update(this.driver.values[PROP.altitudeFt]);
 
+    // the sun and the sky in the body frame, from the same interpolated attitude as the camera
+    drawPose(sim, _drawPos, _drawQuat);
     const li = this.lightingInput;
-    li.orientation = ac.orientation;
+    li.orientation = _drawQuat;
     li.shadows = f.shadows;
     li.shadowMapSize = f.shadowMapSize;
     this.lights.update(li);
@@ -263,7 +375,7 @@ export class CockpitModel {
     }
 
     // glass: the sun in the body frame; the glass reflects a dim cockpit lit by the sky
-    _q.copy(ac.orientation).invert();
+    _q.copy(_drawQuat).invert();
     _sunBody.copy(a10Env.sunDirection).applyQuaternion(_q).normalize();
     _interior.copy(a10Lights.hemiSky).multiplyScalar(0.035);
     updateGlass(this.canopyGlass, _sunBody, a10Env.sunColor, _interior);
@@ -284,6 +396,9 @@ export class CockpitModel {
     for (const o of this.airframeHidden) o.visible = false;
 
     this.box.update(this.switchState, night);
+    this.mfcds.update(f.realDt, night);
+    this.ahcp.update(this.switchState, night);
+    this.ufc.update(f.realDt, this.driver.lamps.masterCaution, night);
   }
 
   /** The control under a pointer (NDC), or null. */
@@ -292,23 +407,29 @@ export class CockpitModel {
     return pickTarget(this.targets, _ray);
   }
 
-  /** Hover highlight for the free cursor (null pointer hides it). */
+  /**
+   * Hover highlight for the free cursor (null pointer hides it), with the control's name and
+   * state, or an OSB's label for the page its display shows. `dt`: real seconds.
+   */
   hover(
     camera: PerspectiveCamera,
     pointer: { x: number; y: number } | null,
     screenHeight: number,
+    sim: Sim,
+    dt = 0,
   ): void {
     const t = pointer ? this.pick(camera, pointer.x, pointer.y) : null;
     this.hovered = t;
     if (!t) {
+      this.hoverId = null;
       this.highlight.show(null, '', camera, screenHeight);
       return;
     }
-    const state = controlStateText(t.id, this.switchState);
-    if (t.id !== this.hoverId || state !== this.hoverState) {
+    this.hoverAge += Math.max(0, dt);
+    if (t.id !== this.hoverId || this.hoverAge >= HOVER_REFRESH) {
       this.hoverId = t.id;
-      this.hoverState = state;
-      this.hoverText = state ? `${t.label}  ${state}` : t.label;
+      this.hoverAge = 0;
+      this.hoverText = clickHoverText(t.id, sim, this.switchState, this.ahcp.decor);
     }
     this.highlight.show(t, this.hoverText, camera, screenHeight);
   }
@@ -319,13 +440,25 @@ export class CockpitModel {
     this.hovered = null;
   }
 
-  /** Cockpit-only actions of a control (no simulation command). Returns true if handled. */
-  localAction(id: CockpitControlId, sim: Sim): boolean {
+  /**
+   * What a click does in the cockpit itself: the pressed OSB or UFC key moves, a decorative AHCP
+   * switch flips, the g-meter resets. Returns true when the click is the cockpit's only (no
+   * simulation command).
+   */
+  localAction(id: ClickId, sim: Sim, button = 0): boolean {
+    const osb = parseOsb(id);
+    if (osb) this.mfcds.pressOsb(osb.display, osb.button);
+    const key = ufcKeyOf(id);
+    if (key) this.ufc.press(key);
     if (id === 'gMeterReset') {
       resetGMeter(this.driver.memory, sim.aircraft.gLoad);
       return true;
     }
-    return false;
+    if (id.startsWith('ahcp:')) {
+      clickDecor(this.ahcp.decor, id.slice(5) as AhcpDecorId, button);
+      return true;
+    }
+    return id.startsWith('ufc:');
   }
 
   /** Render the cockpit shadow map (inside the cockpit pass, before the scene). */
@@ -339,6 +472,9 @@ export class CockpitModel {
     disposeAircraftInstance(this.airframe);
     this.lights.dispose();
     this.box.dispose();
+    this.mfcds.dispose();
+    this.ahcp.dispose();
+    this.ufc.dispose();
     this.altimeter.dispose();
     this.highlight.dispose();
     disposeDisplaySurfaces();
@@ -357,6 +493,7 @@ export function buildShadowProxy(
   cockpit: Object3D,
   airframe: Object3D,
   seat: Object3D | null,
+  panels: readonly Object3D[] = [],
 ): BufferGeometry {
   const out: number[] = [];
   const v = new Vector3();
@@ -366,6 +503,8 @@ export function buildShadowProxy(
     root.traverse((o) => {
       const mesh = o as Mesh;
       if (!mesh.isMesh || !isDrawn(mesh)) return;
+      // instanced parts (buttons, levers) are small and their instances are not in the geometry
+      if ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh) return;
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       if (mats.some((m) => m.transparent || m.userData.glass || m.userData.display)) return;
       if (/^display-|pick-highlight/.test(mesh.name)) return;
@@ -396,6 +535,7 @@ export function buildShadowProxy(
   add(cockpit, false);
   add(airframe, true);
   if (seat) add(seat, true);
+  for (const p of panels) add(p, false);
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(new Float32Array(out), 3));
   g.computeBoundingSphere();
@@ -481,6 +621,12 @@ export function buildSeat(pilot: Object3D, own: BufferGeometry[]): Group {
     group.add(m);
   });
   return group;
+}
+
+/** Whether `o` is one of `roots` or inside one of them. */
+function insideAny(o: Object3D, roots: readonly Object3D[]): boolean {
+  for (let p: Object3D | null = o; p; p = p.parent) if (roots.includes(p)) return true;
+  return false;
 }
 
 function isDrawn(o: Object3D): boolean {

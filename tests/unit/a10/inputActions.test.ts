@@ -119,7 +119,8 @@ describe('controls reference', () => {
     expectRow('rudder', 'Z / X', 'LB / RB');
     expectRow('throttles', 'Page Up / Page Down', 'D-pad ↑ / ↓');
     expectRow('speedBrake', 'B', 'B');
-    expectRow('trim', 'Ctrl + arrow keys', 'LT + D-pad');
+    // Ctrl + Shift + arrows too: macOS takes Ctrl + arrows for Mission Control and Spaces.
+    expectRow('trim', 'Ctrl + arrow keys / Ctrl + Shift + arrow keys', 'LT + D-pad');
     expectRow('trigger1', 'Left Shift', 'RT half');
     expectRow('trigger2', 'Space', 'RT full');
     expectRow('weaponRelease', 'Enter', 'A');

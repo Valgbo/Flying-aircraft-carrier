@@ -1,12 +1,14 @@
 /**
  * The overlay's link to the running simulation (OWNED BY THE UI MODULE). One `onSimFrame`
  * listener, installed by UIRoot, turns the frame's events into what React shows:
- *   - 'message' events → toasts (store.pushMessage);
+ *   - 'message' events (cockpit messages: refusals such as MAV NOT LOCKED) → toasts;
  *   - 'vehicleDestroyed' → "T-72 destroyed" toasts in the presets that allow it (realism.ts);
+ *   - 'lock' and 'laser' → "MAV LOCKED", "LASING"… in the presets that allow it;
+ *   - the range officer's score calls on a weapons range (rangeCalls.ts, from sim.debrief);
  *   - 'crash' → why and how the flight ended, for the crash overlay;
- *   - 'roundImpact' → the debrief's impact plots (ImpactRecorder);
  *   - the checklist strip's next step, recomputed ~20 times a second and published only when
  *     the line changes, so React re-renders on a switch, not on every frame.
+ * The debrief's impact plots need nothing here: the core debrief logs every impact.
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import type { Sim, SimEvent } from '../core/types';
@@ -22,13 +24,26 @@ import {
   type ChecklistKeys,
   type ChecklistStep,
 } from './checklist';
-import { ImpactRecorder, vehicleName } from './debriefData';
-import { KILL_MESSAGES } from './realism';
+import { vehicleName } from './debriefData';
+import { createCallState, rangeCalls, type CallState } from './rangeCalls';
+import { KILL_MESSAGES, RANGE_CALLS, SENSOR_MESSAGES } from './realism';
 
 /** Seconds between checklist updates (real time). */
 const CHECKLIST_PERIOD = 0.05;
 
-export const impactRecorder = new ImpactRecorder();
+/** What a lock or laser event says (Standard and Relaxed). */
+export function sensorMessage(e: SimEvent): string | null {
+  if (e.type === 'lock')
+    return e.sensor === 'MAV'
+      ? e.on
+        ? 'MAV LOCKED'
+        : 'MAV LOCK LOST'
+      : e.on
+        ? 'TGP POINT TRACK'
+        : 'TGP TRACK LOST';
+  if (e.type === 'laser') return e.on ? 'LASING' : 'LASER OFF';
+  return null;
+}
 
 export interface CrashInfo {
   reason: 'terrain' | 'overstress' | 'water';
@@ -44,6 +59,7 @@ let crash: CrashInfo | null = null;
 let keys: ChecklistKeys = DEFAULT_CHECKLIST_KEYS;
 let step: ChecklistStep | null = null;
 let checklistClock = 0;
+let calls: CallState = createCallState();
 const stepListeners = new Set<() => void>();
 
 /** The crash of the current flight, if it ended in one. */
@@ -98,16 +114,21 @@ function onFrame(events: readonly SimEvent[], sim: Sim, info: FrameInfo): void {
   if (sim !== currentSim) {
     currentSim = sim;
     crash = null;
+    calls = createCallState();
     toasted.clear();
     checklistClock = CHECKLIST_PERIOD;
     refreshKeys();
   }
+  const preset = sim.options.realism.preset;
   guard(() => {
     for (const e of events) {
       if (e.type === 'message') store.pushMessage(e.text, e.level);
-      else if (e.type === 'vehicleDestroyed') {
+      else if (e.type === 'lock' || e.type === 'laser') {
+        const text = SENSOR_MESSAGES[preset] ? sensorMessage(e) : null;
+        if (text) store.pushMessage(text, 'info', 2000);
+      } else if (e.type === 'vehicleDestroyed') {
         // A cook-off sends a second vehicleDestroyed for the same vehicle: one message per kill.
-        if (KILL_MESSAGES[sim.options.realism.preset] && !toasted.has(e.vehicleId)) {
+        if (KILL_MESSAGES[preset] && !toasted.has(e.vehicleId)) {
           toasted.add(e.vehicleId);
           store.pushMessage(`${vehicleName(e.vehicleKind)} destroyed`, 'info');
         }
@@ -120,7 +141,10 @@ function onFrame(events: readonly SimEvent[], sim: Sim, info: FrameInfo): void {
       }
     }
   });
-  guard(() => impactRecorder.record(events, sim));
+  guard(() => {
+    if (!RANGE_CALLS[preset] || !sim.debrief.scores) return;
+    for (const text of rangeCalls(sim.debrief, calls)) store.pushMessage(text, 'info', 6000);
+  });
 
   checklistClock += info.realDt;
   if (checklistClock < CHECKLIST_PERIOD) return;

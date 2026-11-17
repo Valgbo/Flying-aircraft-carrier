@@ -13,6 +13,10 @@
  *    and every component box it crosses may be hurt: ammunition → explosion (often after a short
  *    fire), fuel → fire, engine or running gear → mobility kill, gun or sights → firepower kill,
  *    crew → casualties → destroyed.
+ *  - tracks are broken, not worn down: only a penetrator that defeats the track run (or heavy
+ *    blast, blast.ts) breaks one (review TE-2); a nearby strike does not;
+ *  - each external part is struck at most once per round, however many spaced layers the round
+ *    crosses on its way (review TE-3).
  *
  * Randomness comes only from sim.rng.damage.
  */
@@ -58,6 +62,7 @@ import type {
   RoundOutcome,
   Vehicle,
   VehicleHit,
+  VehicleKind,
 } from './types';
 
 /** What hurt a component: decides fire and detonation chances. */
@@ -361,6 +366,7 @@ export function strikeNear(
   scale: number,
   cause: DamageCause,
   list: ComponentId[],
+  once: Uint8Array | null = null,
 ): void {
   const boxes = VEHICLE_MODELS[v.kind].components;
   worldToHull(pose, px, py, pz, _hb);
@@ -369,19 +375,68 @@ export function strikeNear(
     const b = boxes[i];
     const R = b.external ? externalRadius : internalRadius;
     if (R <= 0) continue;
+    // tracks break only when their run is defeated (breakTrack)
+    if (b.breakChance !== undefined) continue;
+    if (once && once[i]) continue;
     if (b.turret && v.thrownTurret) continue;
     // in a firing pit the earth covers what lies below the rim
     if (v.dugIn && !b.turret && b.max[1] < v.internal.digDepth) continue;
     const d = b.turret ? boxDistance(b, _tb.x, _tb.y, _tb.z) : boxDistance(b, _hb.x, _hb.y, _hb.z);
     if (d >= R) continue;
+    if (once) once[i] = 1;
     strikeBox(sim, v, i, scale * (1 - d / R), cause, list);
   }
+}
+
+/**
+ * For each class, the breakable track box carried by each armour part (by name), or −1: the run
+ * a penetrator defeats is the track it may break.
+ */
+const TRACK_BOX = {} as Record<VehicleKind, Int8Array>;
+for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
+  const m = VEHICLE_MODELS[kind];
+  const map = new Int8Array(m.parts.length).fill(-1);
+  m.parts.forEach((part, pi) => {
+    map[pi] = m.components.findIndex((b) => b.breakChance !== undefined && b.name === part.name);
+  });
+  TRACK_BOX[kind] = map;
+}
+
+/**
+ * A penetrator or fragment defeated the run of armour part `partIndex`: if that part is a track,
+ * break it with its break chance × `scale` (a link or a pin severed). Returns true if it broke.
+ */
+export function breakTrack(
+  sim: Sim,
+  v: Vehicle,
+  partIndex: number,
+  scale: number,
+  cause: DamageCause,
+  list: ComponentId[],
+): boolean {
+  const i = partIndex >= 0 ? TRACK_BOX[v.kind][partIndex] : -1;
+  if (i < 0 || v.internal.boxHealth[i] <= 0) return false;
+  const chance = VEHICLE_MODELS[v.kind].components[i].breakChance ?? 0;
+  if (!sim.rng.damage.chance(Math.min(1, chance * scale))) return false;
+  damageBox(sim, v, i, 1, cause, 1, list);
+  return true;
+}
+
+/** Mark a burst resolved on `v` at this point in this step (its applyBlast then skips `v`). */
+export function markBurst(sim: Sim, v: Vehicle, x: number, y: number, z: number): void {
+  const rt = v.internal;
+  rt.burstTime = sim.time;
+  rt.burstX = x;
+  rt.burstY = y;
+  rt.burstZ = z;
 }
 
 // ---- resolveRoundHit ---------------------------------------------------------------------------
 
 const _ph: PartHit = { t: 0, part: -1, plate: null, exit: 0 };
 const _nrm: V3 = { x: 0, y: 0, z: 0 };
+/** External boxes already struck by the round being resolved (TE-3: once per round). */
+const _struck = new Uint8Array(MAX_BOXES);
 
 /** Velocity after a ricochet off a plate with world normal n (reflected, slowed, scattered). */
 function ricochet(sim: Sim, vx: number, vy: number, vz: number, n: V3, out: Vector3): void {
@@ -474,19 +529,16 @@ export function resolveRoundHit(
   const py = hit.point.y;
   const pz = hit.point.z;
 
+  // The weapons module bursts every HEI round that strikes a vehicle and applies its blast at
+  // this point: whatever the outcome here, that blast must not count this vehicle again (TE-4).
+  if (!kinetic) markBurst(sim, v, px, py, pz);
+  _struck.fill(0);
+
   if (v.kind === 'panel') {
     outcome = 'passedThrough';
-  } else if (theta > E.ricochetObliquity && plate.thicknessMm >= E.ricochetMinThicknessMm) {
-    outcome = 'ricochet';
-    ricochet(sim, velocity.x, velocity.y, velocity.z, _nrm, out.ricochetVelocity);
   } else if (!kinetic) {
-    // HEI: bursts on contact; defeats only thin skin
+    // HEI: the nose fuze functions on contact, also at a grazing angle; defeats only thin skin
     outcome = 'burst';
-    const rt = v.internal;
-    rt.heiTime = sim.time;
-    rt.heiX = px;
-    rt.heiY = py;
-    rt.heiZ = pz;
     const part = model.parts[partIndex];
     const skin = !part.spaced && pen > plate.thicknessMm / cosT;
     strikeNear(
@@ -502,6 +554,9 @@ export function resolveRoundHit(
       'hei',
       list,
     );
+  } else if (theta > E.ricochetObliquity && plate.thicknessMm >= E.ricochetMinThicknessMm) {
+    outcome = 'ricochet';
+    ricochet(sim, velocity.x, velocity.y, velocity.z, _nrm, out.ricochetVelocity);
   } else {
     // API / TP: through any spaced layers to the main armour
     let cap = pen;
@@ -521,7 +576,7 @@ export function resolveRoundHit(
           break;
         }
       }
-      // what the round strikes on the outside (sights, tanks, the track itself)
+      // what the round strikes on the outside (sights, external tanks), each part once
       strikeNear(
         sim,
         v,
@@ -534,6 +589,7 @@ export function resolveRoundHit(
         E.kineticExternalFactor,
         cause,
         list,
+        _struck,
       );
       decidingPlate = plate.index;
       if (cap <= eff) {
@@ -541,6 +597,8 @@ export function resolveRoundHit(
         break;
       }
       cap -= eff;
+      // through a track run: a link or a pin may be severed
+      breakTrack(sim, v, partIndex, 1, cause, list);
       if (!part.spaced) {
         outcome = 'penetrated';
         traceInterior(sim, v, pose, ax, ay, az, dx, dy, dz, cap, cause, false, 1, list);

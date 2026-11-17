@@ -335,6 +335,11 @@ function simplify(input: string[]): string[] {
   const join = out.join(' | ');
   if (join === '↑ / ↓ | ← / →') return ['Arrow keys'];
   if (join === 'Ctrl + ↑ / Ctrl + ↓ | Ctrl + ← / Ctrl + →') return ['Ctrl + arrow keys'];
+  if (
+    join ===
+    'Ctrl + ↑, Ctrl + Shift + ↑ / Ctrl + ↓, Ctrl + Shift + ↓ | Ctrl + ←, Ctrl + Shift + ← / Ctrl + →, Ctrl + Shift + →'
+  )
+    return ['Ctrl + arrow keys / Ctrl + Shift + arrow keys'];
   if (join === 'A / D | S / W') return ['W A S D'];
   if (join === 'Num 4 / Num 6 | Num 2 / Num 8') return ['Num 2 4 6 8'];
   if (out.length >= 5 && out.slice(0, 5).join(' ') === 'F1 F2 F3 F4 F5')

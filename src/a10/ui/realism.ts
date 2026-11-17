@@ -26,11 +26,32 @@ export const REALISM_INFO: Record<RealismPreset, { label: string; summary: strin
 
 /**
  * Interface aids outside the simulation that also follow the preset: kill confirmations come
- * up as messages only in Relaxed (in the aircraft you see the result, nobody tells you).
+ * up as messages only in Relaxed (in the aircraft you see the result, nobody tells you), except
+ * the range officer's score calls on a weapons range (RANGE_CALLS).
  */
 export const KILL_MESSAGES: Record<RealismPreset, boolean> = {
   authentic: false,
   standard: false,
+  relaxed: true,
+};
+
+/**
+ * Sensor lock and laser changes come up as messages in Standard and Relaxed; in Authentic the
+ * pilot reads them where the aircraft shows them (the MAV and TGP pages, the HUD).
+ */
+export const SENSOR_MESSAGES: Record<RealismPreset, boolean> = {
+  authentic: false,
+  standard: true,
+  relaxed: true,
+};
+
+/**
+ * On a weapons range the range control officer calls each score over the radio (strafe hits or
+ * a foul, bomb miss and clock): range events call them in every preset, as real ranges do.
+ */
+export const RANGE_CALLS: Record<RealismPreset, boolean> = {
+  authentic: true,
+  standard: true,
   relaxed: true,
 };
 
@@ -72,6 +93,10 @@ const ROWS: readonly { aid: string; value: (f: RealismFlags, preset: RealismPres
       value: (f) => (f.invulnerable ? 'The aircraft bounces off' : 'Ends the flight'),
     },
     { aid: 'Kill messages', value: (_f, preset) => (KILL_MESSAGES[preset] ? 'On' : 'Off') },
+    {
+      aid: 'Lock and laser messages',
+      value: (_f, preset) => (SENSOR_MESSAGES[preset] ? 'On' : 'Off'),
+    },
   ];
 
 /** The comparison table: one row per aid, one value per preset. */

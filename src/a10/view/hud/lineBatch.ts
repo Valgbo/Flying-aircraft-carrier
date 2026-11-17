@@ -13,6 +13,11 @@
  * ray (from the head position, along the symbol's direction) is intersected with the combiner
  * glass and discarded outside it — the same result as the stencil mask, without occlusion by
  * the cockpit structure.
+ *
+ * COLOURS: each stroke carries an index into a small palette (`PALETTE_SIZE` linear colours).
+ * The HUD draws everything in colour 0 (its green, from the style); the multifunction displays
+ * (view/mfd) use the others. Set `color` before writing strokes: it is a register, so the
+ * `SegmentSink` interface (and the stroke font) stay as they are.
  */
 import {
   CustomBlending,
@@ -38,19 +43,23 @@ import {
 import type { SegmentSink } from './strokeFont';
 import type { GlassCorners } from './hudMath';
 
-/** Floats per segment: x0, y0, x1, y1, width scale, intensity. */
-const STRIDE = 6;
+/** Floats per segment: x0, y0, x1, y1, width scale, intensity, colour index. */
+const STRIDE = 7;
+
+/** Colours in the palette (index 0 is the style's colour). */
+export const PALETTE_SIZE = 8;
 
 const VERTEX = /* glsl */ `
 attribute vec4 aSeg;
-attribute vec2 aStyle;
+attribute vec3 aStyle;
 uniform vec2 uViewport;
 uniform float uLineWidth;
 uniform mat4 uInvViewProj;
+uniform vec3 uPalette[${PALETTE_SIZE}];
 varying vec2 vLocal;
 varying float vLen;
 varying float vHalfWidth;
-varying float vIntensity;
+varying vec3 vColor;
 varying vec3 vDir;
 
 void main() {
@@ -58,7 +67,7 @@ void main() {
   vec4 c1 = projectionMatrix * modelViewMatrix * vec4(aSeg.zw, -1.0, 1.0);
   vLen = 0.0;
   vHalfWidth = 0.0;
-  vIntensity = 0.0;
+  vColor = vec3(0.0);
   vLocal = vec2(0.0);
   vDir = vec3(0.0, 0.0, -1.0);
   if (c0.w < 1e-4 || c1.w < 1e-4) {
@@ -81,7 +90,9 @@ void main() {
   vLocal = vec2(along, across);
   vLen = len;
   vHalfWidth = hw;
-  vIntensity = aStyle.y;
+  // The palette is indexed in the vertex shader (dynamic indexing of a uniform array is allowed
+  // there in every GLSL ES version).
+  vColor = uPalette[int(aStyle.z + 0.5)] * aStyle.y;
   vec2 ndc = p / halfVp;
   vec4 w = uInvViewProj * vec4(ndc, 0.5, 1.0);
   vDir = w.xyz / w.w;
@@ -90,7 +101,6 @@ void main() {
 `;
 
 const FRAGMENT = /* glsl */ `
-uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uClip;
 uniform vec3 uEye;
@@ -101,7 +111,7 @@ uniform vec3 uGlassN;
 varying vec2 vLocal;
 varying float vLen;
 varying float vHalfWidth;
-varying float vIntensity;
+varying vec3 vColor;
 varying vec3 vDir;
 
 void main() {
@@ -118,7 +128,7 @@ void main() {
     float v = dot(r, uGlassV) / dot(uGlassV, uGlassV);
     if (u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0) discard;
   }
-  gl_FragColor = vec4(uColor * vIntensity, 1.0);
+  gl_FragColor = vec4(vColor, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor = vec4(gl_FragColor.rgb * cov, cov * uOpacity);
@@ -146,6 +156,8 @@ export class HudLineBatch implements SegmentSink {
   count = 0;
   /** Segments that did not fit this frame (should stay 0). */
   dropped = 0;
+  /** Palette index of the strokes written next (0: the style's colour). */
+  color = 0;
   private readonly buffer: InstancedInterleavedBuffer;
   private readonly range = { start: 0, count: 0 };
 
@@ -163,7 +175,7 @@ export class HudLineBatch implements SegmentSink {
     );
     g.setIndex(new Uint16BufferAttribute([0, 1, 2, 0, 2, 3], 1));
     g.setAttribute('aSeg', new InterleavedBufferAttribute(this.buffer, 4, 0));
-    g.setAttribute('aStyle', new InterleavedBufferAttribute(this.buffer, 2, 4));
+    g.setAttribute('aStyle', new InterleavedBufferAttribute(this.buffer, 3, 4));
     g.instanceCount = 0;
     this.geometry = g;
 
@@ -175,7 +187,7 @@ export class HudLineBatch implements SegmentSink {
         uViewport: { value: new Vector2(1280, 720) },
         uLineWidth: { value: 1.5 },
         uInvViewProj: { value: new Matrix4() },
-        uColor: { value: new Color(0.03, 1.2, 0.08) },
+        uPalette: { value: Array.from({ length: PALETTE_SIZE }, () => new Color(0.03, 1.2, 0.08)) },
         uOpacity: { value: 0.75 },
         uClip: { value: 0 },
         uEye: { value: new Vector3() },
@@ -216,6 +228,7 @@ export class HudLineBatch implements SegmentSink {
   begin(): void {
     this.count = 0;
     this.dropped = 0;
+    this.color = 0;
   }
 
   seg(x0: number, y0: number, x1: number, y1: number, width = 1, intensity = 1): void {
@@ -231,6 +244,7 @@ export class HudLineBatch implements SegmentSink {
     d[o + 3] = y1;
     d[o + 4] = width;
     d[o + 5] = intensity;
+    d[o + 6] = this.color;
     this.count++;
   }
 
@@ -252,7 +266,7 @@ export class HudLineBatch implements SegmentSink {
     const u = this.material.uniforms;
     (u.uViewport.value as Vector2).set(width, height);
     u.uLineWidth.value = style.lineWidth;
-    (u.uColor.value as Color).copy(style.color);
+    (u.uPalette.value as Color[])[0].copy(style.color);
     u.uOpacity.value = style.opacity;
     _m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
     (u.uInvViewProj.value as Matrix4).copy(_m);
@@ -275,6 +289,17 @@ export class HudLineBatch implements SegmentSink {
     (u.uGlassN.value as Vector3)
       .crossVectors(u.uGlassU.value as Vector3, u.uGlassV.value as Vector3)
       .normalize();
+  }
+
+  /** Palette colour `index` (linear; 1..PALETTE_SIZE-1 for the displays' colours). */
+  setPaletteColor(index: number, color: Color): void {
+    (this.material.uniforms.uPalette.value as Color[])[index].copy(color);
+  }
+
+  /** No clipping at all (the displays draw into their own render target). */
+  setNoClip(): void {
+    this.material.stencilWrite = false;
+    this.material.uniforms.uClip.value = 0;
   }
 
   dispose(): void {

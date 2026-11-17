@@ -112,6 +112,12 @@ export interface ComponentBox {
   weight: number;
   /** Losing this box alone causes a mobility or firepower kill. */
   effect: ComponentEffect;
+  /**
+   * A track: it is not worn down by nearby strikes. It breaks (health 0) only when a penetrator or
+   * fragment defeats its run (the armour part of the same name), with this chance per defeating
+   * hit (a link or pin severed), or under heavy blast. Undefined for every other box.
+   */
+  breakChance?: number;
 }
 
 /** Everything the damage model knows about one vehicle class. */
@@ -201,11 +207,15 @@ export interface VehicleInternal {
   popsLeft: number;
   /** Weapon that last damaged the vehicle (kill attribution). */
   lastWeapon: string;
-  /** Guard against counting one HEI burst twice (resolveRoundHit, then applyBlast). */
-  heiTime: number;
-  heiX: number;
-  heiY: number;
-  heiZ: number;
+  /**
+   * A burst already resolved on this vehicle in this step (an HEI round by resolveRoundHit, a
+   * warhead by applyWarheadHit): its applyBlast at the same point skips the vehicle, so the burst
+   * counts once (contract §4).
+   */
+  burstTime: number;
+  burstX: number;
+  burstY: number;
+  burstZ: number;
   /** Driving: route leg index, distance along the leg, desired cruise speed (m/s). */
   leg: number;
   s: number;

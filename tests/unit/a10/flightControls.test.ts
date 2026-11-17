@@ -6,7 +6,7 @@
  */
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { A10, A10_FCS } from '../../../src/a10/data/aircraft';
+import { A10, A10_AERO, A10_FCS } from '../../../src/a10/data/aircraft';
 import { A10_GEOMETRY } from '../../../src/a10/data/geometry';
 import { G0, SIM_DT } from '../../../src/a10/core/constants';
 import { hudAnglesFromBodyDir, pitchRate, worldToBody } from '../../../src/a10/core/frames';
@@ -82,8 +82,12 @@ function hudOf(sim: Sim, p: Vector3) {
 }
 
 describe('Precision Attitude Control', () => {
-  /** A 30° strafing dive at 300 kn through turbulence; returns the RMS pipper rate (rad/s). */
-  function strafe(pac: boolean, seconds = 3) {
+  /**
+   * A 30° strafing dive at 300 kn through turbulence; returns the RMS pipper rate (rad/s).
+   * `pitchRateAtSqueeze` (rad/s) starts the nose moving as PAC engages (review GFC-3); the RMS is
+   * then taken from `rmsFrom` seconds on.
+   */
+  function strafe(pac: boolean, seconds = 3, pitchRateAtSqueeze = 0, rmsFrom = 0) {
     const sim = createTestbed({
       altitude: 900,
       groundHeight: 0,
@@ -95,6 +99,7 @@ describe('Precision Attitude Control', () => {
     });
     sim.avionics.masterArm = 'ARM';
     sim.avionics.gunPac = 'ARM';
+    sim.aircraft.angularVelocity.x = pitchRateAtSqueeze;
     fakeGunSolution(sim);
     const target = sim.avionics.gun.impact.clone();
     sim.input.trigger = pac ? 1 : 0;
@@ -106,7 +111,7 @@ describe('Precision Attitude Control', () => {
       step(sim);
       const t = hudOf(sim, target);
       const err = { az: t.az - sim.avionics.gun.pipperAz, el: t.el - sim.avionics.gun.pipperEl };
-      if (i > 0) {
+      if (i > 0 && sim.time > rmsFrom) {
         const rate = Math.hypot(err.az - prev.az, err.el - prev.el) / SIM_DT;
         sum += rate * rate;
         n++;
@@ -129,6 +134,23 @@ describe('Precision Attitude Control', () => {
       expect(on.sim.aircraft.pac.stage).toBe(1);
       expect(on.rms).toBeLessThan(off.rms / 3);
       expect(on.lastErr).toBeLessThan(3e-3);
+    },
+    LONG,
+  );
+
+  it(
+    'PAC-1 engaged while the nose is still moving (1 and 3 °/s) settles on the point without a limit cycle',
+    () => {
+      for (const q of [1 * DEG, 3 * DEG]) {
+        const off = strafe(false, 4, q, 2);
+        const on = strafe(true, 4, q, 2);
+        console.log(
+          `[flight] PAC-1 engaged at q ${(q / DEG).toFixed(0)}°/s: RMS pipper rate in the last 2 s off ${(off.rms * 1000).toFixed(2)}, on ${(on.rms * 1000).toFixed(2)} mrad/s; final error on ${(on.lastErr * 1000).toFixed(2)} mrad`,
+        );
+        expect(on.rms).toBeLessThan(off.rms / 3);
+        expect(on.lastErr).toBeLessThan(1e-3);
+        expect(Math.abs(pitchRate(on.sim.aircraft.angularVelocity))).toBeLessThan(1 * DEG);
+      }
     },
     LONG,
   );
@@ -194,7 +216,11 @@ describe('Precision Attitude Control', () => {
   it(
     'PAC-2 feeds forward against the recoil pitching moment',
     () => {
-      const run = (pac: boolean) => {
+      /**
+       * PAC off (GUNARM), PAC-2 with the gun firing, and PAC-2 with the same recoil but the
+       * feed-forward branch not taken (gun.firing false): PAC-1's pipper loop and damping alone.
+       */
+      const run = (pac: boolean, feedForward = true) => {
         const sim = createTestbed({
           altitude: 900,
           groundHeight: 0,
@@ -208,26 +234,39 @@ describe('Precision Attitude Control', () => {
         fakeGunSolution(sim);
         const pitch0 = sim.aircraft.pitch;
         let maxQ = 0;
+        let firstCmd = 0;
+        let firstQbar = 0;
         for (let i = 0; i < 1.5 / SIM_DT; i++) {
           // A firing gun: recoil force aft along the gun line and a nose-down moment.
-          sim.gun.firing = true;
+          sim.gun.firing = feedForward;
           sim.aircraft.externalForceBody.set(
             0,
             44500 * Math.sin(GUN_DEPRESSION),
             44500 * Math.cos(GUN_DEPRESSION),
           );
           sim.aircraft.externalMomentBody.set(-20000, 0, 0);
+          if (i === 0) firstQbar = sim.aircraft.dynamicPressure;
           step(sim);
+          if (i === 0) firstCmd = sim.aircraft.pac.pitchCmd;
           maxQ = Math.max(maxQ, Math.abs(pitchRate(sim.aircraft.angularVelocity)));
         }
-        return { maxQ, dPitch: Math.abs(sim.aircraft.pitch - pitch0) };
+        return { maxQ, dPitch: Math.abs(sim.aircraft.pitch - pitch0), firstCmd, firstQbar };
       };
       const off = run(false);
       const on = run(true);
+      const noFeedForward = run(true, false);
       console.log(
-        `[flight] PAC-2 recoil: peak pitch rate off ${(off.maxQ / DEG).toFixed(2)} °/s, on ${(on.maxQ / DEG).toFixed(2)} °/s`,
+        `[flight] PAC-2 recoil: peak pitch rate off ${(off.maxQ / DEG).toFixed(2)} °/s, on ${(on.maxQ / DEG).toFixed(2)} °/s, without the feed-forward ${(noFeedForward.maxQ / DEG).toFixed(2)} °/s`,
       );
       expect(on.maxQ).toBeLessThan(off.maxQ / 2);
+      // The feed-forward itself (review GFC-3): in the first step of the burst PAC-2 commands
+      // exactly the elevator that cancels the recoil moment at the present elevator power…
+      const pitchPower =
+        on.firstQbar * A10.wingArea * A10.mac * A10_AERO.cmElevator * A10_AERO.elevatorMax;
+      const expected = 20000 / pitchPower / A10_FCS.pacPitchAuthority;
+      expect(on.firstCmd - noFeedForward.firstCmd).toBeCloseTo(expected, 6);
+      // …and without it the recoil pitches the nose more than twice as fast.
+      expect(on.maxQ).toBeLessThan(noFeedForward.maxQ / 2);
     },
     LONG,
   );

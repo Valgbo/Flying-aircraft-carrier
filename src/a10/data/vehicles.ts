@@ -536,9 +536,10 @@ function comp(
     absorb?: number;
     weight?: number;
     effect?: ComponentEffect;
+    breakChance?: number;
   } = {},
 ): ComponentBox {
-  return {
+  const box: ComponentBox = {
     id,
     name,
     turret: opts.turret ?? false,
@@ -549,6 +550,8 @@ function comp(
     weight: opts.weight ?? 1,
     effect: opts.effect ?? 'none',
   };
+  if (opts.breakChance !== undefined) box.breakChance = opts.breakChance;
+  return box;
 }
 
 /** Number the plates, normalise the planes and work out the bounds of a class. */
@@ -634,6 +637,29 @@ function compile(
 }
 
 // ---- Tracked vehicles --------------------------------------------------------------------------
+
+/**
+ * Tracks (review TE-2): a track is broken, not worn down. Nearby strikes (a 30 mm HEI burst on the
+ * glacis, a round stopped on the track top) do not break it; a penetrator or fragment that defeats
+ * the track run (road wheels and links) severs a link or a pin with this chance per hit, and a
+ * heavy blast breaks it. A burst of API down the side of a tank shreds the track; from the front
+ * only the few rounds that strike the idler and the track ends can.
+ */
+export const TRACKS = {
+  /** T-72-class track (≈580 mm steel links on rubber-bushed pins). */
+  mbtBreakChance: 0.1,
+  /** BMP-class track (lighter links). */
+  ifvBreakChance: 0.25,
+} as const;
+
+export const TRACKS_NOTES: Record<keyof typeof TRACKS, SourceNote> = {
+  mbtBreakChance: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'tuned (review TE-2): a 1 s frontal burst at ≈900 m immobilises a T-72 in ≈1 pass in 5, a 30° pass from 1,400 m rarely, a side pass usually (tests/unit/a10/targetsStrafing.test.ts)',
+  },
+  ifvBreakChance: { source: 'plan', confidence: 'estimate' },
+};
 
 /** Top of the track run, m, as the 3D model lays out its road wheels, sprocket and idler. */
 function trackTopOf(s: VehicleShape): number {
@@ -898,10 +924,12 @@ function buildMbt(kind: VehicleKind, s: VehicleShape, drums: boolean, internals:
       comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], {
         external: true,
         effect: 'mobility',
+        breakChance: TRACKS.mbtBreakChance,
       }),
       comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], {
         external: true,
         effect: 'mobility',
+        breakChance: TRACKS.mbtBreakChance,
       }),
       comp(
         'fuel',
@@ -1147,10 +1175,12 @@ function buildIfv(s: VehicleShape) {
     comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], {
       external: true,
       effect: 'mobility',
+      breakChance: TRACKS.ifvBreakChance,
     }),
     comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], {
       external: true,
       effect: 'mobility',
+      breakChance: TRACKS.ifvBreakChance,
     }),
   ];
   return compile('ifv', defs, comps, tz);
@@ -1732,7 +1762,7 @@ export const KILL_RULES = {
   boxDead: 0.3,
   /** Crew health at or below this: crew casualties → destroyed. */
   crewKill: 0.45,
-  /** Running gear (all boxes) at or below this: mobility kill (eight-wheelers, trucks). */
+  /** Running gear (all boxes) at or below this: mobility kill (wheeled vehicles only). */
   runningGearKill: 0.55,
   /** A fire inside the hull at or above this intensity: destroyed (burning). */
   fireKill: 0.35,

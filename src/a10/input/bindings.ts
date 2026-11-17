@@ -149,6 +149,13 @@ const key = (code: string, dir?: 1 | -1, mods: Mods = {}): Binding =>
     ? { src: { type: 'key', code, ...mods } }
     : { src: { type: 'key', code, ...mods }, dir };
 const ctrlKey = (code: string, dir: 1 | -1): Binding => key(code, dir, { ctrl: true });
+/**
+ * Ctrl + Shift: the second trim keys. macOS takes Ctrl + arrows (Mission Control, App Exposé,
+ * switching Spaces) before the page sees them, but leaves Ctrl + Shift + arrows alone (review
+ * FC-6). Alt chords are no use here: Left Alt frees the cursor as it goes down.
+ */
+const ctrlShiftKey = (code: string, dir: 1 | -1): Binding =>
+  key(code, dir, { ctrl: true, shift: true });
 const pad = (button: number, dir?: 1 | -1, layer?: 'shift'): Binding => {
   const b: Binding = { src: { type: 'padButton', button } };
   if (dir !== undefined) b.dir = dir;
@@ -172,12 +179,16 @@ const DEFAULT_TABLE: Record<ControlId, Binding[]> = {
   trimPitch: [
     ctrlKey('ArrowUp', -1),
     ctrlKey('ArrowDown', 1),
+    ctrlShiftKey('ArrowUp', -1),
+    ctrlShiftKey('ArrowDown', 1),
     pad(PAD.up, -1, 'shift'),
     pad(PAD.down, 1, 'shift'),
   ],
   trimRoll: [
     ctrlKey('ArrowLeft', -1),
     ctrlKey('ArrowRight', 1),
+    ctrlShiftKey('ArrowLeft', -1),
+    ctrlShiftKey('ArrowRight', 1),
     pad(PAD.left, -1, 'shift'),
     pad(PAD.right, 1, 'shift'),
   ],

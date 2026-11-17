@@ -13,6 +13,7 @@
 import { Vector3 } from 'three';
 import type { RoundOutcome } from '../../core/targets/types';
 import type { SurfaceKind } from '../../core/world/types';
+import { WP_MARK } from '../stores/look';
 import { DECAL, type DecalPool } from './decals';
 import { fxRandom } from './noise';
 import { PK } from './particleKinds';
@@ -570,6 +571,52 @@ export function splash(
 export type DetonationKind =
   'bomb' | 'rocket' | 'missile' | 'hei' | 'secondary' | 'whitePhosphorus' | 'dud';
 
+/**
+ * What a detonation is drawn as (the director's recipes):
+ * - `none`: a 30 mm HEI shell — drawn from its roundImpact, never twice (ARCHITECTURE §4);
+ * - `bombBurst`: a bomb's surface burst — flash, fireball, dust and debris column, pressure ring,
+ *   a dust and smoke cloud that lingers and drifts, crater and blast mark;
+ * - `smallBurst`: a rocket's HE warhead — the same build at its own (small) scale;
+ * - `missileHit`: a Maverick — the shaped charge's jet flash and spall on the vehicle it hit, then
+ *   the warhead's burst (the vehicle's own secondary comes from the targets module);
+ * - `whitePhosphorus`: the white bloom and burning streamers, then the mark that lasts minutes;
+ * - `dud`: a thump of dust and soil only;
+ * - `secondary`: a vehicle's ammunition or fuel going up (or one of its cook-off pops).
+ */
+export type DetonationRecipe =
+  | 'none'
+  | 'bombBurst'
+  | 'smallBurst'
+  | 'missileHit'
+  | 'whitePhosphorus'
+  | 'dud'
+  | 'secondary';
+
+/** Bursts at or above this charge (kg TNT) raise a dust and smoke cloud that lingers. */
+export const LINGERING_CLOUD_CHARGE = 20;
+
+/** The recipe a detonation of `kind` with `charge` kg TNT equivalent is drawn with. */
+export function detonationRecipe(kind: DetonationKind, charge: number): DetonationRecipe {
+  switch (kind) {
+    case 'hei':
+      return 'none';
+    case 'dud':
+      return 'dud';
+    case 'whitePhosphorus':
+      return 'whitePhosphorus';
+    case 'secondary':
+      return 'secondary';
+    case 'missile':
+      return 'missileHit';
+    case 'rocket':
+      return 'smallBurst';
+    case 'bomb':
+    default:
+      // a bomb is a bomb; a small charge reported as one (sub-munitions) is a small burst
+      return charge >= LINGERING_CLOUD_CHARGE ? 'bombBurst' : 'smallBurst';
+  }
+}
+
 export interface ExplosionOptions {
   /** Detonated on or against a vehicle (more metal, less soil). */
   onVehicle: boolean;
@@ -820,7 +867,8 @@ export function whitePhosphorus(
   const lod = lodAt(ctx, x, y, z);
   ps.groundY = ctx.groundAt(x, z);
   flash(ctx, x, y + 1, z, 7, 0.08, 1.4);
-  const nSmoke = count(ctx, 22, lod, 4);
+  // the white bloom: burning phosphorus thrown out and its smoke, metres wide in a second
+  const nSmoke = count(ctx, WP_MARK.bloomPuffs, Math.max(0.6, lod), 6);
   for (let j = 0; j < nSmoke; j++) {
     cone(0, 1, 0, 1.35, _dir);
     const v = R.range(5, 16);
@@ -833,11 +881,11 @@ export function whitePhosphorus(
       _dir.y * v * 0.7 + 1,
       _dir.z * v,
       R.range(1.6, 2.4),
-      R.range(9, 14),
-      R.range(30, 60),
+      R.range(10, 16),
+      R.range(35, 70),
     );
   }
-  const nFrag = count(ctx, 16, lod, 4);
+  const nFrag = count(ctx, WP_MARK.streamers, lod, 4);
   for (let j = 0; j < nFrag; j++) {
     cone(0, 1, 0, 1.15, _dir);
     const v = R.range(14, 32);

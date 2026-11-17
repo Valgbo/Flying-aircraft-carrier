@@ -15,8 +15,12 @@
  *   DMS left / right     GUNS: previous / next gun sight; NAV, CCIP, CCRP: previous / next profile
  *   DMS up / down        next / previous steerpoint
  * With the TGP or MAV page as SOI every other press becomes a SensorRequest for the sensors
- * module (track, break track, field of view, …). The per-SOI tables below are where wave 2 adds
- * the TAD cursor and the HUD designation cursor.
+ * module, which gives them the A-10C meanings: TMS forward short = point track (MAV: lock), aft
+ * short = area / INR (MAV: break lock); China hat forward short = the field of view (WIDE ↔
+ * NARROW; with the HUD as SOI it goes to the pod); DMS up / down = zoom, left / right = the
+ * picture (polarity). The display pages' OSBs push the same requests (mfd.ts), so a button and
+ * its HOTAS press do the same thing. The per-SOI tables below are where the TAD cursor and the
+ * HUD designation cursor would go.
  */
 import type { HatDir, Sim } from '../types';
 import { cyclePage, selectMfdSoi, type Display } from './mfd';

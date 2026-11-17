@@ -1,6 +1,7 @@
 /**
- * Effects: gun smoke, impacts, explosions, fires, smoke columns, craters. OWNED BY THE
- * VEHICLES-AND-EFFECTS MODULE (docs/a10/ARCHITECTURE.md §11).
+ * Effects: gun smoke, impacts, explosions, fires, smoke columns, craters, and the stores in flight
+ * (view/stores: models, motor flames, smoke trails). OWNED BY THE STORES-VIEW MODULE (wave 2;
+ * docs/a10/ARCHITECTURE.md §12.8).
  *
  * Mounted by SceneRoot. Adds the effects group (particles, decals, pressure rings) to the world
  * scene, feeds the simulation's events to the director (`onSimFrame`, at the sim's priority) and
@@ -37,7 +38,7 @@ export default function EffectsView() {
   useEffect(() => {
     const fx = acquireFx();
     scene.add(fx.root);
-    const off = onSimFrame(fx.director.onSimFrame);
+    const off = onSimFrame(fx.onSimFrame);
     return () => {
       off();
       scene.remove(fx.root);

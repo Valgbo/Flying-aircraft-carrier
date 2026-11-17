@@ -151,6 +151,20 @@ function airAt(y: number, isa: number): void {
   }
 }
 
+/**
+ * Density (kg/m³) and speed of sound (m/s) of the standard atmosphere at height y, shifted by
+ * `isaDeviation` K, from the same tables the rounds fly through (store bodies use it too).
+ */
+export function airAtHeight(
+  y: number,
+  isaDeviation: number,
+  out: { density: number; sound: number },
+): void {
+  airAt(y, isaDeviation);
+  out.density = air.density;
+  out.sound = air.sound;
+}
+
 // ---- integration --------------------------------------------------------------------------------
 
 /** Acceleration scratch (one evaluation). */

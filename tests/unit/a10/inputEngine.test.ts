@@ -94,6 +94,37 @@ describe('keyboard stick and pedals', () => {
     engine.keyDown('ArrowRight', NONE);
     expect(frame().roll).toBe(1);
   });
+
+  it('the stick ramp starts gently: a short tap moves the stick a little (review FC-5)', () => {
+    const { engine, frame, run } = setup();
+    // A 50 ms tap (3 frames at 60 fps): the linear ramp reached 0.167, the eased one 0.028.
+    engine.keyDown('ArrowDown', NONE);
+    let peak = 0;
+    for (let i = 0; i < 3; i++) peak = Math.max(peak, frame().pitch);
+    engine.keyUp('ArrowDown');
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThan(0.04);
+    expect(run(0.3).pitch).toBe(0);
+    // Held, it still reaches full deflection in the ramp time.
+    engine.keyDown('ArrowDown', NONE);
+    expect(run(0.32).pitch).toBe(1);
+  });
+
+  it('pitch keys deflect the stick only as far as the frame context allows; analogue input is not scaled', () => {
+    const { engine, run } = setup();
+    engine.keyDown('ArrowDown', NONE);
+    expect(run(0.5, { keyPitchPull: 0.4, keyPitchPush: 0.3 }).pitch).toBeCloseTo(0.4, 9);
+    engine.keyUp('ArrowDown');
+    engine.keyDown('ArrowUp', NONE);
+    expect(run(0.5).pitch).toBeCloseTo(-0.3, 9);
+    engine.keyUp('ArrowUp');
+    // Roll keys are not scaled; invalid values mean full authority.
+    engine.keyDown('ArrowRight', NONE);
+    expect(run(0.5).roll).toBe(1);
+    engine.keyUp('ArrowRight');
+    engine.keyDown('ArrowDown', NONE);
+    expect(run(0.5, { keyPitchPull: Number.NaN }).pitch).toBe(1);
+  });
 });
 
 describe('modifier layers', () => {
@@ -122,6 +153,22 @@ describe('modifier layers', () => {
     out = run(0.5);
     expect(out.trimPitch).toBe(0);
     expect(out.pitch).toBe(-1);
+  });
+
+  it('Ctrl + Shift + arrows trim too (macOS keeps Ctrl + arrows for itself, review FC-6)', () => {
+    const { engine, run } = setup();
+    const CTRL_SHIFT: KeyMods = { ...NONE, ctrl: true, shift: true };
+    // Right Shift: the left one is the trigger's first detent.
+    engine.keyDown('ControlLeft', CTRL);
+    engine.keyDown('ShiftRight', CTRL_SHIFT);
+    engine.keyDown('ArrowUp', CTRL_SHIFT);
+    engine.keyDown('ArrowRight', CTRL_SHIFT);
+    const out = run(0.2);
+    expect(out.trimPitch).toBe(-1); // nose down
+    expect(out.trimRoll).toBe(1);
+    expect(out.pitch).toBe(0);
+    expect(out.roll).toBe(0);
+    expect(out.trigger).toBe(0);
   });
 
   it('Ctrl chords that are not bound do nothing (browser shortcuts)', () => {

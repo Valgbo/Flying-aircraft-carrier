@@ -3,6 +3,7 @@
  * system reads the switches. Every Command variant is handled with the values the input layer,
  * the cockpit and the UI queue. Commands that belong to another module's state go through that
  * module's setter: flight (flaps, gear, autopilot, altitude alert) and weapons (rearm, jettison).
+ * The release decisions themselves (the pickle) are made in stepFireControl (delivery.ts).
  */
 import * as flight from '../flight';
 import {
@@ -55,6 +56,13 @@ export function applyCommands(sim: Sim): void {
   const av = sim.avionics;
   av.sensorRequests.length = 0;
   if (!av.initialized) initAvionics(sim);
+  // After a Maverick launch (once the missile has left the rail in an earlier step), the next
+  // missile's seeker is slaved to the SPI (PLAN §6.4: "can be slaved to the same line of sight").
+  const d = av.delivery;
+  if (d.mavSlaveAfter >= 0 && sim.time > d.mavSlaveAfter + 1e-9) {
+    if (av.spi.valid) requestSensor(sim, 'MAV', 'slaveSpi', '', true);
+    d.mavSlaveAfter = -1;
+  }
   const list = sim.commands;
   for (let i = 0; i < list.length; i++) applyCommand(sim, list[i]);
   list.length = 0;

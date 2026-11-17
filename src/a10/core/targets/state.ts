@@ -72,6 +72,12 @@ for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
   HAS[kind] = has;
 }
 
+/** Classes that run on wheels (the running-gear mean rule applies to them only). */
+const WHEELED = {} as Record<VehicleKind, boolean>;
+for (const kind of Object.keys(VEHICLE_SHAPES) as VehicleKind[]) {
+  WHEELED[kind] = VEHICLE_SHAPES[kind].running.type === 'wheels';
+}
+
 export function hasComponent(kind: VehicleKind, id: ComponentId): boolean {
   return HAS[kind][id];
 }
@@ -90,10 +96,10 @@ function createInternal(kind: VehicleKind): VehicleInternal {
     popTime: -1,
     popsLeft: 0,
     lastWeapon: '',
-    heiTime: -1,
-    heiX: 0,
-    heiY: 0,
-    heiZ: 0,
+    burstTime: -1,
+    burstX: 0,
+    burstY: 0,
+    burstZ: 0,
     leg: 0,
     s: 0,
     cruise: 0,
@@ -375,7 +381,13 @@ export function evaluateCondition(sim: Sim, v: Vehicle, weapon: string): void {
     if (b.id === 'engine') engineDead = true;
     else failures++;
   }
-  if (HAS[v.kind].runningGear && v.components.runningGear <= KILL_RULES.runningGearKill)
+  // Wheels: tyres and axles wear down together (eight-wheelers, trucks). A tracked vehicle is
+  // immobilised only by a broken track (its box dead), not by the mean of two damaged ones.
+  if (
+    WHEELED[v.kind] &&
+    HAS[v.kind].runningGear &&
+    v.components.runningGear <= KILL_RULES.runningGearKill
+  )
     mobility = true;
   if (engineDead) v.engineOn = false;
   v.mobilityKill = mobility;

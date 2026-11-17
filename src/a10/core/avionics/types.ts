@@ -5,7 +5,7 @@
  */
 import type { Vector3 } from 'three';
 import type { HatDir } from '../types';
-import type { AmmoLoad, RoundType } from '../weapons/types';
+import type { AmmoLoad, ReleaseDelivery, RoundType } from '../weapons/types';
 
 export type MasterArm = 'SAFE' | 'TRAIN' | 'ARM';
 /** GUN/PAC switch: SAFE, GUNARM (gun armed, PAC off), ARM (gun armed, PAC on). */
@@ -98,6 +98,45 @@ export interface ReleaseSolution {
   azimuthError: number;
   /** CCRP: the solution cue's angle above (+) the velocity vector along the steering line, rad; 0 = release. */
   cueEl: number;
+
+  // ---- wave 2, added by the avionics module (all filled every step) ----
+  /** The store the solution is for and the station it would leave from (0 = none). */
+  store: string;
+  station: number;
+  /**
+   * Consent release (PLAN §6.5): the delay cue, where the bomb fall line (from the velocity
+   * vector to the pipper, drawn straight on the HUD's flat plane) crosses
+   * RELEASE.delayCueMargin above the bottom edge of the glass, seen from the design eye. Valid in
+   * CCIP while the pipper is below the glass and the velocity vector above it. `delayCue` is the
+   * ground point seen through the cue (the computer's ground model): the point a pickle press
+   * designates.
+   */
+  delayCue: Vector3;
+  delayCueValid: boolean;
+  /** Delay cue direction from the eye, HUD angles, rad. */
+  delayCueAz: number;
+  delayCueEl: number;
+  /**
+   * The pickle is held and the computer will release by itself when the solution is reached
+   * (consent after designation, or CCRP): the HUD's "release armed" state.
+   */
+  armed: boolean;
+  /**
+   * CCRP / consent: the computed release point is behind the aircraft (`timeToRelease` < 0), so
+   * this run cannot release; turn round or designate again.
+   */
+  passed: boolean;
+  /**
+   * Seconds until the last store released hits, from the computer's prediction at its release
+   * (the TOF countdown pilots time the laser by); −1 when nothing is falling.
+   */
+  timeToImpact: number;
+  /** The fuze would not arm before impact (time of fall < the profile's arming time): a dud. */
+  fuzeNoArm: boolean;
+  /** Height of the (computed) release point above the impact or target point, m. */
+  releaseHeight: number;
+  /** Release pulses of the ripple in progress still to come (0 = none). */
+  pulsesLeft: number;
 }
 
 /** A bomb / rocket delivery: continuously computed impact or release point. */
@@ -180,6 +219,16 @@ export interface DsmsStationView {
   count: number;
   /** The station holds the selected profile's store. */
   selected: boolean;
+
+  // ---- wave 2 ----
+  /** Rocket pods: rockets left in the pod; −1 for other stations. */
+  rockets: number;
+  /** The next release of the selected profile comes from this station. */
+  next: boolean;
+  /** Selective jettison can drop what hangs here (pods and the AIM-9 rails stay). */
+  jettisonable: boolean;
+  /** Chosen for selective jettison on the DSMS. */
+  jettisonSelected: boolean;
 }
 
 /** One weapon profile as the DSMS lists it. */
@@ -194,9 +243,17 @@ export interface DsmsProfileView {
   fuze: FuzeOption;
   minAltitude: number;
   armingTime: number;
-  /** Stores of this type still loaded. */
+  /** Stores of this type still loaded (rocket pods: rockets left). */
   remaining: number;
   selected: boolean;
+
+  // ---- wave 2 ----
+  /** Low or high drag at release. */
+  drag: 'LD' | 'HD';
+  /** Laser code of a laser-guided bomb's seeker; 0 for other stores. */
+  laserCode: number;
+  /** Deliveries the store supports (empty: launched from its own page, the Maverick). */
+  modes: readonly DeliveryMode[];
 }
 
 /** Everything the stores page (DSMS) shows. Filled by `buildDsmsView`. */
@@ -210,6 +267,91 @@ export interface DsmsView {
   masterArm: MasterArm;
   /** Name of the selected profile, '' when none. */
   selectedProfile: string;
+
+  // ---- wave 2 ----
+  /** Station of the next release of the selected profile (0 none). */
+  selectedStation: number;
+  /** Station chosen for selective jettison (0 none). */
+  jettisonStation: number;
+  /** Laser-code entry: the digit (0–3) the INC button changes. */
+  codeDigit: number;
+}
+
+/**
+ * The display pages' own settings (PLAN §7 "Display pages"): what the OSBs of the TAD, DSMS, TGP
+ * and MSG pages change besides the switches.
+ */
+export interface PageState {
+  /** TAD map range, nm (TAD_RANGES_NM). */
+  tadRange: number;
+  /** TAD centred on the own aircraft or on the SPI. */
+  tadCenter: 'OWN' | 'SPI';
+  /** DSMS: the station chosen for selective jettison (0 none). */
+  jettisonStation: number;
+  /** Laser-code entry cursor (digit 0–3, left to right) on the DSMS (profile) and TGP (pod). */
+  dsmsCodeDigit: number;
+  tgpCodeDigit: number;
+  /** MSG page: messages older than this sim time are cleared (CLR), s; −1 none. */
+  msgClearTime: number;
+}
+
+/**
+ * What the pickle (weapon-release) button is doing (ARCHITECTURE §12.1: avionics decides every
+ * release). IDLE: nothing; CONSENT: a delayed CCIP release is designated and waits for the impact
+ * to reach the designated point; CCRP: waits for the computed release point; SERIES: a release
+ * is under way (single, pairs, ripple pulses); MAV: the button is held for the Maverick launch;
+ * DONE: this press has released (or was refused): nothing more until the button is pressed again.
+ */
+export type DeliveryPhase = 'IDLE' | 'CONSENT' | 'CCRP' | 'SERIES' | 'MAV' | 'DONE';
+
+/** The release in progress (read-only for other modules). */
+export interface DeliveryState {
+  /** The pickle button as seen at the last step. */
+  pickle: boolean;
+  phase: DeliveryPhase;
+  /** Fire-control time of the press, s (−1 none). */
+  pressTime: number;
+  /** Profile id and store of the run in progress. */
+  profile: string;
+  store: string;
+  delivery: ReleaseDelivery;
+  /** Master Arm was TRAIN at the press: simulated releases only. */
+  simulated: boolean;
+  /** Stores per pulse (1 single, 2 pairs), pulses in the series, pulses done. */
+  perPulse: number;
+  pulses: number;
+  pulseIndex: number;
+  /** Time of the next pulse, s, and the interval between pulses (spacing / ground speed), s. */
+  nextTime: number;
+  interval: number;
+  /** Ripple spacing on the ground, m. */
+  spacing: number;
+  /**
+   * Aim of the series: the target of a computed release (CCRP: the SPI; consent: the designated
+   * point) — pulse k aims (k − (n − 1)/2) spacings along the track from it — or, for an
+   * immediate CCIP release (`aimPerPulse`), each pulse aims at the pipper of its own release.
+   */
+  aim: Vector3;
+  aimValid: boolean;
+  aimPerPulse: boolean;
+  /** Ground track at the start of the series (unit, horizontal). */
+  trackX: number;
+  trackZ: number;
+  /**
+   * Stores already taken from each station in this run that have not left the stations (Master
+   * Arm TRAIN: nothing leaves), index = station number.
+   */
+  used: number[];
+  /** Wing of the last release (−1 left, +1 right, 0 none): pairs and ties alternate wings. */
+  lastSide: number;
+  /**
+   * After a Maverick launch: at the first command step after this time (the launch has left the
+   * rail) the next missile's seeker is slaved to the SPI; −1 none.
+   */
+  mavSlaveAfter: number;
+  /** The last release: its time and the predicted impact time, s (−1 none). */
+  lastReleaseTime: number;
+  lastImpactTime: number;
 }
 
 /** Internal state of the fire-control computer (read-only for other modules). */
@@ -220,6 +362,24 @@ export interface FireControlInternals {
   steps: number;
   /** Ground tests (chord/segment queries) used by the last gun solution. */
   groundTests: number;
+
+  // ---- store fire control (wave 2) ----
+  /** Store predictions flown in the last step (cost diagnostics). */
+  storePredictions: number;
+  /**
+   * Release-time solver warm start: the last solution (s from its state), the along-track
+   * error's slope dE/dτ (m/s, negative: the impact advances), valid, and the target it was for.
+   */
+  solveTau: number;
+  solveSlope: number;
+  solveValid: boolean;
+  solveTarget: Vector3;
+  /**
+   * How far a pull-up throws the store, m of impact range per rad of flight-path angle (the
+   * solution cue's scale), and the steps since it was measured.
+   */
+  loftGain: number;
+  loftAge: number;
 }
 
 export interface AvionicsState {
@@ -264,4 +424,31 @@ export interface AvionicsState {
   /** Steerpoints, SPI and profiles have been built for this flight (see initAvionics). */
   initialized: boolean;
   fc: FireControlInternals;
+
+  // ---- wave 2 (avionics) ----
+  /**
+   * Station the next release of the selected profile leaves from (the DSMS's selected station),
+   * 0 when none. For a Maverick profile it is the missile to launch next: the sensors module
+   * makes the seeker on this station the selected one (`sensors.selectedMaverick`).
+   */
+  selectedStation: number;
+  /**
+   * Laser latch (TGP page LTCH): the laser fires without the button held while it is armed and
+   * the pod tracks. The sensors module copies it into `tgp.latched`.
+   */
+  laserLatch: boolean;
+  /**
+   * The pod's laser code as set in the cockpit (TGP page CODE / INC; default 1688). The sensors
+   * module fires the laser with it (`tgp.laserCode`); a GBU-12 guides only on its profile's code.
+   */
+  laserCode: number;
+  /**
+   * Maverick power (MAV page PWR): the sensors module powers the seekers from it (alignment
+   * after power-on; aligned at an air start).
+   */
+  mavPower: boolean;
+  /** Page settings changed by the OSBs. */
+  pages: PageState;
+  /** The pickle and the release in progress. */
+  delivery: DeliveryState;
 }

@@ -1,9 +1,9 @@
 /**
- * Fire-control and stores-page reference data (PLAN_A10.md §6.2, §6.5, §7). SI units.
+ * Fire-control and stores-page reference data (PLAN_A10.md §6.2, §6.4–6.8, §7). SI units.
  * Every number has a SourceNote (data/sources.ts). Owned by the AVIONICS module.
  */
 import type { SourceNote } from './sources';
-import { FT } from '../core/units';
+import { DEG, FT } from '../core/units';
 import type { DeliveryMode, FuzeOption, ReleaseMode } from '../core/avionics/types';
 
 export const FIRE_CONTROL = {
@@ -67,6 +67,163 @@ export const FIRE_CONTROL_NOTES: Record<keyof typeof FIRE_CONTROL, SourceNote> =
   storeMaxTimeOfFall: { source: 'plan', confidence: 'estimate', note: 'design' },
 };
 
+/**
+ * The release logic (PLAN_A10.md §6.4–6.7, ARCHITECTURE §12.1): consent and CCRP solving, ripple
+ * timing, the Maverick launch hold, the laser code.
+ */
+export const RELEASE = {
+  /** Maverick: the pickle is held this long before the missile leaves the rail, s. */
+  mavHoldTime: 1.0,
+  /**
+   * Consent release: the delay cue sits on the bomb fall line this far above the bottom edge of
+   * the HUD glass (seen from the design eye), rad, so it stays visible inside the glass.
+   */
+  delayCueMargin: 0.5 * DEG,
+  /** Longest ray the computer casts to find the ground under the delay cue, m. */
+  delayCueMaxRange: 30000,
+  /** Release-time solver: a solution is accepted within this along-track error, m. */
+  solverTolerance: 0.02,
+  /**
+   * A warm-started solution within this along-track error is corrected along the known slope
+   * without another prediction, m (the error left is second order: millimetres).
+   */
+  solverLinear: 0.5,
+  /** Release-time solver: most predictions in one step. */
+  solverMaxIterations: 8,
+  /** Largest change of the release time in one solver iteration, s. */
+  solverMaxStep: 20,
+  /** Longest time to release the CCRP solver looks ahead, s. */
+  maxTimeToRelease: 120,
+  /** Loft used to measure how far a pull-up throws the store (the solution cue's scale), rad. */
+  cueLoftStep: 2 * DEG,
+  /** The solution cue's range sensitivity is measured again every this many steps. */
+  cueRefreshSteps: 12,
+  /**
+   * Store predictor ground chords, s: a ballistic arc lies above its chord and sags at most
+   * g·T²/8 ≈ 0.3 m below a 0.5 s chord, so a clear chord proves the arc clear.
+   */
+  storeChordTime: 0.5,
+  /** Shortest interval between ripple pulses from bomb racks (ejector cycle), s. */
+  minIntervalBomb: 0.05,
+  /** Shortest interval between rockets of a ripple (launcher firing interval), s. */
+  minIntervalRocket: 0.06,
+  /** Default laser code of the pod and of a laser-guided bomb's seeker (PLAN §6.6). */
+  laserCode: 1688,
+} as const;
+
+export const RELEASE_NOTES: Record<keyof typeof RELEASE, SourceNote> = {
+  mavHoldTime: {
+    source: 'dcsMaverick',
+    confidence: 'approximate',
+    note: 'PLAN §6.4: hold the weapon-release button for about a second',
+  },
+  delayCueMargin: {
+    source: 'hoggitHud',
+    confidence: 'estimate',
+    note: 'CCIP consent release: the delay cue on the bomb fall line at the bottom of the HUD field of view; the margin is a design value',
+  },
+  delayCueMaxRange: { source: 'plan', confidence: 'estimate', note: 'design: beyond any CCIP solution' },
+  solverTolerance: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'design: 2 cm along the track, far inside the 5–10 m of PLAN §16',
+  },
+  solverLinear: { source: 'plan', confidence: 'estimate', note: 'design' },
+  solverMaxIterations: { source: 'plan', confidence: 'estimate', note: 'design' },
+  solverMaxStep: { source: 'plan', confidence: 'estimate', note: 'design' },
+  maxTimeToRelease: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'design: 2 minutes at 300 kn is ≈19 km to the release point',
+  },
+  cueLoftStep: { source: 'plan', confidence: 'estimate', note: 'design' },
+  cueRefreshSteps: { source: 'plan', confidence: 'estimate', note: 'design: 10 Hz' },
+  storeChordTime: { source: 'plan', confidence: 'estimate', note: 'design (see the comment)' },
+  minIntervalBomb: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'ejector racks fire in tens of milliseconds; the real DSMS minimum is not public',
+  },
+  minIntervalRocket: {
+    source: 'gdotsHydra',
+    confidence: 'estimate',
+    note: 'pod ripple fire at about 60 ms between rockets (hobbyist and helicopter descriptions)',
+  },
+  laserCode: {
+    source: 'wikiGbu12',
+    confidence: 'approximate',
+    note: 'PLAN §19: 1688 by default; codes have a first digit 1–2 and further digits 1–8 (PRF codes)',
+  },
+};
+
+/**
+ * Values the stores page (DSMS) steps through when a profile setting's button is pressed. The
+ * cockpit has no keypad entry yet (ARCHITECTURE §12.7: the UFC keys the avionics supports), so
+ * each setting cycles through the values pilots use.
+ */
+export const PROFILE_EDIT = {
+  /** Ripple quantity (release pulses). */
+  rippleQty: [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14],
+  /** Ripple spacing on the ground, m (25 … 500 ft). */
+  rippleSpacing: [25 * FT, 50 * FT, 75 * FT, 100 * FT, 150 * FT, 200 * FT, 300 * FT, 500 * FT],
+  /** Fuze arming delay, s (FMU-139-class settings). */
+  armingTime: [1.1, 2.6, 4, 5.5, 7, 10, 14, 20],
+  /** Minimum release height above the target, m (300 … 5,000 ft). */
+  minAltitude: [
+    300 * FT,
+    500 * FT,
+    1000 * FT,
+    1500 * FT,
+    2000 * FT,
+    3000 * FT,
+    4000 * FT,
+    5000 * FT,
+  ],
+  /** Laser code digits: the first 1–2, the others 1–8 (four digits). */
+  laserDigitMin: [1, 1, 1, 1],
+  laserDigitMax: [2, 8, 8, 8],
+} as const;
+
+export const PROFILE_EDIT_NOTES: Record<keyof typeof PROFILE_EDIT, SourceNote> = {
+  rippleQty: { source: 'dcsA10Manual', confidence: 'estimate', note: 'DSMS ripple quantity' },
+  rippleSpacing: {
+    source: 'dcsA10Manual',
+    confidence: 'estimate',
+    note: 'DSMS ripple spacing in feet; the FlightGear package defaults to 150 ft',
+  },
+  armingTime: {
+    source: 'dcsA10Manual',
+    confidence: 'estimate',
+    note: 'FMU-139-class arming delays (2.6–20 s); 1.1 s is the rocket motor burn',
+  },
+  minAltitude: { source: 'dcsA10Manual', confidence: 'estimate', note: 'DSMS minimum altitude' },
+  laserDigitMin: {
+    source: 'wikiGbu12',
+    confidence: 'approximate',
+    note: 'PRF laser codes: first digit 1–2, then 1–8',
+  },
+  laserDigitMax: {
+    source: 'wikiGbu12',
+    confidence: 'approximate',
+    note: 'PRF laser codes: first digit 1–2, then 1–8',
+  },
+};
+
+/**
+ * Stores that can be released high drag (the Mk-82 AIR's BSU-49 ballute); their high-drag
+ * ballistic model is registered as `${store}/HD` (ARCHITECTURE §12.2).
+ */
+export const HIGH_DRAG_STORES: readonly string[] = ['MK-82AIR'];
+
+/** TAD map ranges the scale buttons step through, nautical miles. */
+export const TAD_RANGES_NM: readonly number[] = [5, 10, 20, 40, 80, 160];
+
+export const TAD_RANGES_NOTES: SourceNote = {
+  source: 'dcsA10Manual',
+  confidence: 'approximate',
+  note: 'A-10C TAD display ranges 5–160 nm',
+};
+
 /** Which deliveries a store supports, and the defaults of its weapon profile on the DSMS. */
 export interface ProfileDefaults {
   /** Name on the DSMS and HUD (≤ 8 characters). */
@@ -82,6 +239,10 @@ export interface ProfileDefaults {
   minAltitude: number;
   /** Fuze arming time after release, s. */
   armingTime: number;
+  /** Low or high drag at release (Mk-82 AIR: the ballute); default 'LD'. */
+  drag?: 'LD' | 'HD';
+  /** Laser-guided bombs: the seeker's laser code. */
+  laserCode?: number;
 }
 
 const RIPPLE_75FT = 75 * FT;
@@ -110,6 +271,7 @@ export const PROFILE_DEFAULTS: Readonly<Record<string, ProfileDefaults>> = {
     fuze: 'TAIL',
     minAltitude: 300 * FT,
     armingTime: 2.6,
+    drag: 'HD',
   },
   'GBU-12': {
     name: 'GBU12',
@@ -120,6 +282,7 @@ export const PROFILE_DEFAULTS: Readonly<Record<string, ProfileDefaults>> = {
     fuze: 'TAIL',
     minAltitude: 1500 * FT,
     armingTime: 4,
+    laserCode: RELEASE.laserCode,
   },
   'CBU-97': {
     name: 'CBU97',
@@ -176,12 +339,12 @@ export const PROFILE_DEFAULTS_NOTES: Record<string, SourceNote> = {
   'MK-82AIR': {
     source: 'dcsA10Manual',
     confidence: 'estimate',
-    note: 'retarded (ballute) delivery: 2.6 s arming, low minimum altitude',
+    note: 'retarded (ballute, high-drag) delivery by default: 2.6 s arming, low minimum altitude',
   },
   'GBU-12': {
     source: 'dcsA10Manual',
     confidence: 'estimate',
-    note: 'CCRP default (laser-guided, released onto the SPI)',
+    note: 'CCRP default (laser-guided, released onto the SPI); laser code 1688',
   },
   'CBU-97': { source: 'wikiCbu97', confidence: 'estimate', note: 'CCRP default' },
   'LAU-131-M151': {

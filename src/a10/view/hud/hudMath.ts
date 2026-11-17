@@ -293,6 +293,70 @@ export function clampToBox(x: number, y: number, box: Box, out: Vec2): boolean {
   return out.x !== x || out.y !== y;
 }
 
+/**
+ * Hold a target point on the edge of a box: where the ray from (cx, cy) (inside the box)
+ * toward (tx, ty) leaves it, or the point itself when it is inside. A symbol held this way
+ * still points the way to its target (the off-field SPI).
+ */
+export function holdOnBox(
+  cx: number,
+  cy: number,
+  tx: number,
+  ty: number,
+  box: Box,
+  out: Vec2,
+): Vec2 {
+  const dx = tx - cx;
+  const dy = ty - cy;
+  let t = 1;
+  if (dx > 0) t = Math.min(t, (box.right - cx) / dx);
+  else if (dx < 0) t = Math.min(t, (box.left - cx) / dx);
+  if (dy > 0) t = Math.min(t, (box.top - cy) / dy);
+  else if (dy < 0) t = Math.min(t, (box.bottom - cy) / dy);
+  t = Math.max(0, t);
+  out.x = cx + dx * t;
+  out.y = cy + dy * t;
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// CCIP bombing cues
+// ---------------------------------------------------------------------------------------------
+
+const G0 = 9.80665;
+
+/**
+ * Where the minimum range staple sits on the projected bomb impact line, as a fraction of the
+ * way from the velocity vector to the pipper. A bomb that falls for t seconds lands g·t²/2 below
+ * the straight path the aircraft flies at speed V, so its drop angle from the velocity vector is
+ * atan(g·t·cos γ / (2V + g·t·sin γ)) (γ the dive angle). The staple is the drop angle a release
+ * at the profile's minimum height above the target would have, over the drop angle now, both
+ * for a vacuum fall from the present path (drag and wind change the two nearly alike, so the
+ * ratio holds). Above 1 the release is already too low. NaN when there is no answer.
+ *
+ * @param height height of the aircraft above the impact point, m
+ * @param minAltitude the profile's minimum release height above the target, m
+ * @param vx inertial velocity, world m/s (vy + up)
+ */
+export function minimumRangeFraction(
+  height: number,
+  minAltitude: number,
+  vx: number,
+  vy: number,
+  vz: number,
+): number {
+  const v = Math.hypot(vx, vy, vz);
+  if (!(height > 0) || !(minAltitude > 0) || v < 1) return NaN;
+  const w = -vy;
+  const sinG = Math.max(-1, Math.min(1, w / v));
+  const cosG = Math.sqrt(1 - sinG * sinG);
+  const t0 = (-w + Math.sqrt(w * w + 2 * G0 * height)) / G0;
+  const tm = (-w + Math.sqrt(w * w + 2 * G0 * minAltitude)) / G0;
+  const d0 = Math.atan2(G0 * t0 * cosG, 2 * v + G0 * t0 * sinG);
+  const dm = Math.atan2(G0 * tm * cosG, 2 * v + G0 * tm * sinG);
+  return d0 > 1e-9 ? dm / d0 : NaN;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Pitch ladder
 // ---------------------------------------------------------------------------------------------

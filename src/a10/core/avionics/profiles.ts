@@ -18,15 +18,20 @@
  * The weapon sight (`avionics.sight`) the HUD draws follows from the mode and the profile.
  */
 import type { Sim } from '../types';
-import { PROFILE_DEFAULTS } from '../../data/avionics';
-import { switched } from './notify';
+import { HIGH_DRAG_STORES, PROFILE_DEFAULTS, PROFILE_EDIT, RELEASE } from '../../data/avionics';
+import { STORES } from '../../data/munitions';
+import type { StoreType } from '../weapons/types';
+import { notify, switched } from './notify';
+import { onStation, storeRemaining } from './stations';
 import type {
   AvionicsState,
   DeliveryMode,
   DsmsProfileView,
   DsmsStationView,
   DsmsView,
+  FuzeOption,
   MasterMode,
+  ReleaseMode,
   WeaponProfile,
 } from './types';
 
@@ -67,9 +72,12 @@ export function profileSupports(p: WeaponProfile, mode: DeliveryMode): boolean {
   return profileModes(p).includes(mode);
 }
 
-/** The profile's store is still loaded (or the realism preset gives unlimited stores). */
+/**
+ * The profile's store is still loaded (rocket pods: with rockets left), or the realism preset
+ * gives unlimited stores.
+ */
 export function profileAvailable(sim: Sim, p: WeaponProfile): boolean {
-  return sim.options.realism.unlimitedAmmo || storeCount(sim, p.store) > 0;
+  return sim.options.realism.unlimitedAmmo || storeRemaining(sim, p.store) > 0;
 }
 
 export function gunAvailable(sim: Sim): boolean {
@@ -89,7 +97,7 @@ export function buildProfiles(sim: Sim): void {
       let known = false;
       for (const p of av.profiles) if (p.store === store) known = true;
       if (known) continue;
-      av.profiles.push({
+      const p: WeaponProfile = {
         id: d.name,
         name: d.name,
         store,
@@ -100,7 +108,10 @@ export function buildProfiles(sim: Sim): void {
         fuze: d.fuze,
         minAltitude: d.minAltitude,
         armingTime: d.armingTime,
-      });
+        drag: d.drag ?? 'LD',
+      };
+      if (d.laserCode !== undefined) p.laserCode = d.laserCode;
+      av.profiles.push(p);
     }
   }
   if (!profileById(av, av.selectedProfile)) {
@@ -157,7 +168,7 @@ function stepMasterMode(sim: Sim, dir: 1 | -1): MasterMode {
 
 /**
  * Enter a master mode (assumed available). CCIP and CCRP select a profile that supports the
- * delivery if the selected one does not.
+ * delivery if the selected one does not, and set that profile's delivery to the mode.
  */
 export function enterMasterMode(sim: Sim, mode: MasterMode): void {
   const av = sim.avionics;
@@ -167,6 +178,7 @@ export function enterMasterMode(sim: Sim, mode: MasterMode): void {
       av.selectedProfile = p.id;
       switched(sim, 'profile', p.name ?? p.id);
     }
+    if (p) p.mode = mode;
   }
   if (av.masterMode !== mode) {
     av.masterMode = mode;
@@ -198,11 +210,20 @@ export function cycleProfile(sim: Sim, dir: 1 | -1): boolean {
   return false;
 }
 
-/** In CCIP / CCRP, change to the selected profile's delivery mode when it cannot do the present. */
+/**
+ * In CCIP / CCRP the master mode follows the selected profile's delivery (`p.mode`) when that
+ * mode is available, and otherwise changes only when the profile cannot do the present mode.
+ */
 function followProfile(sim: Sim, p: WeaponProfile): void {
   const av = sim.avionics;
   const mode = av.masterMode;
   if (mode !== 'CCIP' && mode !== 'CCRP') return;
+  const want = p.mode === 'CCIP' || p.mode === 'CCRP' ? p.mode : null;
+  if (want && want !== mode && profileSupports(p, want) && modeAvailable(sim, want)) {
+    av.masterMode = want;
+    switched(sim, 'masterMode', want);
+    return;
+  }
   if (profileSupports(p, mode)) return;
   for (const m of profileModes(p)) {
     if (modeAvailable(sim, m)) {
@@ -211,6 +232,131 @@ function followProfile(sim: Sim, p: WeaponProfile): void {
       return;
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Profile settings (the DSMS profile buttons, mfd.ts)
+// ---------------------------------------------------------------------------------------------
+
+/** The value after `value` in an ascending list (wrapping); the first one above it if absent. */
+export function nextValue(list: readonly number[], value: number): number {
+  const n = list.length;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(list[i] - value) <= 1e-6 * Math.max(1, Math.abs(value))) return list[(i + 1) % n];
+  }
+  for (let i = 0; i < n; i++) if (list[i] > value) return list[i];
+  return list[0];
+}
+
+const RELEASE_CYCLE: readonly ReleaseMode[] = ['SGL', 'PRS', 'RIP_SGL', 'RIP_PRS'];
+const FUZE_CYCLE: readonly FuzeOption[] = ['NOSE', 'TAIL', 'N/T'];
+
+/** The text of a release mode on the displays. */
+export function releaseLabel(r: ReleaseMode): string {
+  return r === 'RIP_SGL' ? 'RIP SGL' : r === 'RIP_PRS' ? 'RIP PRS' : r;
+}
+
+/**
+ * Set a profile's delivery mode (if its store supports it). For the selected profile in CCIP or
+ * CCRP the master mode follows (when the new mode is available). Returns false when refused.
+ */
+export function setProfileMode(sim: Sim, p: WeaponProfile, mode: DeliveryMode): boolean {
+  if (!profileSupports(p, mode)) return false;
+  p.mode = mode;
+  const av = sim.avionics;
+  if (
+    p.id === av.selectedProfile &&
+    (av.masterMode === 'CCIP' || av.masterMode === 'CCRP') &&
+    av.masterMode !== mode
+  ) {
+    if (modeAvailable(sim, mode)) {
+      av.masterMode = mode;
+      switched(sim, 'masterMode', mode);
+    } else notify(sim, `${mode} NOT AVAILABLE`, 'info');
+  }
+  return true;
+}
+
+/** Step the profile's delivery mode through the ones its store supports. */
+export function cycleProfileMode(sim: Sim, p: WeaponProfile): boolean {
+  const modes = profileModes(p);
+  if (modes.length < 2) return false;
+  const i = p.mode === 'NONE' ? -1 : modes.indexOf(p.mode);
+  return setProfileMode(sim, p, modes[(i + 1) % modes.length]);
+}
+
+export function cycleReleaseMode(p: WeaponProfile): void {
+  p.release = RELEASE_CYCLE[(RELEASE_CYCLE.indexOf(p.release) + 1) % RELEASE_CYCLE.length];
+}
+
+export function cycleRippleQty(p: WeaponProfile): void {
+  p.rippleQty = nextValue(PROFILE_EDIT.rippleQty, p.rippleQty);
+}
+
+export function cycleRippleSpacing(p: WeaponProfile): void {
+  p.rippleSpacing = nextValue(PROFILE_EDIT.rippleSpacing, p.rippleSpacing);
+}
+
+export function cycleFuze(p: WeaponProfile): void {
+  p.fuze = FUZE_CYCLE[(FUZE_CYCLE.indexOf(p.fuze) + 1) % FUZE_CYCLE.length];
+}
+
+export function cycleArmingTime(p: WeaponProfile): void {
+  p.armingTime = nextValue(PROFILE_EDIT.armingTime, p.armingTime);
+}
+
+export function cycleMinAltitude(p: WeaponProfile): void {
+  p.minAltitude = nextValue(PROFILE_EDIT.minAltitude, p.minAltitude);
+}
+
+/** The store can be released high drag (a ballute): HIGH_DRAG_STORES. */
+export function highDragCapable(store: string): boolean {
+  return HIGH_DRAG_STORES.includes(store);
+}
+
+/** Low ↔ high drag; refused (message) for a store without a high-drag configuration. */
+export function toggleDrag(sim: Sim, p: WeaponProfile): boolean {
+  if (!highDragCapable(p.store)) {
+    if ((p.drag ?? 'LD') !== 'LD') p.drag = 'LD';
+    notify(sim, `${p.name ?? p.id}: NO HIGH DRAG`, 'info');
+    return false;
+  }
+  p.drag = (p.drag ?? 'LD') === 'LD' ? 'HD' : 'LD';
+  return true;
+}
+
+/** The store has a laser seeker (its profile carries a laser code). */
+export function laserGuided(store: string): boolean {
+  return STORES[store as StoreType]?.kind === 'guidedBomb';
+}
+
+/**
+ * Laser code with one digit stepped (digit 0 = thousands … 3 = units), wrapping within the
+ * allowed digits (PROFILE_EDIT: first 1–2, the others 1–8). Digits outside the range snap in.
+ */
+export function stepLaserDigit(code: number, digit: number): number {
+  const d = [
+    Math.floor(code / 1000) % 10,
+    Math.floor(code / 100) % 10,
+    Math.floor(code / 10) % 10,
+    code % 10,
+  ];
+  const k = Math.min(3, Math.max(0, Math.round(digit)));
+  const lo = PROFILE_EDIT.laserDigitMin[k];
+  const hi = PROFILE_EDIT.laserDigitMax[k];
+  d[k] = d[k] + 1 > hi || d[k] + 1 < lo ? lo : d[k] + 1;
+  for (let i = 0; i < 4; i++) {
+    const a = PROFILE_EDIT.laserDigitMin[i];
+    const b = PROFILE_EDIT.laserDigitMax[i];
+    if (d[i] < a) d[i] = a;
+    else if (d[i] > b) d[i] = b;
+  }
+  return d[0] * 1000 + d[1] * 100 + d[2] * 10 + d[3];
+}
+
+/** A laser-guided profile's code (default RELEASE.laserCode); 0 for other stores. */
+export function profileLaserCode(p: WeaponProfile): number {
+  return laserGuided(p.store) ? (p.laserCode ?? RELEASE.laserCode) : 0;
 }
 
 /** The weapon sight the HUD draws, and the "CCIP INVALID" flag. Run after the solutions. */
@@ -245,12 +391,26 @@ export function createDsmsView(): DsmsView {
     gunLoad: 'combatMix',
     masterArm: 'SAFE',
     selectedProfile: '',
+    selectedStation: 0,
+    jettisonStation: 0,
+    codeDigit: 0,
   };
+}
+
+/** What hangs on a station can be dropped by selective jettison (pods and AIM-9 rails stay). */
+export function stationJettisonable(sim: Sim, station: number): boolean {
+  const st = sim.stores.stations[station - 1];
+  if (!st || st.station !== station) return false;
+  const first = st.rack ?? st.stores[0];
+  if (!first || !STORES[first]?.jettisonable) return false;
+  for (const s of st.stores) if (!STORES[s]?.jettisonable) return false;
+  return true;
 }
 
 /**
  * Fill the data the stores page shows: the eleven stations, the profiles with the stores left,
- * the gun. Reuses `out`'s objects (call it at display rate; it allocates only when lists grow).
+ * the gun, the selected and jettison stations. Reuses `out`'s objects (call it at display rate;
+ * it allocates only when lists grow).
  */
 export function buildDsmsView(sim: Sim, out: DsmsView = createDsmsView()): DsmsView {
   const av = sim.avionics;
@@ -265,12 +425,21 @@ export function buildDsmsView(sim: Sim, out: DsmsView = createDsmsView()): DsmsV
       store: null,
       count: 0,
       selected: false,
+      rockets: -1,
+      next: false,
+      jettisonable: false,
+      jettisonSelected: false,
     };
     v.station = st.station;
     v.rack = st.rack;
     v.store = st.stores.length > 0 ? st.stores[0] : null;
     v.count = st.stores.length;
     v.selected = sel !== null && st.stores.includes(sel.store as (typeof st.stores)[number]);
+    const first = st.stores.length > 0 ? st.stores[0] : null;
+    v.rockets = first !== null && STORES[first]?.kind === 'rocketPod' ? onStation(st, first) : -1;
+    v.next = st.station === av.selectedStation;
+    v.jettisonable = stationJettisonable(sim, st.station);
+    v.jettisonSelected = st.station === av.pages.jettisonStation;
     out.stations[i] = v;
   }
   out.profiles.length = av.profiles.length;
@@ -289,6 +458,9 @@ export function buildDsmsView(sim: Sim, out: DsmsView = createDsmsView()): DsmsV
       armingTime: 0,
       remaining: 0,
       selected: false,
+      drag: 'LD',
+      laserCode: 0,
+      modes: [],
     };
     v.id = p.id;
     v.name = p.name ?? p.id;
@@ -300,8 +472,11 @@ export function buildDsmsView(sim: Sim, out: DsmsView = createDsmsView()): DsmsV
     v.fuze = p.fuze;
     v.minAltitude = p.minAltitude;
     v.armingTime = p.armingTime;
-    v.remaining = storeCount(sim, p.store);
+    v.remaining = storeRemaining(sim, p.store);
     v.selected = p.id === av.selectedProfile;
+    v.drag = p.drag ?? 'LD';
+    v.laserCode = profileLaserCode(p);
+    v.modes = profileModes(p);
     out.profiles[i] = v;
   }
   out.gunRounds = sim.gun.rounds;
@@ -309,5 +484,8 @@ export function buildDsmsView(sim: Sim, out: DsmsView = createDsmsView()): DsmsV
   out.gunLoad = sim.gun.load;
   out.masterArm = av.masterArm;
   out.selectedProfile = sel ? (sel.name ?? sel.id) : '';
+  out.selectedStation = av.selectedStation;
+  out.jettisonStation = av.pages.jettisonStation;
+  out.codeDigit = av.pages.dsmsCodeDigit;
   return out;
 }

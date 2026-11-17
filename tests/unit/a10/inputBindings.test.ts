@@ -43,7 +43,22 @@ describe('default bindings (PLAN_A10.md §12)', () => {
     expect(names(d, 'speedBrakeToggle')).toEqual(['B', 'B']);
     expect(names(d, 'flaps')).toEqual(['F']);
     expect(names(d, 'gear')).toEqual(['G']);
-    expect(names(d, 'trimPitch')).toEqual(['Ctrl + ↑', 'Ctrl + ↓', 'LT + D-pad ↑', 'LT + D-pad ↓']);
+    expect(names(d, 'trimPitch')).toEqual([
+      'Ctrl + ↑',
+      'Ctrl + ↓',
+      'Ctrl + Shift + ↑',
+      'Ctrl + Shift + ↓',
+      'LT + D-pad ↑',
+      'LT + D-pad ↓',
+    ]);
+    expect(names(d, 'trimRoll')).toEqual([
+      'Ctrl + ←',
+      'Ctrl + →',
+      'Ctrl + Shift + ←',
+      'Ctrl + Shift + →',
+      'LT + D-pad ←',
+      'LT + D-pad →',
+    ]);
     expect(names(d, 'triggerFirst')).toEqual(['Left Shift']);
     expect(names(d, 'triggerSecond')).toEqual(['Space']);
     expect(names(d, 'triggerAxis')).toEqual(['RT']);

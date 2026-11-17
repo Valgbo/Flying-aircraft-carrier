@@ -603,6 +603,8 @@ describe('HUD symbology (CCIP, CCRP)', () => {
     const av = sim.avionics;
     av.masterMode = 'CCIP';
     av.sight = 'CCIP';
+    // A bomb profile (the default load selects its rocket pod first: rockets have no fall line).
+    av.selectedProfile = 'MK82LD';
     av.release.valid = true;
     av.release.az = 0;
     av.release.el = -16 * DEG;

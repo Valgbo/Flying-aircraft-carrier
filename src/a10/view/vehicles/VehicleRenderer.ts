@@ -4,8 +4,9 @@
  * the haze), plus contact shadows, and emits their dust and exhaust. Damage states, thrown
  * turrets and thrown tracks are per-instance data for the vehicle material (material.ts).
  *
- * Per-vehicle view state (distance driven for the wheels and tracks, the latest heavy hit, which
- * track was thrown) lives in a map keyed by vehicle id, created when a vehicle first appears.
+ * Per-vehicle view state (distance driven for the wheels and tracks, the latest heavy hit, the
+ * estimated health of each track, which decides a thrown track) lives in a map keyed by vehicle
+ * id, created when a vehicle first appears.
  */
 import {
   DynamicDrawUsage,
@@ -23,7 +24,7 @@ import {
 import { quaternionFromAttitude } from '../../core/frames';
 import type { Vehicle, VehicleKind } from '../../core/targets/types';
 import type { Sim, SimEvent } from '../../core/types';
-import { VEHICLE_SHAPES } from '../../data/vehicles';
+import { KILL_RULES, VEHICLE_MODELS, VEHICLE_SHAPES } from '../../data/vehicles';
 import type { ParticleSystem } from '../effects/ParticleSystem';
 import type { A10Quality } from '../quality';
 import { createEmitterState, emitVehicle, type EmitterState } from './emitters';
@@ -64,8 +65,59 @@ interface ViewState {
   seed: number;
   spot: Vector3;
   spotR: number;
-  trackSide: 0 | 1 | 2;
+  /**
+   * Tracked vehicles: estimated health of the left and right track (1 intact … 0), kept from
+   * the public running-gear health (the weighted mean of the two track boxes) and the side of
+   * the hits that lowered it (see `trackEstimate`).
+   */
+  trackL: number;
+  trackR: number;
+  /** `components.runningGear` when last seen. */
+  runningSeen: number;
+  /** This frame's hits weighted by their nearness to each track (attribution of a drop). */
+  hitL: number;
+  hitR: number;
   emit: EmitterState;
+}
+
+/** The two track boxes of a tracked class (hull frame) and their weights in the running gear. */
+interface TrackBoxes {
+  left: { min: readonly number[]; max: readonly number[]; weight: number };
+  right: { min: readonly number[]; max: readonly number[]; weight: number };
+}
+
+/**
+ * Track boxes per class, from the targets data (VEHICLE_MODELS): only classes whose running gear
+ * is exactly a left and a right track, so `components.runningGear` is their weighted mean.
+ */
+const TRACK_BOXES = new Map<VehicleKind, TrackBoxes>();
+for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
+  const boxes = VEHICLE_MODELS[kind].components.filter((c) => c.id === 'runningGear');
+  const left = boxes.find((c) => c.name === 'left track');
+  const right = boxes.find((c) => c.name === 'right track');
+  if (boxes.length === 2 && left && right) {
+    TRACK_BOXES.set(kind, {
+      left: { min: left.min, max: left.max, weight: left.weight },
+      right: { min: right.min, max: right.max, weight: right.weight },
+    });
+  }
+}
+
+/** Distance from a hull-frame point to a box, m. */
+function boxDistance(p: Vector3, min: readonly number[], max: readonly number[]): number {
+  const dx = Math.max(min[0] - p.x, 0, p.x - max[0]);
+  const dy = Math.max(min[1] - p.y, 0, p.y - max[1]);
+  const dz = Math.max(min[2] - p.z, 0, p.z - max[2]);
+  return Math.hypot(dx, dy, dz);
+}
+
+/**
+ * How strongly a hit or burst at hull-frame point `p` bears on a track: 1/(d + 0.25 m)², the
+ * inverse-square fall-off of blast and fragments with distance d to the track box.
+ */
+function trackWeight(p: Vector3, box: TrackBoxes['left']): number {
+  const d = boxDistance(p, box.min, box.max) + 0.25;
+  return 1 / (d * d);
 }
 
 const _q = new Quaternion();
@@ -191,7 +243,11 @@ export class VehicleRenderer {
     this.byKey.clear();
   }
 
-  /** Remember where heavy hits land (scorched patches) and which track a hit threw. */
+  /**
+   * Remember where heavy hits land (scorched patches), and weigh every hit and burst of the frame
+   * by how near it is to each track: if the running gear loses health this frame, those weights
+   * say which track lost it (`trackEstimate`).
+   */
   onEvents(events: readonly SimEvent[], sim: Sim): void {
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
@@ -206,15 +262,82 @@ export class VehicleRenderer {
           st.spotR = e.round === 1 ? 0.75 : e.outcome === 'penetrated' ? 0.55 : 0.35;
         }
         const part = e.target.part;
-        if (part === 'tracks' || part === 'wheels') st.trackSide = _p.x < 0 ? 1 : 2;
-      } else if (e.type === 'detonation' && e.vehicleId > 0) {
-        const v = findVehicle(sim, e.vehicleId);
-        if (!v) continue;
-        const st = this.state(v);
-        this.toLocal(v, e.position.x, e.position.y, e.position.z, st.spot);
-        st.spotR = Math.min(2.2, 0.6 + 0.35 * Math.cbrt(Math.max(0.01, e.charge)));
+        if (part === 'tracks' || part === 'wheels') {
+          // a round on a track run can only have hurt that track (or what is behind it)
+          if (_p.x < 0) st.hitL += 1e6;
+          else st.hitR += 1e6;
+        } else this.weighTrackHit(v, st, _p);
+      } else if (e.type === 'detonation') {
+        if (e.vehicleId > 0) {
+          const v = findVehicle(sim, e.vehicleId);
+          if (v) {
+            const st = this.state(v);
+            this.toLocal(v, e.position.x, e.position.y, e.position.z, st.spot);
+            st.spotR = Math.min(2.2, 0.6 + 0.35 * Math.cbrt(Math.max(0.01, e.charge)));
+          }
+        }
+        // blast and fragments reach the running gear of every tracked vehicle around the burst
+        const reach = 30 + 25 * Math.cbrt(Math.max(0.01, e.charge));
+        const list = sim.targets.vehicles;
+        for (let k = 0; k < list.length; k++) {
+          const v = list[k];
+          if (!TRACK_BOXES.has(v.kind)) continue;
+          const p = e.position;
+          if (Math.abs(p.x - v.position.x) > reach || Math.abs(p.z - v.position.z) > reach)
+            continue;
+          this.weighTrackHit(v, this.state(v), this.toLocal(v, p.x, p.y, p.z, _p));
+        }
       }
     }
+  }
+
+  /** Add a hit or burst at hull-frame point `p` to the frame's attribution weights. */
+  private weighTrackHit(v: Vehicle, st: ViewState, p: Vector3): void {
+    const boxes = TRACK_BOXES.get(v.kind);
+    if (!boxes) return;
+    st.hitL += trackWeight(p, boxes.left);
+    st.hitR += trackWeight(p, boxes.right);
+  }
+
+  /**
+   * Keep each track's estimated health. The public running gear of a tracked class is the
+   * weighted mean of its two track boxes, so a drop Δ in it is a loss of Δ·(wL + wR)/w on the
+   * track(s) that were hit; this frame's hits (weighted by nearness, `onEvents`) say which, and a
+   * drop with no hit to explain it is shared evenly (it then throws no track on its own). A box
+   * cannot fall below 0, so a loss attributed beyond that goes to the other track.
+   */
+  private trackEstimate(v: Vehicle, st: ViewState): void {
+    const boxes = TRACK_BOXES.get(v.kind);
+    const rg = v.components.runningGear;
+    if (boxes && Number.isFinite(rg)) {
+      const drop = st.runningSeen - rg;
+      if (drop > 1e-6) {
+        const wl = boxes.left.weight;
+        const wr = boxes.right.weight;
+        const hits = st.hitL + st.hitR;
+        const fL = hits > 0 ? st.hitL / hits : wl / (wl + wr);
+        // a loss of dL on the left and dR on the right lowers the mean by (wl·dL + wr·dR)/(wl+wr)
+        let lossL = (drop * (wl + wr) * fL) / wl;
+        let lossR = (drop * (wl + wr) * (1 - fL)) / wr;
+        if (lossL > st.trackL) {
+          lossR += ((lossL - st.trackL) * wl) / wr;
+          lossL = st.trackL;
+        }
+        if (lossR > st.trackR) {
+          lossL = Math.min(st.trackL, lossL + ((lossR - st.trackR) * wr) / wl);
+          lossR = st.trackR;
+        }
+        st.trackL -= lossL;
+        st.trackR -= lossR;
+      } else if (drop < -1e-6) {
+        // repaired or rearmed: start again from the mean
+        st.trackL = rg;
+        st.trackR = rg;
+      }
+      st.runningSeen = rg;
+    }
+    st.hitL = 0;
+    st.hitR = 0;
   }
 
   private toLocal(v: Vehicle, x: number, y: number, z: number, out: Vector3): Vector3 {
@@ -232,7 +355,12 @@ export class VehicleRenderer {
         seed: ((v.id * 2654435761) >>> 0) / 4294967296,
         spot: new Vector3(),
         spotR: 0,
-        trackSide: 0,
+        // vehicles start intact: damage the renderer sees later is a drop from 1
+        trackL: 1,
+        trackR: 1,
+        runningSeen: 1,
+        hitL: 0,
+        hitR: 0,
         emit: createEmitterState(),
       };
       this.states.set(v.id, st);
@@ -283,6 +411,8 @@ export class VehicleRenderer {
       const st = this.state(v);
       st.stamp = this.frame;
       st.distance += v.speed * dt;
+      // every vehicle, drawn or not, so no drop in its running gear goes unattributed
+      this.trackEstimate(v, st);
       const d = Math.hypot(v.position.x - cx, v.position.y - cy, v.position.z - cz);
       const eff = d * zoom;
       if (ps) emitVehicle(ps, terrain, v, st.emit, dt, d, detailFx);
@@ -318,19 +448,34 @@ export class VehicleRenderer {
     }
   }
 
-  private place(v: Vehicle, st: ViewState, lod: 0 | 1, time: number): void {
+  /**
+   * The damage flags (FLAG) the vehicle is drawn with this frame. A thrown track only for a track
+   * that has failed (TE-5): an engine kill, a dead driver or a catastrophic kill leaves both
+   * tracks on, and only the side that failed is drawn off.
+   */
+  damageFlags(v: Vehicle): number {
+    const st = this.state(v);
     const kind = v.kind;
-    const s = VEHICLE_SHAPES[kind];
     let flags = 0;
     const wrecked = v.condition === 'destroyed' || v.condition === 'catastrophic';
-    if (isTracked(kind) && v.mobilityKill && v.condition !== 'intact') {
-      const side = st.trackSide || 1 + (v.id & 1);
-      flags |= side === 1 ? FLAG.trackLeft : FLAG.trackRight;
+    if (isTracked(kind) && v.mobilityKill && TRACK_BOXES.has(kind)) {
+      // a failed track box always immobilises (its effect is 'mobility')
+      if (st.trackL <= KILL_RULES.boxDead) flags |= FLAG.trackLeft;
+      if (st.trackR <= KILL_RULES.boxDead) flags |= FLAG.trackRight;
     }
     if (kind === 'truckCargo' && wrecked) flags |= FLAG.tarpGone;
     const thrown = v.condition === 'catastrophic' && hasTurret(kind) ? v.thrownTurret : null;
     if (thrown) flags |= FLAG.turretGone;
     else if (v.condition === 'catastrophic') flags |= FLAG.gunBent;
+    return flags;
+  }
+
+  private place(v: Vehicle, st: ViewState, lod: 0 | 1, time: number): void {
+    const kind = v.kind;
+    const s = VEHICLE_SHAPES[kind];
+    const flags = this.damageFlags(v);
+    const wrecked = v.condition === 'destroyed' || v.condition === 'catastrophic';
+    const thrown = v.condition === 'catastrophic' && hasTurret(kind) ? v.thrownTurret : null;
 
     let char = 0;
     let scorch = 0;

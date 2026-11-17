@@ -187,13 +187,36 @@ export const A10_MASS_NOTES: Record<keyof typeof A10_MASS, SourceNote> = {
 // (data/geometry.ts `hull` and `gearContacts`); core/flight/ground.ts tests them.
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Ground contact in the Relaxed preset (realism flag `invulnerable`, PLAN §2: "the aircraft
+ * bounces off"): an aid, not physics. The aircraft is put back into flight away from the surface.
+ */
 export const A10_CONTACT = {
-  /** Coefficient of restitution of a bounce off the ground (invulnerable mode). */
-  bounceRestitution: 0.3,
+  /** Fraction of the speed kept by a bounce. */
+  bounceSpeedKept: 0.85,
+  /** Least speed after a bounce, m/s (≈1.4 × the clean stall speed: it can fly away). */
+  bounceMinSpeed: 170 * KT,
+  /** Climb angle away from the surface after a bounce, rad. */
+  bounceClimbAngle: 12 * DEG,
+  /** Largest angle of attack the bounce sets (the 1 g angle at the new speed, below the stall). */
+  bounceMaxAlpha: 10 * DEG,
+  /** Height the lowest hull point is put above the surface, m. */
+  bounceClearance: 0.5,
+  /** Shortest time between two GROUND CONTACT messages, s. */
+  contactMessageInterval: 3,
 } as const;
 
 export const A10_CONTACT_NOTES: Record<keyof typeof A10_CONTACT, SourceNote> = {
-  bounceRestitution: { source: 'plan', confidence: 'estimate' },
+  bounceSpeedKept: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'Relaxed preset aid (review FC-2: a reflection alone left steep impacts stuck)',
+  },
+  bounceMinSpeed: { source: 'plan', confidence: 'estimate' },
+  bounceClimbAngle: { source: 'plan', confidence: 'estimate' },
+  bounceMaxAlpha: { source: 'plan', confidence: 'estimate' },
+  bounceClearance: { source: 'plan', confidence: 'estimate' },
+  contactMessageInterval: { source: 'plan', confidence: 'estimate' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -596,17 +619,26 @@ export const A10_FCS = {
   /** PAC (Precision Attitude Control): limited series authority and its gains. */
   pacPitchAuthority: 0.2,
   pacYawAuthority: 0.25,
-  /** PAC command rate limit, authority fractions per second. */
-  pacRate: 3.0,
+  /**
+   * Fade-out of PAC's command after the trigger is released, authority fractions per second.
+   * Only there: inside the loop a slew limit causes a limit cycle (review GFC-1 / FC-1).
+   */
+  pacReleaseRate: 3.0,
+  /** Time constant of the pipper-error rate filter, s. */
+  pacRateFilter: 0.05,
+  /** PAC integrator limit, fractions of its authority. */
+  pacIntegralLimit: 0.6,
+  /** The integrator only works on pipper errors smaller than this, rad (no wind-up in a swing). */
+  pacIntegralZone: 0.004,
   /**
    * Pipper error → command (fractions of PAC authority): proportional per rad, damping per rad/s
    * of error rate, and an integral per rad·s that nulls the steady line-of-sight drift of a dive.
    */
   pacElevGain: 140,
-  pacElevRateGain: 30,
+  pacElevRateGain: 25,
   pacElevIntegral: 200,
   pacAzGain: 160,
-  pacAzRateGain: 33,
+  pacAzRateGain: 28,
   pacAzIntegral: 200,
   /** Body-rate damping per rad/s. */
   pacPitchDamping: 3.0,
@@ -614,6 +646,21 @@ export const A10_FCS = {
   /** Stick / pedal displacement above which the pilot overrides PAC. */
   pacOverrideStick: 0.25,
   pacOverridePedal: 0.3,
+  /**
+   * Stick / pedal movement from where they were at the capture beyond which the pilot walks the
+   * pipper (the held point follows it until the controls return).
+   */
+  pacWalkStick: 0.02,
+  pacWalkPedal: 0.03,
+  /**
+   * After a walk: PAC holds the new point once the pipper moves slower than this over the ground,
+   * rad/s (seen from the eye), or at the latest after the time limit, s.
+   */
+  pacSettleRate: 0.003,
+  pacSettleDwellTime: 0.1,
+  pacSettleMaxTime: 1.0,
+  /** Pipper error beyond which the proportional term stops growing, rad (bounded closing rate). */
+  pacErrorLimit: 0.005,
 
   /** Autopilot (low-altitude autopilot: PATH, ALT/HDG, ALT). */
   apEngageBankLimit: 10 * DEG,
@@ -679,7 +726,10 @@ export const A10_FCS_NOTES: Record<keyof typeof A10_FCS, SourceNote> = {
     note: 'PAC acts through the SAS with limited authority: it steadies, it does not aim',
   },
   pacYawAuthority: { source: 'dcsForumPac', confidence: 'estimate' },
-  pacRate: est(''),
+  pacReleaseRate: est('smooth hand-back after the trigger is released'),
+  pacRateFilter: est(''),
+  pacIntegralLimit: est(''),
+  pacIntegralZone: est('tuned with the transient cases of review GFC-1 (flightControls test)'),
   pacElevGain: est(
     'tuned: steadiest pipper in turbulence without ringing (tests/unit/a10/flightControls.test.ts)',
   ),
@@ -692,6 +742,14 @@ export const A10_FCS_NOTES: Record<keyof typeof A10_FCS, SourceNote> = {
   pacYawDamping: est(''),
   pacOverrideStick: est(''),
   pacOverridePedal: est(''),
+  pacWalkStick: est(
+    'small enough for fine aiming, larger than a held stick drifts (review GFC-2: the pipper must walk)',
+  ),
+  pacWalkPedal: est(''),
+  pacSettleRate: est(''),
+  pacSettleDwellTime: est(''),
+  pacSettleMaxTime: est(''),
+  pacErrorLimit: est('tuned with the transient cases of review GFC-1 (flightControls test)'),
   apEngageBankLimit: {
     source: 'plan',
     confidence: 'approximate',

@@ -14,6 +14,7 @@
  *  - HEI rounds burst on any impact: a 'detonation' (kind 'hei') and applyBlast at the point.
  * Every hit emits 'roundImpact' (HEI included: views draw the burst from it). Rounds leave the
  * pool after GAU8 ROUND_BEHAVIOUR.maxLifetime or when they leave the map.
+ * Store bodies (bombs, rockets, missiles) are stepped after the rounds: bodies.ts.
  */
 import { Vector3 } from 'three';
 import { GAU8, ROUND_BEHAVIOUR } from '../../data/gun';
@@ -23,6 +24,7 @@ import type { Sim } from '../types';
 import { windAt } from '../world';
 import type { SurfaceKind, Terrain, TerrainHit } from '../world/types';
 import { integrateRound } from './ballistics';
+import { stepBodies } from './bodies';
 import { countBurstHit } from './gun';
 import { freeRound, ROUND_FLAG_HIT_VEHICLE } from './pool';
 import { RoundType, type RoundPool } from './types';
@@ -86,14 +88,19 @@ const NONE = 0;
 const GROUND = 1;
 const VEHICLE = 2;
 
-/** Integrate rounds and store bodies; detect and resolve impacts. */
+/**
+ * Step 6: integrate the rounds and the store bodies (bodies.ts); detect and resolve their
+ * impacts against the ground and the vehicles.
+ */
 export function stepProjectiles(sim: Sim, dt: number): void {
   const pool = sim.projectiles.rounds;
-  if (pool.live === 0) return;
-  const t1 = sim.time + dt;
-  for (let i = 0; i < pool.capacity; i++) {
-    if (pool.alive[i] !== 0) stepRound(sim, pool, i, t1);
+  if (pool.live > 0) {
+    const t1 = sim.time + dt;
+    for (let i = 0; i < pool.capacity; i++) {
+      if (pool.alive[i] !== 0) stepRound(sim, pool, i, t1);
+    }
   }
+  stepBodies(sim, dt);
 }
 
 /** Fly round i to t1 (from the step start, or its muzzle time if it left during this step). */

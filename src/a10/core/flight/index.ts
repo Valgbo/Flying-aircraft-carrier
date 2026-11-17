@@ -33,7 +33,7 @@ import type { AircraftState, WarningId } from './types';
 
 export type * from './types';
 export { stepFlight } from './step';
-export { stepFlightControls } from './controls';
+export { stepFlightControls, stickPerG } from './controls';
 export { stepWarnings, predictRecoveryClearance } from './warnings';
 export { autopilotCommand, engageAutopilot, disengageAutopilot } from './autopilot';
 export { trimAircraft, levelFlightThrottle, type TrimResult } from './trim';
@@ -66,13 +66,16 @@ const WARNINGS: WarningId[] = [
   'masterCaution',
 ];
 
-/** Default throttle at an air start (matches the input layer's default lever). */
+/**
+ * Engine lever before the start trim (the input layer's default lever). The start trim replaces it
+ * with the lever that holds the start speed (trim.ts startTrim → levelFlightThrottle).
+ */
 const START_LEVER = 0.85;
 
 /**
  * A new aircraft in level flight at the air start: 60 % internal fuel, gear and flaps up. The
- * attitude, surfaces and trim are solved for steady flight when createSim first computes the
- * mass properties (updateMassProperties), so the flight begins trimmed.
+ * attitude, surfaces, trim and engine levers are solved for steady flight when createSim first
+ * computes the mass properties (updateMassProperties), so the flight begins trimmed.
  */
 export function createAircraftState(terrain: Terrain, start: AirStart): AircraftState {
   const ground = terrain.heightAt(start.x, start.z);
@@ -164,6 +167,7 @@ export function createAircraftState(terrain: Terrain, start: AirStart): Aircraft
       aimPoint: new Vector3(),
       aimValid: false,
       overridden: false,
+      walking: false,
       errorAz: 0,
       errorEl: 0,
     },
@@ -182,6 +186,11 @@ export function createAircraftState(terrain: Terrain, start: AirStart): Aircraft
       pacRateEl: 0,
       pacIntAz: 0,
       pacIntEl: 0,
+      pacRefPitch: 0,
+      pacRefRoll: 0,
+      pacRefRudder: 0,
+      pacSettleTime: -1,
+      pacSettleDwell: 0,
       elevatorCmd: 0,
       aileronCmd: 0,
       rudderCmd: 0,
@@ -194,6 +203,8 @@ export function createAircraftState(terrain: Terrain, start: AirStart): Aircraft
       flapMvrBlown: false,
       gcasCounter: 0,
       inContact: false,
+      contactMessageTime: -1e9,
+      bounceTrimPending: false,
     },
     crashed: false,
     maxG: 1,

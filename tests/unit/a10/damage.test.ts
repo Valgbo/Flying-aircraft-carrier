@@ -289,9 +289,9 @@ describe('behind the armour', () => {
   it('damaged vehicles are counted while damaged, then as kills', () => {
     const sim = freshSim(9);
     const v = createVehicle(sim, 'mbt', 0, 0, 0, 1);
-    // break a track with HEI from the side
-    for (let k = 0; k < 12 && !v.mobilityKill; k++)
-      fire(sim, v, [1.7, 0.5, 0.5 * k - 2], new Vector3(-700, -200, 0), RoundType.HEI);
+    // break a track with API through the track run from the side (≈980 m/s: ≈700 m away)
+    for (let k = 0; k < 40 && !v.mobilityKill; k++)
+      fire(sim, v, [1.7, 0.5, 0.15 * k - 3], new Vector3(-950, -250, 0), RoundType.API);
     expect(v.mobilityKill).toBe(true);
     expect(v.condition).toBe('damaged');
     expect(sim.targets.damaged).toBe(1);

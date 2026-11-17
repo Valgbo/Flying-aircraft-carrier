@@ -98,6 +98,14 @@ export interface FrameContext {
   invertLook: boolean;
   /** The aircraft's speed-brake position 0..1 (NaN when unknown), for the open/close key. */
   speedBrakePosition: number;
+  /**
+   * Stick deflection a held key (or any digital input) gives in pitch, pulling and pushing, 0..1
+   * (default 1). The runtime sets the deflection that reaches about the g limit at the present
+   * dynamic pressure (keyAuthority.ts): with mechanical controls a full deflection at 400 kn
+   * would be 17 g (review FC-5). Analogue sticks and the mouse stick are not scaled.
+   */
+  keyPitchPull?: number;
+  keyPitchPush?: number;
 }
 
 export interface EngineOutput {
@@ -261,6 +269,11 @@ interface RampRates {
   rise: number;
   fall: number;
   jump: number;
+  /**
+   * Gentle start: the output is the ramp squared, so a short tap moves the stick a little and a
+   * held key still reaches full deflection in the ramp time (stick axes).
+   */
+  ease: boolean;
 }
 
 /** Rise and fall rates (per second) of each ramp profile for these options. */
@@ -268,16 +281,21 @@ function rampRates(ramp: ControlDef['ramp'], opts: InputOptions): RampRates {
   const rate = (seconds: number) => (seconds > 0.001 ? 1 / seconds : Infinity);
   switch (ramp) {
     case 'stick':
-      return { rise: rate(opts.keyRampTime), fall: rate(0.12), jump: 0 };
+      return { rise: rate(opts.keyRampTime), fall: rate(0.12), jump: 0, ease: true };
     case 'pedal':
-      return { rise: rate(opts.keyRampTime * 1.3), fall: rate(0.2), jump: 0 };
+      return { rise: rate(opts.keyRampTime * 1.3), fall: rate(0.2), jump: 0, ease: false };
     case 'slew':
-      return { rise: rate(1.2), fall: Infinity, jump: 0.15 };
+      return { rise: rate(1.2), fall: Infinity, jump: 0.15, ease: false };
     case 'look':
-      return { rise: rate(0.5), fall: Infinity, jump: 0.25 };
+      return { rise: rate(0.5), fall: Infinity, jump: 0.25, ease: false };
     default:
-      return { rise: Infinity, fall: Infinity, jump: 0 };
+      return { rise: Infinity, fall: Infinity, jump: 0, ease: false };
   }
+}
+
+/** A key-authority value from the frame context: 0..1, default (undefined or invalid) 1. */
+function authority(v: number | undefined): number {
+  return v === undefined || !Number.isFinite(v) ? 1 : clamp(v, 0, 1);
 }
 
 /** Mouse-stick shaping: a small dead zone and a soft centre. */
@@ -607,7 +625,14 @@ export class InputEngine {
     const msx = ctx.mouseStick && live ? shapeMouse(this.stickX) : 0;
     const msy = ctx.mouseStick && live ? shapeMouse(this.stickY) : 0;
 
-    out.pitch = axis('pitch', msy);
+    out.pitch = this.axisValue(
+      'pitch',
+      msy,
+      live,
+      dt,
+      authority(ctx.keyPitchPull),
+      authority(ctx.keyPitchPush),
+    );
     out.roll = axis('roll', msx);
     out.rudder = axis('rudder');
     out.trimPitch = axis('trimPitch');
@@ -691,8 +716,18 @@ export class InputEngine {
   // Internals
   // ------------------------------------------------------------------------------------------
 
-  /** One momentary axis: keys and buttons ramped, analogue inputs and `extra` added. */
-  private axisValue(id: ControlId, extra: number, live: boolean, dt: number): number {
+  /**
+   * One momentary axis: keys and buttons ramped (eased, and scaled by `positive` / `negative`
+   * authority on either side), analogue inputs and `extra` added.
+   */
+  private axisValue(
+    id: ControlId,
+    extra: number,
+    live: boolean,
+    dt: number,
+    positive = 1,
+    negative = 1,
+  ): number {
     const ci = CONTROL_INDEX[id];
     if (!live) {
       this.ramp[ci] = 0;
@@ -701,7 +736,10 @@ export class InputEngine {
     const r = this.rates[ci];
     const target = clamp(this.digital[ci], -1, 1);
     this.ramp[ci] = rampToward(this.ramp[ci], target, r.rise, r.fall, dt, r.jump);
-    return clamp(this.ramp[ci] + this.analog[ci] + extra, -1, 1);
+    let keys = this.ramp[ci];
+    if (r.ease) keys *= Math.abs(keys);
+    keys *= keys > 0 ? positive : negative;
+    return clamp(keys + this.analog[ci] + extra, -1, 1);
   }
 
   private gateOpen(def: ControlDef): boolean {

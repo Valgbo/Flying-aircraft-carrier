@@ -7,7 +7,7 @@ import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { A10, A10_AERO, A10_MASS, A10_WARNINGS } from '../../../src/a10/data/aircraft';
 import { G0, SIM_DT } from '../../../src/a10/core/constants';
-import { createSim, runSim } from '../../../src/a10/core/sim';
+import { createSim, realismFlags, runSim } from '../../../src/a10/core/sim';
 import {
   predictRecoveryClearance,
   setAltitudeAlert,
@@ -16,7 +16,8 @@ import {
 } from '../../../src/a10/core/flight';
 import { createTestbed, runFlightOnly, stepFlightOnly } from '../../../src/a10/core/flight/testbed';
 import type { Sim, SimEvent } from '../../../src/a10/core/types';
-import { createFlatTerrain, gustAt, gustScales, windAt } from '../../../src/a10/core/world';
+import { createFlatTerrain, gustAt, gustScales, tasFromCas, windAt } from '../../../src/a10/core/world';
+import { quaternionFromAttitude } from '../../../src/a10/core/frames';
 
 /** Generous timeout for flights of a minute or more (the CI machine may be loaded). */
 const LONG = 60_000;
@@ -209,6 +210,110 @@ describe('ground contact', () => {
       );
       expect(sim.aircraft.position.y).toBeGreaterThan(-1);
       expect(sim.events.some((e) => e.type === 'crash')).toBe(false);
+    },
+    LONG,
+  );
+
+  it(
+    'invulnerable: a steep, banked or inverted impact flies away within 5 s, hands off, with one message (review FC-2)',
+    () => {
+      const rows: string[] = [];
+      for (const [kias, pathDeg, bankDeg] of [
+        [350, -60, 0],
+        [350, -75, 0],
+        [300, -70, 90],
+        [250, -90, 0],
+        [150, -60, 0],
+        [300, -30, 180],
+      ] as const) {
+        const sim = createSim({
+          seed: 3,
+          terrain: createFlatTerrain(0),
+          scenario: 'empty',
+          realism: realismFlags('relaxed'),
+          loadoutId: 'gunOnly',
+          start: {
+            x: 0,
+            z: 0,
+            agl: 200,
+            heading: 0,
+            speed: tasFromCas(kias * KT, 200),
+            gamma: pathDeg * DEG,
+          },
+        });
+        const ac = sim.aircraft;
+        if (bankDeg) quaternionFromAttitude(ac.heading, ac.pitch, bankDeg * DEG, ac.orientation);
+        let firstContact = -1;
+        let flyingAgain = -1;
+        let messages = 0;
+        // The flight module alone: ground contact is its own business.
+        runFlightOnly(sim, 15, (s) => {
+          for (const e of s.events) {
+            if (e.type === 'message' && e.text === 'GROUND CONTACT') messages++;
+          }
+          s.events.length = 0;
+          s.input.throttle[0] = 1;
+          s.input.throttle[1] = 1;
+          const a = s.aircraft;
+          if (firstContact < 0 && a.fcs.inContact) firstContact = s.time;
+          if (firstContact >= 0 && flyingAgain < 0 && a.agl > 100 && a.ias > 150 * KT) {
+            flyingAgain = s.time - firstContact;
+          }
+        });
+        rows.push(`${kias} kn ${pathDeg}° bank ${bankDeg}°: flying in ${flyingAgain.toFixed(1)} s`);
+        expect(ac.crashed).toBe(false);
+        expect(firstContact).toBeGreaterThan(0);
+        expect(flyingAgain).toBeGreaterThan(0);
+        expect(flyingAgain).toBeLessThan(5);
+        expect(messages).toBe(1);
+      }
+      console.log(`[flight] Relaxed bounce, hands off at MAX: ${rows.join('; ')}`);
+    },
+    LONG,
+  );
+
+  /** A level descent at 300 kn over flat ground covered by trees `canopy` metres tall. */
+  function intoTheTrees(canopy: number, preset: 'authentic' | 'relaxed') {
+    const terrain = { ...createFlatTerrain(0), canopyAt: () => canopy };
+    const sim = createSim({
+      seed: 4,
+      terrain,
+      scenario: 'empty',
+      realism: realismFlags(preset),
+      loadoutId: 'gunOnly',
+      start: { x: 0, z: 0, agl: 60, heading: 0, speed: 300 * KT, gamma: -3 * DEG },
+    });
+    let lowest = Infinity;
+    let pullUp = false;
+    let crashAgl = NaN;
+    runFlightOnly(sim, 12, (s) => {
+      if (s.aircraft.fcs.inContact || s.aircraft.crashed) return;
+      lowest = Math.min(lowest, s.aircraft.agl);
+      pullUp ||= s.aircraft.warnings.pullUp;
+      crashAgl = s.aircraft.agl;
+    });
+    return { sim, lowest, pullUp, crashAgl };
+  }
+
+  it(
+    'trees are obstacles: flying into the canopy crashes, as the PULL UP prediction says (review FC-7)',
+    () => {
+      const bare = intoTheTrees(0, 'authentic');
+      const forest = intoTheTrees(18, 'authentic');
+      // Over bare ground the same descent reaches the ground; over the forest it ends in the
+      // tree tops, with PULL UP on before.
+      expect(bare.sim.aircraft.crashed).toBe(true);
+      expect(forest.sim.aircraft.crashed).toBe(true);
+      expect(forest.pullUp).toBe(true);
+      const crash = forest.sim.events.find((e) => e.type === 'crash');
+      expect(crash && crash.type === 'crash' && crash.position.y).toBeGreaterThan(17);
+      expect(forest.crashAgl).toBeGreaterThan(18);
+      expect(bare.crashAgl).toBeLessThan(5);
+      // Relaxed: it bounces off the canopy and flies on above it.
+      const relaxed = intoTheTrees(18, 'relaxed');
+      expect(relaxed.sim.aircraft.crashed).toBe(false);
+      expect(relaxed.sim.events.some((e) => e.type === 'message' && e.text === 'GROUND CONTACT')).toBe(true);
+      expect(relaxed.sim.aircraft.agl).toBeGreaterThan(18);
     },
     LONG,
   );
@@ -430,6 +535,44 @@ describe('contract', () => {
       expect(Number.isFinite(ac.position.x)).toBe(true);
       expect(Math.abs(ac.altitude - h0)).toBeLessThan(60);
       expect(ac.crashed).toBe(false);
+    },
+    LONG,
+  );
+
+  it(
+    'the default air start (createSim) is steady flight: hands off for 60 s it holds height ±30 m and speed (review FC-3)',
+    () => {
+      const rows: string[] = [];
+      for (const preset of ['authentic', 'standard'] as const) {
+        for (const loadoutId of ['tankHunter', 'gunOnly'] as const) {
+          const sim = createSim({
+            seed: 9,
+            terrain: createFlatTerrain(150),
+            realism: realismFlags(preset),
+            loadoutId,
+          });
+          const ac = sim.aircraft;
+          // The engines and the pilot's levers start at the lever that holds the start speed.
+          expect(sim.input.throttle[0]).toBe(ac.engines[0].lever);
+          expect(sim.input.throttle[1]).toBe(ac.engines[1].lever);
+          expect(ac.engines[0].lever).toBeLessThan(0.85);
+          const h0 = ac.altitude;
+          const v0 = ac.ias;
+          let dh = 0;
+          let dv = 0;
+          // The flight module alone (no gun, stores or targets act on the aircraft here).
+          runFlightOnly(sim, 60, (s) => {
+            dh = Math.max(dh, Math.abs(s.aircraft.altitude - h0));
+            dv = Math.max(dv, Math.abs(s.aircraft.ias - v0));
+          });
+          rows.push(
+            `${preset} ${loadoutId}: lever ${ac.engines[0].lever.toFixed(3)}, ±${dh.toFixed(1)} m, ±${(dv / KT).toFixed(1)} kn`,
+          );
+          expect(dh).toBeLessThan(30);
+          expect(dv).toBeLessThan(5 * KT);
+        }
+      }
+      console.log(`[flight] default air start, 60 s hands off: ${rows.join('; ')}`);
     },
     LONG,
   );

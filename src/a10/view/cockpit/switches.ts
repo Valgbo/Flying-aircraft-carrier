@@ -1,22 +1,22 @@
 /**
- * The clickable cockpit: which controls can be clicked, where they are, and the simulation
- * Command each click queues. OWNED BY THE COCKPIT MODULE. Pure (no three.js scene, no DOM), so
- * the table is unit-tested (tests/unit/a10/cockpitSwitches.test.ts).
+ * The clickable cockpit's switches: which controls can be clicked, where they are, and the
+ * simulation Command each click queues. OWNED BY THE COCKPIT MODULE. Pure (no three.js scene, no
+ * DOM), so the table is unit-tested (tests/unit/a10/cockpitSwitches.test.ts). The MFCDs' OSBs,
+ * the UFC's other keys and the AHCP's decorative switches are in clickables.ts.
  *
- * The model is FlightGear's A-10A cockpit: it has the A-10A armament control panel (Master Arm,
- * a two-position gun switch, station buttons) and a HUD control panel, not the A-10C's armament
- * HUD control panel. What exists is mapped where it sensibly fits:
+ * The model is FlightGear's A-10A cockpit; the A-10C panel (PLAN_A10.md §7, decided at M6) is
+ * built onto it in code (mfcd.ts, ahcp.ts, ufc.ts). Where each control is:
  *
- *   Master Arm            the ACP's MASTER ARM switch (TRAIN / SAFE / ARM, as FlightGear's)
- *   GUN/PAC               the ACP's gun switch, given the A-10C's three positions
- *   Master mode           the HUD control panel's mode selector (four detents NAV…CCRP)
- *   Flaps                 the flap lever on the throttle quadrant
- *   Gear                  the landing-gear handle
+ *   Master Arm, GUN/PAC,  the A-10C armament HUD control panel (AHCP), where the A-10A's armament
+ *   LASER ARM, TGP,       control panel was
+ *   ALT SCE
+ *   Master mode           the master mode button on the stick grip (the A-10C has no panel
+ *                         selector: the A-10A HUD panel's knob is under the left MFCD)
+ *   Steerpoint ▲ / ▼      the UFC's STEER rocker
+ *   Altitude alert        the UFC's ALT ALRT key (left up a step, right down)
+ *   Flaps, gear           the flap lever and the landing-gear handle of the model
  *   g-meter reset         the accelerometer's push-to-set button (cockpit only, no command)
- *
- * What the A-10A lacks gets a small labelled hotspot switch on an "A-10C" add-on box at the left
- * end of the instrument panel, beside the HUD control panel (hotspots.ts): LASER ARM, TGP,
- * ALT SCE, the autopilot's ENGAGE and MODE buttons, and the altitude alert (ALT ALERT).
+ *   Autopilot, its mode   a small add-on box at the left end of the panel (hotspots.ts)
  *
  * Clicks: the left button is the primary action (toggle / next position), the right button
  * the secondary one (the other way). Commands carry explicit values computed from the current
@@ -31,6 +31,7 @@ import type {
   MasterMode,
 } from '../../core/avionics/types';
 import type { Command } from '../../core/types';
+import type { UfcKeyId } from './ufc';
 
 export type CockpitControlId =
   | 'masterArm'
@@ -44,6 +45,8 @@ export type CockpitControlId =
   | 'autopilot'
   | 'autopilotMode'
   | 'altitudeAlert'
+  | 'steerNext'
+  | 'steerPrevious'
   | 'gMeterReset';
 
 /** Where a control is clicked. */
@@ -52,8 +55,17 @@ export type ControlTarget =
   | { kind: 'pick'; node: string }
   /** The bounds of a mesh of the model (a moving part FlightGear made no pick for). */
   | { kind: 'mesh'; node: string }
+  /**
+   * The top `height` metres (along the part's own up axis) of a moving part's bounds: a button
+   * on top of a grip.
+   */
+  | { kind: 'meshTop'; node: string; height: number }
   /** One of our hotspot switches (hotspots.ts), by control id. */
-  | { kind: 'hotspot' };
+  | { kind: 'hotspot' }
+  /** A toggle switch on the A-10C armament HUD control panel (ahcp.ts), by control id. */
+  | { kind: 'ahcp' }
+  /** A key of the A-10C up-front controller (ufc.ts). */
+  | { kind: 'ufc'; key: UfcKeyId };
 
 export interface CockpitControlDef {
   id: CockpitControlId;
@@ -64,9 +76,13 @@ export interface CockpitControlDef {
 
 /** Every clickable control, in the order the hover label prefers them when boxes overlap. */
 export const COCKPIT_CONTROLS: readonly CockpitControlDef[] = [
-  { id: 'masterArm', label: 'MASTER ARM', target: { kind: 'pick', node: 'master-arm-switch' } },
-  { id: 'gunPac', label: 'GUN/PAC', target: { kind: 'pick', node: 'gun-rate-switch' } },
-  { id: 'masterMode', label: 'MASTER MODE', target: { kind: 'pick', node: 'mode-selector' } },
+  { id: 'masterArm', label: 'MASTER ARM', target: { kind: 'ahcp' } },
+  { id: 'gunPac', label: 'GUN/PAC', target: { kind: 'ahcp' } },
+  {
+    id: 'masterMode',
+    label: 'MASTER MODE',
+    target: { kind: 'meshTop', node: 'stick-upper__aileron', height: 0.075 },
+  },
   { id: 'flaps', label: 'FLAPS', target: { kind: 'mesh', node: 'flaps-lever__current-setting' } },
   {
     id: 'gear',
@@ -78,12 +94,14 @@ export const COCKPIT_CONTROLS: readonly CockpitControlDef[] = [
     label: 'G-METER RESET',
     target: { kind: 'pick', node: 'A-10-accel-button' },
   },
-  { id: 'laserArm', label: 'LASER ARM', target: { kind: 'hotspot' } },
-  { id: 'tgpPower', label: 'TGP POWER', target: { kind: 'hotspot' } },
-  { id: 'altSource', label: 'ALT SOURCE', target: { kind: 'hotspot' } },
+  { id: 'laserArm', label: 'LASER ARM', target: { kind: 'ahcp' } },
+  { id: 'tgpPower', label: 'TGP POWER', target: { kind: 'ahcp' } },
+  { id: 'altSource', label: 'ALT SOURCE', target: { kind: 'ahcp' } },
   { id: 'autopilot', label: 'AUTOPILOT', target: { kind: 'hotspot' } },
   { id: 'autopilotMode', label: 'AUTOPILOT MODE', target: { kind: 'hotspot' } },
-  { id: 'altitudeAlert', label: 'ALTITUDE ALERT', target: { kind: 'hotspot' } },
+  { id: 'altitudeAlert', label: 'ALT ALRT', target: { kind: 'ufc', key: 'ALT_ALRT' } },
+  { id: 'steerNext', label: 'STEER ▲', target: { kind: 'ufc', key: 'STEER_UP' } },
+  { id: 'steerPrevious', label: 'STEER ▼', target: { kind: 'ufc', key: 'STEER_DN' } },
 ];
 
 /** The switch positions a click needs to know. */
@@ -101,6 +119,8 @@ export interface CockpitSwitchState {
   autopilotMode: string;
   /** Altitude alert setting, m above ground (0 = off). */
   altitudeAlert: number;
+  /** Name of the active steerpoint ('' when none). */
+  steerpoint: string;
 }
 
 export const GUN_PAC_ORDER: readonly GunPacSwitch[] = ['SAFE', 'GUNARM', 'ARM'];
@@ -186,6 +206,10 @@ export function commandForControl(
         type: 'altitudeAlert',
         value: stepAltitudeAlert(s.altitudeAlert, secondary ? -1 : 1),
       };
+    case 'steerNext':
+      return { type: 'steerpoint', dir: 1 };
+    case 'steerPrevious':
+      return { type: 'steerpoint', dir: -1 };
     case 'gMeterReset':
       return null;
   }
@@ -216,6 +240,9 @@ export function controlStateText(id: CockpitControlId, s: CockpitSwitchState): s
       return s.autopilotMode.replace('_', '/');
     case 'altitudeAlert':
       return s.altitudeAlert > 1 ? `${Math.round(s.altitudeAlert / FT / 10) * 10} FT` : 'OFF';
+    case 'steerNext':
+    case 'steerPrevious':
+      return s.steerpoint;
     case 'gMeterReset':
       return '';
   }
@@ -231,6 +258,8 @@ export function readSwitchState(
       tgpPower: boolean;
       altSource: AltSource;
       masterMode: MasterMode;
+      steerpoints?: readonly { name: string }[];
+      activeSteerpoint?: number;
     };
     aircraft: {
       flapHandle: number;
@@ -254,6 +283,8 @@ export function readSwitchState(
   out.autopilotEngaged = ac.autopilot.engaged;
   out.autopilotMode = ac.autopilot.mode;
   out.altitudeAlert = ac.altitudeAlert;
+  const sp = av.steerpoints?.[av.activeSteerpoint ?? -1];
+  out.steerpoint = sp ? sp.name : '';
   return out;
 }
 
@@ -270,5 +301,6 @@ export function createSwitchState(): CockpitSwitchState {
     autopilotEngaged: false,
     autopilotMode: 'PATH',
     altitudeAlert: 0,
+    steerpoint: '',
   };
 }

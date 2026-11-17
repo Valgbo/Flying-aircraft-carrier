@@ -10,9 +10,12 @@
  *   pullUp         "PULL UP" (made offline with CMU Flite), repeated while the warning is on
  *   masterCaution, lowFuel   a two-note chime
  *   switch events  FlightGear's switch clicks
+ *   lock, laser    quiet cues (wave 2): two rising blips when a Maverick or the pod takes a
+ *                  track, one falling when it drops it; a soft tick when the laser fires and stops
  */
 import { SmoothParam } from '../../engine';
 import type { WarningId } from '../core/flight/types';
+import type { CockpitCue } from './classify';
 import type { AudioKit } from './kit';
 import { getSample, type SampleId } from './samples';
 
@@ -24,6 +27,22 @@ export const COCKPIT_LEVELS = {
   voice: 0.75,
   chime: 0.14,
   click: 0.35,
+  /** Sensor cues: well under the warnings (PLAN §13: subtle). */
+  cue: 0.045,
+};
+
+/** Each cue: its blips (frequency Hz, start s, length s) at COCKPIT_LEVELS.cue × level. */
+export const CUES: Record<CockpitCue, { level: number; blips: [number, number, number][] }> = {
+  lockOn: {
+    level: 1,
+    blips: [
+      [1000, 0, 0.045],
+      [1335, 0.07, 0.045],
+    ],
+  },
+  lockOff: { level: 0.8, blips: [[800, 0, 0.07]] },
+  laserOn: { level: 0.6, blips: [[1600, 0, 0.025]] },
+  laserOff: { level: 0.5, blips: [[1200, 0, 0.025]] },
 };
 /** "PULL UP" repeats this often while the warning stands, s. */
 export const PULL_UP_PERIOD = 1.0;
@@ -175,6 +194,26 @@ export class CockpitVoices {
     const id: SampleId = (h + this.clickToggle++) % 2 === 0 ? 'click' : 'click2';
     const buffer = getSample(id);
     if (buffer) this.kit.playOnce(buffer, this.clickOut, when, 0.95 + (0.1 * ((h >>> 3) % 7)) / 6);
+  }
+
+  /** A sensor cue (Maverick or pod track, laser), at audio time `when`. */
+  cue(id: CockpitCue, when: number): void {
+    const c = CUES[id];
+    const ctx = this.kit.ctx;
+    for (const [hz, start, len] of c.blips) {
+      const t = when + start;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(COCKPIT_LEVELS.cue * c.level, t + 0.004);
+      g.gain.setTargetAtTime(0, t + len, 0.008);
+      osc.connect(g).connect(this.kit.mixer.buses.cockpit);
+      osc.start(t);
+      osc.stop(t + len + 0.06);
+      osc.addEventListener('ended', () => g.disconnect(), { once: true });
+    }
   }
 
   /** Every warning off (new flight). */

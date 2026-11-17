@@ -8,7 +8,9 @@
  * cockpit shadow map, then `cockpitScene` with `cockpitCamera` into ctx.target.
  *
  * Clicks: while the cursor is free (viewInput.cursorFree) the control under the pointer is
- * highlighted; a click on it queues its Command (switches.ts) with pushCommand and clears
+ * highlighted with its name and state (an OSB: the label of the page its display shows); a
+ * click on it moves the part (OSB and UFC keys go in, decorative AHCP switches flip) and queues
+ * its Command (clickables.ts: switches, `osb {display, button}`) with pushCommand, then clears
  * viewInput.click. The avionics emit `switch` events, which the audio module clicks on.
  */
 import { useFrame, useThree } from '@react-three/fiber';
@@ -24,7 +26,7 @@ import { registerRenderPass } from '../pipeline';
 import { getA10Quality } from '../quality';
 import { cockpitCamera, cockpitScene, cockpitViewState } from './cockpitCamera';
 import { CockpitModel } from './cockpitModel';
-import { commandForControl } from './switches';
+import { clickCommand } from './clickables';
 import {
   createVisionState,
   resetVision,
@@ -58,7 +60,13 @@ export function useCockpit(source: () => Sim | null): void {
       lastClick: null as object | null,
       sim: null as Sim | null,
       halfRate: false,
-      input: { sim: null as unknown as Sim, simDt: 0, shadows: false, shadowMapSize: 1024 },
+      input: {
+        sim: null as unknown as Sim,
+        simDt: 0,
+        realDt: 0,
+        shadows: false,
+        shadowMapSize: 1024,
+      },
       pointer: { x: 0, y: 0 },
     }),
     [],
@@ -164,6 +172,7 @@ export function useCockpit(source: () => Sim | null): void {
     const input = state.input;
     input.sim = sim;
     input.simDt = simDt;
+    input.realDt = frameInfo.realDt;
     input.shadows = q.shadows;
     input.shadowMapSize = q.level === 'high' ? 2048 : 1024;
     model.update(input);
@@ -173,20 +182,20 @@ export function useCockpit(source: () => Sim | null): void {
     if (viewInput.cursorFree) {
       state.pointer.x = viewInput.pointerX;
       state.pointer.y = viewInput.pointerY;
-      model.hover(cockpitCamera, state.pointer, height);
+      model.hover(cockpitCamera, state.pointer, height, sim, frameInfo.realDt);
       const click = viewInput.click;
       if (click && click !== state.lastClick) {
         state.lastClick = click;
         const hit = model.pick(cockpitCamera, click.x, click.y);
         if (hit) {
-          if (!model.localAction(hit.id, sim)) {
-            const command = commandForControl(hit.id, click.button, model.switchState);
+          if (!model.localAction(hit.id, sim, click.button)) {
+            const command = clickCommand(hit.id, click.button, model.switchState);
             if (command) pushCommand(sim, command);
           }
           viewInput.click = null;
         }
       }
-    } else model.hover(cockpitCamera, null, height);
+    } else model.hover(cockpitCamera, null, height, sim);
   });
 }
 

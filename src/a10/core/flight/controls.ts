@@ -14,12 +14,14 @@
  *  - PAC and the low-altitude autopilot add limited-authority series commands (pac.ts,
  *    autopilot.ts).
  */
-import { A10, A10_FCS as F } from '../../data/aircraft';
+import { A10, A10_AERO, A10_FCS as F } from '../../data/aircraft';
+import { G0 } from '../constants';
 import { pitchRate, rollRate, yawRate } from '../frames';
 import type { Sim } from '../types';
+import { machLiftFactor } from './aero';
 import { stepAutopilot } from './autopilot';
 import { stepPac } from './pac';
-import { startTrim } from './trim';
+import { startTrim, trimAircraft } from './trim';
 import { clamp, moveToward, qSchedule } from './util';
 
 const DEG = Math.PI / 180;
@@ -87,6 +89,39 @@ function stepSlats(sim: Sim, dt: number): void {
   s.slats = moveToward(s.slats, want ? 1 : 0, 1 / F.slatTravelTime, dt);
 }
 
+/**
+ * Stick deflection (fraction of full travel) per g of load factor at the present flight
+ * condition, from the lift and moment balance of a steady pull-up (the manoeuvre margin). An
+ * extra Δn at the pitch rate q = g·Δn/V (q̂ = q·c/2V) with elevator δe and Δα:
+ *   lift:    CL_α·Δα + CL_δe·δe + CL_q·q̂ = Δn·W/(q̄S)
+ *   moment:  Cm_α·Δα + Cm_δe·δe + Cm_q·q̂ = 0
+ * With mechanical controls the g per unit stick grows with dynamic pressure (≈4 g at 200 kn, about
+ * four times that at 400 kn); the input layer uses this to give a held key about the g limit at
+ * any speed. Infinity when there is no airflow to speak of.
+ */
+export function stickPerG(sim: Sim): number {
+  const ac = sim.aircraft;
+  const qS = ac.dynamicPressure * A10.wingArea;
+  const v = ac.tas;
+  if (qS < 1 || v < 1) return Infinity;
+  const A = A10_AERO;
+  const clAlpha = A.clAlpha * machLiftFactor(ac.mach);
+  const w = (ac.mass * G0) / qS;
+  const h = (G0 * A10.mac) / (2 * v * v);
+  // Lift acts at the reference point: a CG ahead of it (cgBody.z < 0, −Z is the nose) adds a
+  // nose-down moment in proportion to the lift (dynamics.ts), a larger static margin.
+  const k = ac.cgBody.z / A10.mac;
+  const cmAlpha = A.cmAlpha + clAlpha * k;
+  const cmElevator = A.cmElevator + A.clElevator * k;
+  const cmQ = A.cmQ + A.clQ * k;
+  // Δn/δe = (CL_δe − CL_α·Cm_δe/Cm_α) / (W/q̄S − CL_q·h + CL_α·Cm_q·h/Cm_α), per rad.
+  const perRad =
+    (A.clElevator - (clAlpha * cmElevator) / cmAlpha) /
+    (w - A.clQ * h + (clAlpha * cmQ * h) / cmAlpha);
+  const gPerUnitStick = perRad * A.elevatorMax;
+  return gPerUnitStick > 1e-6 ? 1 / gPerUnitStick : Infinity;
+}
+
 /** Flight controls → surface positions (see the file comment). */
 export function stepFlightControls(sim: Sim, dt: number): void {
   const ac = sim.aircraft;
@@ -94,6 +129,11 @@ export function stepFlightControls(sim: Sim, dt: number): void {
   const f = ac.fcs;
   if (f.trimPending) startTrim(sim);
   if (ac.crashed) return;
+  if (f.bounceTrimPending) {
+    // After an invulnerable bounce (ground.ts): steady flight along the new path.
+    f.bounceTrimPending = false;
+    trimAircraft(sim, ac.flightPathAngle);
+  }
 
   ac.engines[0].lever = clamp(input.throttle[0], 0, 1);
   ac.engines[1].lever = clamp(input.throttle[1], 0, 1);

@@ -1,33 +1,28 @@
 /**
- * The cockpit's two display surfaces for wave 2's multifunction displays (PLAN_A10.md §7: the
- * A-10C's left and right MFCDs). OWNED BY THE COCKPIT MODULE.
+ * The cockpit's two display surfaces: the screens of the A-10C's left and right multifunction
+ * colour displays (PLAN_A10.md §7; the bezels and buttons are mfcd.ts). OWNED BY THE COCKPIT
+ * MODULE. The MFD module (view/mfd) draws its pages on them (ARCHITECTURE §6, §12.7).
  *
- *   right  the A-10A television monitor's screen (meta.displays.tv: the screen of the monitor
- *          right of the ADI; the A-10A+'s colour display, meta.displays.mpcd, sits in the same
- *          place). The monitor's own screen mesh is hidden and this surface replaces it.
- *   left   a placeholder where an A-10C left MFCD sits: the mirror image of the right screen
- *          across the centreline, mounted on a thin bezel just proud of the panel, left of the
- *          ADI and the airspeed indicator (body X −0.30 … −0.17 m, Y 0.78 … 0.92 m). It covers
- *          the A-10A's AoA gauge, clock and UHF read-out, which the A-10C does not have there:
- *          it is hidden until wave 2 calls `show(true)` (the A-10C variant), so the A-10A
- *          instruments stay visible meanwhile.
+ *   right  over the A-10A television monitor, right of the ADI
+ *   left   its mirror image left of the ADI, over the A-10A standby attitude indicator, angle-of-
+ *          attack gauge, clock and HUD control panel (hidden by the cockpit: the A-10C has none
+ *          of them there)
  *
- * Each surface owns a canvas and a CanvasTexture (the slot): draw into `canvas` and set
- * `texture.needsUpdate = true`, or hand over another texture (a render target's) with
- * `setPicture`. Until then each shows a dark, powered-off screen. The screens are unlit
- * (MeshBasicMaterial, not tone-mapped), so a page shows its own colours.
+ * Both are shown from the start (the A-10C variant, decided at M6). Each surface owns a canvas
+ * and a CanvasTexture (the slot): draw into `canvas` and set `texture.needsUpdate = true`, or hand
+ * over another texture (a render target's) with `setPicture`. Until then each shows a dark,
+ * powered-off screen. The screens are unlit (MeshBasicMaterial, not tone-mapped), so a page shows
+ * its own colours. `show(false)` hides a screen: the dark glass of the bezel's window shows.
  */
 import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
-  DoubleSide,
   Group,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   SRGBColorSpace,
   Vector3,
   type Texture,
@@ -59,14 +54,6 @@ export interface DisplaySurface {
 }
 
 export const DISPLAY_CANVAS_SIZE = 512;
-
-/** BODY corners of the right screen if the meta lacks them (the TV monitor, meta.displays.tv). */
-const TV_CORNERS: [number, number, number][] = [
-  [0.1655, 0.9229, -5.2622],
-  [0.3033, 0.9229, -5.2622],
-  [0.3033, 0.7835, -5.2519],
-  [0.1655, 0.7835, -5.2519],
-];
 
 let current: { left: DisplaySurface; right: DisplaySurface } | null = null;
 const listeners = new Set<(d: { left: DisplaySurface; right: DisplaySurface }) => void>();
@@ -188,58 +175,31 @@ function createSurface(
     },
     show(visible) {
       mesh.visible = visible;
-      const bezel = mesh.userData.bezel as Mesh | undefined;
-      if (bezel) bezel.visible = visible;
     },
   };
   return surface;
 }
 
-/** A thin dark bezel around the left placeholder screen (the right one has the TV's own). */
-function createBezel(s: DisplaySurface): Mesh {
-  const [tl, tr, br, bl] = s.corners;
-  const m = 0.012;
-  const across = new Vector3().subVectors(tr, tl).normalize();
-  const down = new Vector3().subVectors(bl, tl).normalize();
-  const back = s.normal.clone().multiplyScalar(-0.0008);
-  const o = (p: Vector3, a: number, d: number) =>
-    p.clone().addScaledVector(across, a).addScaledVector(down, d).add(back);
-  const c = [o(tl, -m, -m), o(tr, m, -m), o(br, m, m), o(bl, -m, m)];
-  const g = quadGeometry(c);
-  const mat = new MeshStandardMaterial({
-    name: 'display-bezel',
-    color: 0x1a1c1d,
-    roughness: 0.7,
-    metalness: 0.1,
-    side: DoubleSide,
-  });
-  const bezel = new Mesh(g, mat);
-  bezel.name = `display-${s.id}-bezel`;
-  return bezel;
+/** Screen corners (BODY) of both displays: top-left, top-right, bottom-right, bottom-left. */
+export interface DisplayCorners {
+  left: readonly Vector3[];
+  right: readonly Vector3[];
 }
 
 /**
- * Build the two surfaces into `parent` (the cockpit scene) and publish them. `tvCorners` comes
- * from the meta (displays.tv) when available.
+ * Build the two surfaces into `parent` (the cockpit scene) at the given screen corners (the
+ * MFCD bezels' windows, mfcd.ts) and publish them. Both are shown.
  */
 export function createDisplaySurfaces(
   parent: Group | { add(...o: Mesh[]): unknown },
-  tvCorners?: readonly (readonly [number, number, number])[],
+  corners: DisplayCorners,
 ): { left: DisplaySurface; right: DisplaySurface } {
-  const right3 = (tvCorners ?? TV_CORNERS).map(
-    (p) => [p[0], p[1], p[2]] as [number, number, number],
-  );
-  // meta corners run TL, TR, BR, BL as seen from the seat
-  const right = createSurface('right', right3, 0.0015);
-  // the mirror image across the centreline: TL ← mirrored TR, TR ← mirrored TL, …
-  const mirror = (p: [number, number, number]): [number, number, number] => [-p[0], p[1], p[2]];
-  const left3 = [mirror(right3[1]), mirror(right3[0]), mirror(right3[3]), mirror(right3[2])];
-  // stand the placeholder just proud of the instruments it covers (their bezels reach ≈2 cm)
-  const left = createSurface('left', left3, 0.024);
-  const bezel = createBezel(left);
-  left.mesh.userData.bezel = bezel;
-  parent.add(right.mesh, left.mesh, bezel);
-  left.show(false);
+  const toArray = (c: readonly Vector3[]) =>
+    c.map((v) => [v.x, v.y, v.z] as [number, number, number]);
+  // a hair in front of the bezel's dark back plate
+  const right = createSurface('right', toArray(corners.right), 0.0004);
+  const left = createSurface('left', toArray(corners.left), 0.0004);
+  parent.add(right.mesh, left.mesh);
   current = { left, right };
   for (const l of listeners) l(current);
   return current;
@@ -253,12 +213,6 @@ export function disposeDisplaySurfaces(): void {
     s.mesh.geometry.dispose();
     (s.mesh.material as MeshBasicMaterial).dispose();
     s.texture?.dispose();
-    const bezel = s.mesh.userData.bezel as Mesh | undefined;
-    if (bezel) {
-      bezel.removeFromParent();
-      bezel.geometry.dispose();
-      (bezel.material as MeshStandardMaterial).dispose();
-    }
   }
   current = null;
 }

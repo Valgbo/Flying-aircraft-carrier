@@ -33,6 +33,7 @@ import type { AircraftState } from '../flight/types';
 import type { Sim } from '../types';
 import { muzzleVelocity } from './ballistics';
 import { allocRound } from './pool';
+import { interpolatePose } from './pose';
 import { RoundType, type AmmoLoad, type GunState } from './types';
 
 /** Full rate, rounds per second. */
@@ -270,32 +271,6 @@ function fireRound(sim: Sim, f: number, t: number, dt: number): void {
   pool.vz[i] = _d.z;
   pool.fireTime[i] = t;
   pool.burst[i] = gun.burstNumber;
-}
-
-/**
- * The aircraft's position (cubic Hermite from the end positions and velocities), velocity
- * (linear) and orientation (slerp) at fraction f of the last flight step of length dt.
- */
-function interpolatePose(
-  ac: AircraftState,
-  f: number,
-  dt: number,
-  outPos: Vector3,
-  outVel: Vector3,
-  outQ: Quaternion,
-): void {
-  const f2 = f * f;
-  const f3 = f2 * f;
-  const h01 = 3 * f2 - 2 * f3;
-  const h10 = f - 2 * f2 + f3;
-  const h11 = f3 - f2;
-  outPos
-    .copy(ac.prevPosition)
-    .lerp(ac.position, h01)
-    .addScaledVector(ac.prevVelocity, h10 * dt)
-    .addScaledVector(ac.velocity, h11 * dt);
-  outVel.copy(ac.prevVelocity).lerp(ac.velocity, f);
-  outQ.slerpQuaternions(ac.prevOrientation, ac.orientation, f);
 }
 
 /** The first round of a burst left at sim time t. */

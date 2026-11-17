@@ -134,6 +134,14 @@ export const PK = {
   dustTrail: 26,
   ejecta: 27,
   fuelball: 28,
+  /** Rocket or missile motor: the flame jet behind the nozzle (one per frame, short-lived). */
+  motorFlame: 29,
+  /** Rocket or missile motor: the smoke trail it leaves in the air. */
+  motorSmoke: 30,
+  /** The cloud a motor makes as it lights on the rail or in the tube. */
+  launchSmoke: 31,
+  /** White-phosphorus mark: the dense cloud that drifts downwind for minutes. */
+  wpMark: 32,
 } as const;
 export type PK = (typeof PK)[keyof typeof PK];
 
@@ -730,6 +738,100 @@ define(
     minPx: 2,
     flicker: 0.2,
     thermal: 1,
+  }),
+);
+
+define(
+  PK.motorFlame,
+  kind({
+    name: 'motorFlame',
+    tile: TILE.star,
+    tiles: 1,
+    lit: 0,
+    drag: 0,
+    gravity: 0,
+    wind: 0,
+    ground: 0,
+    grow: 0.5,
+    fadeIn: 0,
+    fadeOut: 0.3,
+    alpha: 0,
+    // a solid-propellant flame: white-yellow, brighter than the sky by far (it blooms)
+    emissive: 18,
+    emissiveLife: 1,
+    fireRamp: true,
+    rampHeat: 0.95,
+    // stretched along its motion: a jet a few metres long behind the nozzle
+    stretch: 0.012,
+    spin: 0,
+    minPx: 2.2,
+    flicker: 0.35,
+    thermal: 1,
+  }),
+);
+define(
+  PK.motorSmoke,
+  kind({
+    name: 'motorSmoke',
+    // the exhaust balloons within a fraction of a second, then spreads slowly
+    growTau: 0.5,
+    // the exhaust stops in the air within metres and then drifts with the wind
+    drag: 3.5,
+    rise: 0.5,
+    riseTau: 8,
+    wind: 1,
+    ground: 1,
+    grow: 0.5,
+    fadeIn: 0.01,
+    fadeOut: 0.35,
+    alpha: 0.75,
+    spin: 0.2,
+    // solid-propellant smoke (aluminium oxide, water): white-grey
+    color: [0.74, 0.73, 0.71],
+    minPx: 1.4,
+    thermal: 0.4,
+  }),
+);
+define(
+  PK.launchSmoke,
+  kind({
+    name: 'launchSmoke',
+    growTau: 0.5,
+    drag: 4,
+    rise: 0.6,
+    riseTau: 6,
+    wind: 1,
+    ground: 1,
+    grow: 0.45,
+    fadeIn: 0,
+    fadeOut: 0.3,
+    alpha: 0.85,
+    spin: 0.4,
+    color: [0.7, 0.69, 0.67],
+    minPx: 1.4,
+    thermal: 0.5,
+  }),
+);
+define(
+  PK.wpMark,
+  kind({
+    name: 'wpMark',
+    // phosphorus pentoxide takes up water from the air: a dense white cloud that swells slowly
+    growTau: 9,
+    drag: 0.9,
+    rise: 1.1,
+    riseTau: 30,
+    wind: 1,
+    ground: 1,
+    grow: 0.5,
+    fadeIn: 0.02,
+    fadeOut: 0.55,
+    alpha: 0.95,
+    spin: 0.04,
+    color: [0.95, 0.95, 0.94],
+    // seen from kilometres away: never thinner than a few pixels
+    minPx: 3,
+    thermal: 0.45,
   }),
 );
 

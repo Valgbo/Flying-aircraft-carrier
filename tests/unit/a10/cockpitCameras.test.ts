@@ -3,7 +3,7 @@
  * of the flight path and re-placed once passed, orbit around the aircraft, the weapon camera on
  * the newest store in flight (else chase), and the camera at the last vehicle hit or attacked.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Quaternion, Vector3 } from 'three';
 import { quaternionFromAttitude } from '../../../src/a10/core/frames';
 import { createSim } from '../../../src/a10/core/sim';
@@ -11,12 +11,22 @@ import type { Sim } from '../../../src/a10/core/types';
 import type { StoreBody } from '../../../src/a10/core/weapons/types';
 import type { Vehicle } from '../../../src/a10/core/targets/types';
 import { createFlatTerrain } from '../../../src/a10/core/world';
+import { frameInfo } from '../../../src/a10/view/frame';
 import {
   OUTSIDE,
   OutsideCameras,
   type CameraPose,
   type OutsideInput,
 } from '../../../src/a10/view/cockpit/outsideViews';
+
+// These tests place the aircraft directly, without simulation steps: draw the current state
+// (alpha = 1; the interpolation between steps is tested in cockpitInterpolation.test.ts).
+beforeEach(() => {
+  frameInfo.alpha = 1;
+});
+afterEach(() => {
+  frameInfo.alpha = 0;
+});
 
 const ground = () => 0;
 const input = (patch: Partial<OutsideInput> = {}): OutsideInput => ({
@@ -237,5 +247,141 @@ describe('ground', () => {
     const p = pose();
     cam.update('orbit', s, input({ lookDY: 1e4 }), () => 50, p);
     expect(p.position.y).toBeGreaterThanOrEqual(50 + OUTSIDE.groundClearance - 1e-9);
+  });
+});
+
+describe('weapon camera (wave 2)', () => {
+  function body(id: number, pos: Vector3, vel: Vector3): StoreBody {
+    return {
+      id,
+      type: 'MK-82',
+      kind: 'bomb',
+      alive: true,
+      station: 4,
+      releaseTime: 0,
+      position: pos,
+      velocity: vel,
+      orientation: new Quaternion(),
+      motorTime: 0,
+      armed: true,
+      data: {},
+    } as unknown as StoreBody;
+  }
+
+  it('follows the newest store from behind and holds on its detonation point', () => {
+    const s = sim();
+    const cam = new OutsideCameras();
+    const p = pose();
+    const first = body(7, new Vector3(0, 1400, -200), new Vector3(0, -20, -120));
+    s.projectiles.bodies.push(first);
+    expect(cam.update('weapon', s, input(), ground, p)).toBe('weapon');
+    expect(cam.weaponId).toBe(7);
+    // a second store leaves (a pair or the next pass): the camera takes the newest
+    const second = body(8, new Vector3(5, 1450, -100), new Vector3(0, -10, -125));
+    s.projectiles.bodies.push(second);
+    cam.update('weapon', s, input(), ground, p);
+    expect(cam.weaponId).toBe(8);
+    const toBody = new Vector3().subVectors(second.position, p.position);
+    expect(toBody.length()).toBeLessThan(OUTSIDE.weapon.back + OUTSIDE.weapon.up + 1);
+    expect(toBody.dot(second.velocity)).toBeGreaterThan(0);
+
+    // both hit the ground; the newest one's detonation gives the impact point
+    const impact = new Vector3(8, 2, -1900);
+    cam.noteEvents(
+      [
+        {
+          type: 'detonation',
+          t: 20,
+          position: { x: impact.x, y: impact.y, z: impact.z },
+          charge: 96,
+          kind: 'bomb',
+          vehicleId: -1,
+          surface: 'grass',
+          bodyId: 8,
+        } as never,
+      ],
+      s,
+    );
+    s.projectiles.bodies.length = 0; // removed in the step they detonate (§12.2)
+    let shown = cam.update('weapon', s, input({ dt: 0.05 }), ground, p);
+    expect(shown).toBe('weapon');
+    const look = forward(p.quaternion);
+    let toImpact = new Vector3().subVectors(impact, p.position).normalize();
+    expect(look.dot(toImpact)).toBeGreaterThan(0.999);
+    // it backs off to a vantage point above the impact and keeps watching it
+    let t = 0.05;
+    while (t < OUTSIDE.weapon.hold - 0.2) {
+      shown = cam.update('weapon', s, input({ dt: 0.1 }), ground, p);
+      t += 0.1;
+      expect(shown).toBe('weapon');
+    }
+    toImpact = new Vector3().subVectors(impact, p.position);
+    expect(forward(p.quaternion).dot(toImpact.clone().normalize())).toBeGreaterThan(0.999);
+    const vantage = Math.hypot(OUTSIDE.weapon.holdBack, OUTSIDE.weapon.holdUp);
+    expect(toImpact.length()).toBeGreaterThan(0.8 * vantage);
+    expect(toImpact.length()).toBeLessThan(1.2 * vantage);
+    expect(p.position.y).toBeGreaterThan(impact.y + 0.5 * OUTSIDE.weapon.holdUp);
+    // then back to chase
+    cam.update('weapon', s, input({ dt: 0.5 }), ground, p);
+    expect(cam.update('weapon', s, input({ dt: 0.1 }), ground, p)).toBe('chase');
+  });
+});
+
+describe('target camera (wave 2)', () => {
+  it('watches the vehicle under the SPI or the last one attacked, whichever is more recent', () => {
+    const s = sim();
+    s.targets.vehicles.push(vehicle(3, 100, -3000), vehicle(4, -900, -2500));
+    const cam = new OutsideCameras();
+    const p = pose();
+    // the SPI somewhere empty: nothing under it
+    s.avionics.spi.valid = true;
+    s.avionics.spi.position.set(3000, 0, -3000);
+    s.time = 10;
+    cam.noteEvents([], s);
+    expect(cam.spiVehicle).toBe(-1);
+    // a burst on vehicle 4
+    s.time = 11;
+    cam.noteEvents(
+      [
+        {
+          type: 'roundImpact',
+          t: 11,
+          round: 0,
+          position: { x: -900, y: 0, z: -2500 },
+          velocity: { x: 0, y: -100, z: -900 },
+          normal: { x: 0, y: 1, z: 0 },
+          target: { kind: 'vehicle', vehicleId: 4, part: 'hull' },
+          outcome: 'penetrated',
+        } as never,
+      ],
+      s,
+    );
+    expect(cam.watchedVehicle()).toBe(4);
+    // later the pod puts the SPI on vehicle 3: the camera goes there
+    s.time = 15;
+    s.avionics.spi.position.set(105, 0, -2995);
+    cam.noteEvents([], s);
+    expect(cam.spiVehicle).toBe(3);
+    expect(cam.watchedVehicle()).toBe(3);
+    expect(cam.update('target', s, input(), ground, p)).toBe('target');
+    expect(p.position.distanceTo(s.targets.vehicles[0].position)).toBeLessThan(40);
+    // then vehicle 4 is attacked again: back to it
+    s.time = 20;
+    cam.noteEvents(
+      [
+        {
+          type: 'vehicleDamaged',
+          t: 20,
+          vehicleId: 4,
+          vehicleKind: 'mbt',
+          condition: 'damaged',
+          component: 'engine',
+        } as never,
+      ],
+      s,
+    );
+    expect(cam.watchedVehicle()).toBe(4);
+    cam.update('target', s, input(), ground, p);
+    expect(p.position.distanceTo(s.targets.vehicles[1].position)).toBeLessThan(40);
   });
 });

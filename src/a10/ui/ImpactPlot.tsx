@@ -1,16 +1,16 @@
 /**
  * Overhead plot of the impacts around one vehicle, in the vehicle's own frame (its front up):
- * the hull and turret outline to scale, every round that hit it coloured by what it did, and
- * the near misses on the ground around it in grey. Shape repeats the colour (circle, square,
- * diamond) so the classes read without colour; each mark has a tooltip and the hit table
- * beside the plot is its table view.
+ * the hull and turret outline to scale, every round that hit it coloured by what it did, the
+ * bursts whose blast or fragments reached it (rings), and the near misses on the ground around
+ * it in grey. Shape repeats the colour (circle, square, diamond, ring) so the classes read
+ * without colour; each mark has a tooltip and the hit table beside the plot is its table view.
  */
 import type { VehicleKind } from '../core/targets/types';
 import { VEHICLE_SHAPES } from '../data/vehicles';
 import { IMPACT_CLASS_LABEL, plotScale, type ImpactClass, type ImpactMark } from './debriefData';
 import { formatClock } from './format';
 
-const ORDER: readonly ImpactClass[] = ['penetrated', 'defeated', 'burst', 'ground'];
+const ORDER: readonly ImpactClass[] = ['penetrated', 'defeated', 'burst', 'fragments', 'ground'];
 
 function Mark({ m, r }: { m: ImpactMark; r: number }) {
   const x = m.x;
@@ -137,7 +137,9 @@ export default function ImpactPlot({
         {ORDER.filter((c) => counts.has(c)).map((c) => (
           <span key={c} className="a10-plot__key">
             <svg viewBox="-1 -1 2 2" width="10" height="10" aria-hidden="true">
-              {c === 'defeated' ? (
+              {c === 'fragments' ? (
+                <circle className={`a10-impact a10-impact--${c}`} r={0.75} />
+              ) : c === 'defeated' ? (
                 <rect
                   className={`a10-impact a10-impact--${c}`}
                   x={-0.8}

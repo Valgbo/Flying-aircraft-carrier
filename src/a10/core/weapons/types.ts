@@ -213,7 +213,7 @@ export interface StoreBody {
   position: Vector3;
   velocity: Vector3;
   orientation: Quaternion;
-  /** Motor burn time remaining, s. */
+  /** Motor burn time remaining, s (0 for bodies without a motor, and after burn-out). */
   motorTime: number;
   /** Fuze armed (arming time elapsed). */
   armed: boolean;
@@ -240,10 +240,82 @@ export interface StoreBody {
   };
   /** Index of its record in debrief.weapons (-1 none). */
   record: number;
+
+  // ---- added by the stores module (wave 2) ----
+  /**
+   * Position and attitude at the start of the last step (at release for a body released in
+   * it): views draw `prev` → current by frameInfo.alpha, as drawPose does for the aircraft.
+   */
+  prevPosition: Vector3;
+  prevOrientation: Quaternion;
+  /** The free-flight model the body flies with (storeModels.ts); null only while pooled. */
+  flight: StoreFlightSpec | null;
+  /** Fuze option of the release (bombs: NOSE instantaneous, TAIL short delay, N/T both). */
+  fuze: FuzeOption;
+  /** Ground-track heading of the aircraft at release, rad: the run-in of the miss clock. */
+  runIn: number;
+  /** A jettisoned rack, launcher or pod: the stores it still carried (empty otherwise). */
+  carried: StoreType[];
+  /** A jettisoned rocket pod: rockets still in it (0 otherwise). */
+  rockets: number;
+  /** Mass now, kg (a rocket loses its propellant as it burns). */
+  mass: number;
+}
+
+/**
+ * A store's free-flight model (storeModels.ts): a point mass with drag against Mach number,
+ * gravity, the wind, and a ballute or a rocket motor. The live bodies and the fire-control
+ * computer's registered model integrate it with the same function (PLAN §6.1 rule 2).
+ */
+export interface StoreFlightSpec {
+  /** Registry key: the store type, `${store}/HD`, a missile type, or 'JETTISON'. */
+  key: string;
+  /** Mass when it leaves the aircraft, kg (a rocket: after the burn in its launch tube). */
+  mass: number;
+  /** Reference area of the drag table, m². */
+  area: number;
+  /** Drag coefficient on `area` against Mach, on a uniform grid of FLIGHT_MACH_STEP. */
+  cd: Float64Array;
+  /** Constant drag area added (a tumbling rack or pod), m². */
+  extraDragArea: number;
+  /** Ballute (Mk 82 AIR high drag): inflated drag area, m² (0 = none)… */
+  balluteArea: number;
+  /** …and the times after release it starts and finishes filling, s. */
+  balluteStart: number;
+  balluteFull: number;
+  /** Rocket motor (Hydra 70), or null. */
+  motor: RocketMotor | null;
+  /** Motor time at release (the burn in the launch tube), s. */
+  motorOffset: number;
+  /**
+   * Times after release at which the forcing has a kink or a jump (ballute, thrust-curve knots,
+   * burn-out), ascending: the integrator steps exactly onto them, at any step length.
+   */
+  breaks: Float64Array;
+  /** Time constant of the drawn axis turning into the relative wind, s (views only). */
+  weathercockTime: number;
+}
+
+/** A solid rocket motor: a piecewise-linear thrust curve and the propellant it burns. */
+export interface RocketMotor {
+  /** Knots of the thrust curve: time since ignition (s) and thrust (N). */
+  time: Float64Array;
+  thrust: Float64Array;
+  /** Impulse delivered up to each knot, N·s. */
+  impulse: Float64Array;
+  totalImpulse: number;
+  burnTime: number;
+  /** Mass at ignition and propellant burnt, kg (the mass falls in proportion to the impulse). */
+  ignitionMass: number;
+  propellant: number;
+  /** Drag factor while the motor burns. */
+  plumeDrag: number;
 }
 
 export interface ProjectileState {
   rounds: RoundPool;
   bodies: StoreBody[];
   nextBodyId: number;
+  /** Store bodies kept for reuse (added by the stores module: no allocation per release). */
+  bodyPool: StoreBody[];
 }

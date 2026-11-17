@@ -39,6 +39,7 @@ import {
   type KeyMods,
 } from './engine';
 import { computeGate, isInputCaptureActive } from './gating';
+import { keyPitchAuthority, type KeyAuthority } from './keyAuthority';
 import { shortDeviceName, deviceIdentity, type PadLike } from './devices';
 import { viewInput } from './viewInput';
 
@@ -147,6 +148,8 @@ export function attachInputRuntime(options: RuntimeOptions = {}): InputRuntime {
     invertLook: false,
     speedBrakePosition: Number.NaN,
   };
+  /** Reused every frame: the keyboard's pitch authority at the present flight condition. */
+  const keyAuthority: KeyAuthority = { pull: 1, push: 1 };
   const target = options.target ?? defaultTarget;
   let currentSim: Sim | null = null;
   let locked = false;
@@ -408,6 +411,9 @@ export function attachInputRuntime(options: RuntimeOptions = {}): InputRuntime {
     ctx.mouseStick = state.settings.mouseStick;
     ctx.invertLook = state.settings.invertY;
     ctx.speedBrakePosition = aircraft?.speedBrakeCmd ?? Number.NaN;
+    keyPitchAuthority(sim, keyAuthority);
+    ctx.keyPitchPull = keyAuthority.pull;
+    ctx.keyPitchPush = keyAuthority.push;
     engine.update(ctx, out);
 
     for (const p of out.presses) {

@@ -30,6 +30,7 @@ import {
   ReplaceStencilOp,
   Scene,
   Vector3,
+  type Object3D,
   type WebGLRenderer,
   type WebGLRenderTarget,
 } from 'three';
@@ -37,10 +38,11 @@ import { A10_GEOMETRY } from '../../data/geometry';
 import type { Sim } from '../../core/types';
 import { cockpitCamera } from '../cockpit/cockpitCamera';
 import { a10Env } from '../environment/env';
+import { frameInfo } from '../frame';
 import type { RenderPassContext } from '../pipeline';
 import { HUD_GLASS, computeHudLayout } from './hudLayout';
 import { HudLineBatch, type LineStyle } from './lineBatch';
-import { HudSymbology, type HudBuildInfo } from './symbology';
+import { HudSymbology, type HudBuildInfo, type HudDrawState } from './symbology';
 
 /** HUD green, #2fff4a (converted to linear by three's colour management). */
 export const HUD_GREEN = new Color(0x2fff4a);
@@ -66,6 +68,46 @@ const GLASS_LIFT = 0.003;
 
 const _eye = new Vector3();
 const _q = new Quaternion();
+const _hq = new Quaternion();
+const _hp = new Vector3();
+const _drawn: HudDrawState = {
+  position: new Vector3(),
+  orientation: new Quaternion(),
+  velocity: new Vector3(),
+};
+
+/**
+ * The aircraft pose the world was drawn with, recovered from the world camera and the head
+ * (the cockpit camera, body frame): the camera rig composes world camera = aircraft ∘ head, so
+ * aircraft orientation = camera · head⁻¹ and position = camera − orientation · head. This is
+ * `drawPose()` when the rig follows ARCHITECTURE §6, and the HUD agrees with the drawn world
+ * even where a rig or sandbox places the camera otherwise (FC-4). Allocation-free.
+ */
+export function aircraftPoseFromView(
+  world: Object3D,
+  head: Object3D,
+  outPosition: Vector3,
+  outOrientation: Quaternion,
+): void {
+  world.getWorldQuaternion(outOrientation);
+  head.getWorldQuaternion(_hq);
+  outOrientation.multiply(_hq.invert()).normalize();
+  world.getWorldPosition(outPosition);
+  head.getWorldPosition(_hp);
+  outPosition.sub(_hp.applyQuaternion(outOrientation));
+}
+
+/**
+ * The aircraft's velocity at the drawn time: between the start and the end of the last step by
+ * `frameInfo.alpha`, as drawPose interpolates the pose. A sim that has not stepped yet (a paused
+ * start, a sandbox writing its state by hand) has no previous step: its present velocity.
+ */
+export function drawnVelocity(sim: Sim, out: Vector3): Vector3 {
+  const ac = sim.aircraft;
+  if (sim.stepCount === 0) return out.copy(ac.velocity);
+  const a = Math.min(1, Math.max(0, frameInfo.alpha));
+  return out.lerpVectors(ac.prevVelocity, ac.velocity, a);
+}
 
 export class HudRenderer {
   readonly symbology = new HudSymbology(computeHudLayout());
@@ -126,16 +168,21 @@ export class HudRenderer {
     return this.symbology.info;
   }
 
-  /** Build this frame's symbology from the simulation and draw it into ctx.target. */
+  /**
+   * Build this frame's symbology from the simulation and draw it into ctx.target. The
+   * world-referenced symbols are projected from the pose the world camera was drawn with.
+   */
   render(ctx: RenderPassContext, sim: Sim): void {
     const gl = ctx.gl;
     cockpitCamera.updateMatrixWorld();
     cockpitCamera.getWorldPosition(_eye);
     cockpitCamera.getWorldQuaternion(_q);
+    aircraftPoseFromView(ctx.camera, cockpitCamera, _drawn.position, _drawn.orientation);
+    drawnVelocity(sim, _drawn.velocity);
 
     const batch = this.batch;
     batch.begin();
-    this.symbology.build(sim, _eye, batch);
+    this.symbology.build(sim, _eye, batch, undefined, _drawn);
     batch.end();
     if (batch.count === 0) return;
 

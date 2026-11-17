@@ -23,6 +23,7 @@ import {
   type ImpactKind,
   type MovingPoint,
 } from './propagation';
+import type { LaunchKind } from './classify';
 import type { BlastSize } from './synth';
 import { getSample } from './samples';
 
@@ -31,7 +32,7 @@ export type WorldSound =
   | { kind: 'impact'; impact: ImpactKind; count: number; strength: number }
   | { kind: 'blast'; size: BlastSize; scale: number }
   | { kind: 'release' }
-  | { kind: 'launch' };
+  | { kind: 'launch'; weapon: LaunchKind };
 
 /**
  * Reference level (linear) of each sound at its reference distance (m), and its spreading loss
@@ -51,6 +52,8 @@ export const WORLD_REFERENCE: Record<string, { level: number; distance: number; 
     huge: { level: 1, distance: 150, rolloff: 0.8 },
     release: { level: 0.4, distance: 10, rolloff: 1 },
     launch: { level: 0.7, distance: 15, rolloff: 0.9 },
+    /** A Maverick's motor is several times a Hydra's: louder and heard farther. */
+    launchMissile: { level: 0.9, distance: 25, rolloff: 0.9 },
   };
 
 /** Below this a sound is not worth a source (−66 dB). */
@@ -192,6 +195,54 @@ class Follower {
 
 const _src: MovingPoint = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
 
+/** The few nearest sources of a kind, nearest first: list index, distance and id (scratch). */
+const NEAR_MAX = 8;
+const _nearIdx = new Int32Array(NEAR_MAX);
+const _nearDist = new Float64Array(NEAR_MAX);
+const _nearId = new Int32Array(NEAR_MAX);
+let _nearCount = 0;
+
+/** Start a nearest-`max` selection (insertion into a tiny sorted list: no allocation). */
+function nearReset(): void {
+  _nearCount = 0;
+}
+
+function nearOffer(i: number, id: number, d: number, max: number): void {
+  const cap = Math.min(max, NEAR_MAX);
+  if (_nearCount === cap && d >= _nearDist[_nearCount - 1]) return;
+  let j = _nearCount < cap ? _nearCount++ : _nearCount - 1;
+  while (j > 0 && _nearDist[j - 1] > d) {
+    _nearDist[j] = _nearDist[j - 1];
+    _nearIdx[j] = _nearIdx[j - 1];
+    _nearId[j] = _nearId[j - 1];
+    j--;
+  }
+  _nearDist[j] = d;
+  _nearIdx[j] = i;
+  _nearId[j] = id;
+}
+
+function findVoice(voices: readonly Follower[], id: number): Follower | null {
+  for (let i = 0; i < voices.length; i++) if (voices[i].id === id) return voices[i];
+  return null;
+}
+
+/** Keep each chosen source on the voice it already has; free voices go to new ones. */
+function assignVoices(voices: readonly Follower[], when: number): void {
+  for (let i = 0; i < voices.length; i++) {
+    const v = voices[i];
+    if (v.id < 0) continue;
+    let kept = false;
+    for (let j = 0; j < _nearCount && !kept; j++) if (_nearId[j] === v.id) kept = true;
+    if (!kept) v.silence(when);
+  }
+  for (let j = 0; j < _nearCount; j++) {
+    if (findVoice(voices, _nearId[j])) continue;
+    const free = findVoice(voices, -1);
+    if (free) free.id = _nearId[j];
+  }
+}
+
 export class WorldVoices {
   /** Impacts, cracks, releases, launches: short sounds. */
   readonly pool: VoicePool;
@@ -268,9 +319,12 @@ export class WorldVoices {
         break;
       }
       case 'launch': {
-        const ref = WORLD_REFERENCE.launch;
+        const missile = sound.weapon === 'missile';
+        const ref = missile ? WORLD_REFERENCE.launchMissile : WORLD_REFERENCE.launch;
         const level = ref.level * distanceGain(d, ref.distance, ref.rolloff);
-        this.pool.play(this.kit.synth.whoosh, when, level, cutoff, pan);
+        // a ripple: each rocket a touch different
+        const rate = missile ? 1 : 0.94 + 0.12 * ((this.variant * 0.618) % 1);
+        this.pool.play(this.kit.synth.launches[sound.weapon], when, level, cutoff, pan, rate);
         break;
       }
     }
@@ -278,28 +332,25 @@ export class WorldVoices {
 
   /** Burning vehicles near the listener crackle (the three nearest within 700 m). */
   updateFires(vehicles: readonly Vehicle[], listener: AudioListener, when: number): void {
-    const near: { v: Vehicle; d: number }[] = [];
-    for (const v of vehicles) {
+    nearReset();
+    for (let i = 0; i < vehicles.length; i++) {
+      const v = vehicles[i];
       if (!(v.fire > 0.02)) continue;
       const d = listener.distanceTo(v.position.x, v.position.y + 1.5, v.position.z);
-      if (d < FIRE_RANGE) near.push({ v, d });
+      if (d < FIRE_RANGE) nearOffer(i, v.id, d, this.fires.length);
     }
-    near.sort((a, b) => a.d - b.d);
-    near.length = Math.min(near.length, this.fires.length);
-    this.state.fires = near.length;
-    // keep each fire on the voice it already has
-    for (const f of this.fires) {
-      if (f.id >= 0 && !near.some((n) => n.v.id === f.id)) f.silence(when);
-    }
-    for (const n of near) {
-      let voice = this.fires.find((f) => f.id === n.v.id);
-      if (!voice) voice = this.fires.find((f) => f.id < 0);
+    const k = _nearCount;
+    this.state.fires = k;
+    assignVoices(this.fires, when);
+    for (let j = 0; j < k; j++) {
+      const v = vehicles[_nearIdx[j]];
+      const voice = findVoice(this.fires, v.id);
       if (!voice) continue;
-      voice.id = n.v.id;
-      const p = n.v.position;
+      const d = _nearDist[j];
+      const p = v.position;
       voice.set(
-        FIRE_LEVEL * n.v.fire * distanceGain(n.d, FIRE_REF),
-        absorptionCutoff(n.d),
+        FIRE_LEVEL * v.fire * distanceGain(d, FIRE_REF),
+        absorptionCutoff(d),
         listener.panOf(p.x, p.y + 1.5, p.z),
         when,
       );
@@ -313,32 +364,33 @@ export class WorldVoices {
     c: number,
     when: number,
   ): void {
-    const burning: { b: StoreBody; d: number }[] = [];
-    for (const b of bodies) {
+    nearReset();
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
       if (!b.alive || !(b.motorTime > 0)) continue;
-      burning.push({ b, d: listener.distanceTo(b.position.x, b.position.y, b.position.z) });
+      const d = listener.distanceTo(b.position.x, b.position.y, b.position.z);
+      nearOffer(i, b.id, d, this.motors.length);
     }
-    burning.sort((a, b) => a.d - b.d);
-    burning.length = Math.min(burning.length, this.motors.length);
-    this.state.motors = burning.length;
-    for (const m of this.motors) {
-      if (m.id >= 0 && !burning.some((n) => n.b.id === m.id)) m.silence(when);
-    }
-    for (const n of burning) {
-      let voice = this.motors.find((m) => m.id === n.b.id);
-      if (!voice) voice = this.motors.find((m) => m.id < 0);
+    const k = _nearCount;
+    this.state.motors = k;
+    assignVoices(this.motors, when);
+    for (let j = 0; j < k; j++) {
+      const b = bodies[_nearIdx[j]];
+      const voice = findVoice(this.motors, b.id);
       if (!voice) continue;
-      voice.id = n.b.id;
-      const p = n.b.position;
+      const d = _nearDist[j];
+      const p = b.position;
       _src.x = p.x;
       _src.y = p.y;
       _src.z = p.z;
-      _src.vx = n.b.velocity.x;
-      _src.vy = n.b.velocity.y;
-      _src.vz = n.b.velocity.z;
+      _src.vx = b.velocity.x;
+      _src.vy = b.velocity.y;
+      _src.vz = b.velocity.z;
+      // a Maverick's motor is louder than a Hydra's
+      const level = b.kind === 'missile' ? MOTOR_LEVEL * 1.4 : MOTOR_LEVEL;
       voice.set(
-        MOTOR_LEVEL * distanceGain(n.d, MOTOR_REF),
-        absorptionCutoff(n.d),
+        level * distanceGain(d, MOTOR_REF),
+        absorptionCutoff(d),
         listener.panOf(p.x, p.y, p.z),
         when,
         dopplerFactor(_src, listener, c),

@@ -15,10 +15,19 @@
  */
 import type { WarningId } from '../core/flight/types';
 import type { Sim, SimEvent } from '../core/types';
+import type { StoreBody, StoreType } from '../core/weapons/types';
 import type { FrameInfo } from '../view/frame';
 import type { ListenerPose } from '../view/listener';
 import { AirframeVoices } from './airframe';
-import { blastOf, impactKindOf } from './classify';
+import {
+  createPlannedBlast,
+  cueOf,
+  impactKindOf,
+  launchKindOf,
+  planBlasts,
+  releaseClunks,
+  type PlannedBlast,
+} from './classify';
 import { CockpitVoices } from './cockpit';
 import { EngineVoices, type EngineInput } from './engines';
 import { GunVoices } from './gun';
@@ -81,7 +90,8 @@ export class A10AudioEngine {
     { n1: 0, n2: 0, running: false },
     { n1: 0, n2: 0, running: false },
   ];
-  private readonly secondaries = new Set<number>();
+  /** The frame's explosions as they will be heard (classify.ts planBlasts), pooled. */
+  private readonly blasts: PlannedBlast[] = Array.from({ length: 48 }, createPlannedBlast);
   private sim: Sim | null = null;
   private started = false;
   private stopped = false;
@@ -194,9 +204,14 @@ export class A10AudioEngine {
 
     // ---- events, at their exact times ----
     let gunEvent = false;
-    this.secondaries.clear();
-    for (const e of events) {
-      if (e.type === 'detonation' && e.kind === 'secondary') this.secondaries.add(e.vehicleId);
+    // explosions, each heard once (a store's burst and what it destroys or sets off with it)
+    const nBlasts = planBlasts(events, this.blasts);
+    for (let i = 0; i < nBlasts; i++) {
+      const b = this.blasts[i];
+      const sound: WorldSound = b.thump
+        ? { kind: 'impact', impact: 'ground', count: 1, strength: 6 }
+        : { kind: 'blast', size: b.size, scale: b.scale };
+      this.queue.push(b.t, b.x, b.y, b.z, sound);
     }
     for (const e of events) {
       switch (e.type) {
@@ -217,43 +232,25 @@ export class A10AudioEngine {
         case 'roundImpact':
           this.impacts.add(impactKindOf(e), e.t, e.position.x, e.position.y, e.position.z, 1);
           break;
-        case 'detonation': {
-          if (e.kind === 'dud') {
-            this.queue.push(e.t, e.position.x, e.position.y, e.position.z, {
-              kind: 'impact',
-              impact: 'ground',
-              count: 1,
-              strength: 6,
-            });
-            break;
-          }
-          const blast = blastOf(e);
-          if (blast) {
-            this.queue.push(e.t, e.position.x, e.position.y, e.position.z, {
-              kind: 'blast',
-              ...blast,
-            });
-          }
-          break;
-        }
-        case 'vehicleDestroyed': {
-          if (this.secondaries.has(e.vehicleId)) break;
-          const blast: WorldSound = e.catastrophic
-            ? { kind: 'blast', size: 'huge', scale: 0.9 }
-            : { kind: 'blast', size: 'medium', scale: 0.5 };
-          this.queue.push(e.t, e.position.x, e.position.y + 1, e.position.z, blast);
-          break;
-        }
         case 'storeReleased': {
+          // the ejector's clunk; a rocket or a Maverick leaves on its motor (its launch sound)
+          if (!releaseClunks(e.store, hasIgnition(events, e.bodyId))) break;
           if (listener.inCockpit) this.airframe.release(toAudio(e.t));
           else
             this.queue.push(e.t, ac.position.x, ac.position.y, ac.position.z, { kind: 'release' });
           break;
         }
         case 'motorIgnition': {
-          const body = sim.projectiles.bodies.find((b) => b.id === e.bodyId);
+          const body = findBody(sim, e.bodyId);
           const p = body ? body.position : ac.position;
-          this.queue.push(e.t, p.x, p.y, p.z, { kind: 'launch' });
+          const weapon = launchKindOf(body?.kind, releasedStore(events, e.bodyId));
+          this.queue.push(e.t, p.x, p.y, p.z, { kind: 'launch', weapon });
+          break;
+        }
+        case 'lock':
+        case 'laser': {
+          const cue = cueOf(e);
+          if (cue) this.cockpit.cue(cue, toAudio(e.t));
           break;
         }
         case 'warning':
@@ -391,4 +388,29 @@ export class A10AudioEngine {
       limiterReduction: this.mixer.limiterReduction,
     };
   }
+}
+
+function findBody(sim: Sim, id: number): StoreBody | null {
+  const list = sim.projectiles.bodies;
+  for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+/** Whether the frame has a motor lighting for this body (a rail or tube launch). */
+function hasIgnition(events: readonly SimEvent[], bodyId: number): boolean {
+  if (!(bodyId > 0)) return false;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.type === 'motorIgnition' && e.bodyId === bodyId) return true;
+  }
+  return false;
+}
+
+/** The store type released with this body in the frame, if its release is in it. */
+function releasedStore(events: readonly SimEvent[], bodyId: number): StoreType | undefined {
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.type === 'storeReleased' && e.bodyId === bodyId) return e.store;
+  }
+  return undefined;
 }

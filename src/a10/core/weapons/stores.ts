@@ -1,14 +1,8 @@
 /**
  * Stores on the eleven stations (PLAN_A10.md §6.8): building a loadout, its mass and drag for
- * the flight model, station legality, rearm and jettison. Release of bombs, rockets and missiles
- * is wave 2 (stepStores).
- *
- * The totals the flight model reads (core/flight/mass.ts, aero.ts), with x the body-x position
- * of each station's pylon (A10_GEOMETRY.stations, + right wing):
- *     mass = Σ m,  dragArea = Σ CdA,  lateralMoment = Σ m·x,  rollInertia = Σ m·x²,
- *     dragMoment = Σ CdA·x.
+ * the flight model (totals.ts), station legality, rearm, jettison, and the release queue
+ * (stepStores, ARCHITECTURE §12.1: avionics decides, this module executes — release.ts).
  */
-import { A10_GEOMETRY } from '../../data/geometry';
 import { GAU8 } from '../../data/gun';
 import {
   LOADOUT_PRESETS,
@@ -19,7 +13,12 @@ import {
 } from '../../data/munitions';
 import type { Sim } from '../types';
 import { endBurst } from './gun';
+import { executeRelease, jettisonStation } from './release';
+import { registerStoreModels, syncModelAtmosphere } from './storeModels';
+import { updateStoresTotals } from './totals';
 import type { StationState, StoresState, StoreType } from './types';
+
+export { updateStoresTotals } from './totals';
 
 /** Loadout presets: station → stores (rack/launcher first). See data/munitions.ts. */
 export const LOADOUTS: Record<string, LoadoutPreset> = LOADOUT_PRESETS;
@@ -62,39 +61,10 @@ export function createStoresState(
     releaseQueue: [],
   };
   updateStoresTotals(state);
+  // The fire-control computer has the stores' models before the first step (they are
+  // registered at module load unless an import cycle delayed it; a test's own model is kept).
+  registerStoreModels(false);
   return state;
-}
-
-/** Recompute mass, drag area and their moments from what hangs on the stations now. */
-export function updateStoresTotals(state: StoresState): void {
-  let mass = 0;
-  let drag = 0;
-  let lateral = 0;
-  let roll = 0;
-  let yaw = 0;
-  for (const st of state.stations) {
-    let m = 0;
-    let cda = 0;
-    if (st.rack) {
-      m += STORES[st.rack]?.mass ?? 0;
-      cda += STORES[st.rack]?.dragArea ?? 0;
-    }
-    for (const type of st.stores) {
-      m += STORES[type]?.mass ?? 0;
-      cda += STORES[type]?.dragArea ?? 0;
-    }
-    const x = A10_GEOMETRY.stations[st.station]?.x ?? 0;
-    mass += m;
-    drag += cda;
-    lateral += m * x;
-    roll += m * x * x;
-    yaw += cda * x;
-  }
-  state.mass = mass;
-  state.dragArea = drag;
-  state.lateralMoment = lateral;
-  state.rollInertia = roll;
-  state.dragMoment = yaw;
 }
 
 /** Can `type` hang directly on `station` (as a rack/launcher or a single store)? */
@@ -143,7 +113,8 @@ export function loadoutIssues(stations: Record<number, readonly StoreType[]>): s
 
 /**
  * Rearm (and reload) on the ground or from the pause menu: a full drum of the flight's
- * ammunition load and the flight's loadout back on the stations. An open burst ends first.
+ * ammunition load and the flight's loadout back on the stations (rocket pods full again). An
+ * open burst ends first; releases still queued are dropped. Stores already in flight fly on.
  */
 export function rearm(sim: Sim): void {
   const gun = sim.gun;
@@ -162,38 +133,54 @@ export function rearm(sim: Sim): void {
     to.rack = from.rack;
     to.stores.length = 0;
     for (const s of from.stores) to.stores.push(s);
+    if (from.rockets !== undefined) to.rockets = from.rockets;
+    else delete to.rockets;
   }
+  // Releases still waiting belong to the old load.
+  st.releaseQueue.length = 0;
   st.loadoutId = fresh.loadoutId;
   updateStoresTotals(st);
 }
 
 /**
- * Jettison what hangs on the given stations, or on all of them: racks and launchers go with
- * their stores; pods and the AIM-9 rails stay. No store bodies yet (wave 2): each jettisoned
- * item emits 'storeReleased' with bodyId 0. Returns the number of stations cleared.
+ * Jettison what hangs on the given stations, or on all of them, now: each station's rack or
+ * launcher leaves with its stores (one body per station, release.ts jettisonStation), never
+ * armed; pods and the AIM-9 rails stay. Each emits 'storeReleased' with its body id. Returns the
+ * number of stations cleared.
  */
 export function jettisonStores(sim: Sim, stations: readonly number[] | 'all'): number {
   const st = sim.stores;
   let cleared = 0;
   for (const station of st.stations) {
     if (stations !== 'all' && !stations.includes(station.station)) continue;
-    const first = station.rack ?? station.stores[0];
-    if (!first || !STORES[first]?.jettisonable) continue;
-    if (station.stores.some((s) => !STORES[s]?.jettisonable)) continue;
-    sim.events.push({
-      type: 'storeReleased',
-      t: sim.time,
-      station: station.station,
-      store: first,
-      bodyId: 0,
-    });
-    station.rack = null;
-    station.stores.length = 0;
-    cleared++;
+    // From the present state (f = 1 of the last flight step).
+    cleared += jettisonStation(sim, station, sim.time, 1, 0);
   }
   if (cleared > 0) updateStoresTotals(st);
   return cleared;
 }
 
-/** Store release logic (bombs, rockets, missiles): wave 2. */
-export function stepStores(_sim: Sim, _dt: number): void {}
+/**
+ * Releases (ARCHITECTURE §12.1), step 5: every request in `stores.releaseQueue` whose time falls
+ * before the end of this step is executed at its exact time (an overdue one at the step start),
+ * earliest first, and removed; later ones wait. The registered models' atmosphere follows the
+ * world's.
+ */
+export function stepStores(sim: Sim, dt: number): void {
+  syncModelAtmosphere(sim.world.isaDeviation);
+  const queue = sim.stores.releaseQueue;
+  if (queue.length === 0) return;
+  const t0 = sim.time;
+  const t1 = t0 + dt;
+  for (;;) {
+    let k = -1;
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i].time < t1 && (k < 0 || queue[i].time < queue[k].time)) k = i;
+    }
+    if (k < 0) return;
+    const req = queue[k];
+    for (let i = k; i < queue.length - 1; i++) queue[i] = queue[i + 1];
+    queue.length--;
+    executeRelease(sim, req, t0, dt);
+  }
+}

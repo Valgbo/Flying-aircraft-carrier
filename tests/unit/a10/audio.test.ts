@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SAME_BANG_DISTANCE,
   blastOf,
+  createPlannedBlast,
+  cueOf,
   impactKindOf,
+  launchKindOf,
+  planBlasts,
+  releaseClunks,
   type Detonation,
+  type PlannedBlast,
   type RoundImpact,
 } from '../../../src/a10/audio/classify';
+import { CUES } from '../../../src/a10/audio/cockpit';
+import { SAMPLE_FILES } from '../../../src/a10/audio/samples';
+import type { SimEvent } from '../../../src/a10/core/types';
 import {
   BUS_IDS,
   DEFAULT_VOLUME,
@@ -43,6 +53,7 @@ import {
   renderCrackle,
   renderExplosion,
   renderImpact,
+  renderLaunch,
   renderMotor,
   renderWhoosh,
   rmsOf,
@@ -408,5 +419,177 @@ describe('synthesised sounds', () => {
     const growl = growlWaveCoefficients();
     expect(growl.real.length).toBe(7);
     nonIncreasing(Array.from(growl.real.slice(1)));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// stores (wave 2): releases, launches, cues, explosions heard once
+// ---------------------------------------------------------------------------------------------
+
+describe('store releases and launches', () => {
+  it('ejected stores clunk; rockets and Mavericks leave on their motors', () => {
+    // bombs and guided bombs are pushed off by the rack's ejector
+    expect(releaseClunks('MK-82', false)).toBe(true);
+    expect(releaseClunks('MK-82AIR', false)).toBe(true);
+    expect(releaseClunks('GBU-12', false)).toBe(true);
+    // a rocket leaving its tube: its ignition is in the same frame
+    expect(releaseClunks('LAU-131-M151', true)).toBe(false);
+    // the same pod jettisoned (no motor): the ejector
+    expect(releaseClunks('LAU-131-M151', false)).toBe(true);
+    // a Maverick leaves its rail
+    expect(releaseClunks('AGM-65D', true)).toBe(false);
+    expect(releaseClunks('AGM-65H', false)).toBe(false);
+    // racks jettisoned with what they carry
+    expect(releaseClunks('TER-9A', false)).toBe(true);
+    expect(releaseClunks('LAU-88', false)).toBe(true);
+  });
+
+  it('a rocket and a Maverick have their own launch sounds', () => {
+    expect(launchKindOf('rocket')).toBe('rocket');
+    expect(launchKindOf('missile')).toBe('missile');
+    // the body already gone: the released store says which
+    expect(launchKindOf(undefined, 'LAU-68-M156')).toBe('rocket');
+    expect(launchKindOf(null, 'AGM-65D')).toBe('missile');
+  });
+
+  it('lock and laser events make quiet cockpit cues, nothing else does', () => {
+    const lock = (on: boolean): SimEvent => ({ type: 'lock', t: 0, sensor: 'MAV', on });
+    const laser = (on: boolean): SimEvent => ({ type: 'laser', t: 0, on });
+    expect(cueOf(lock(true))).toBe('lockOn');
+    expect(cueOf(lock(false))).toBe('lockOff');
+    expect(cueOf(laser(true))).toBe('laserOn');
+    expect(cueOf(laser(false))).toBe('laserOff');
+    expect(cueOf({ type: 'switch', t: 0, name: 'masterArm', value: 'ARM' })).toBeNull();
+    // subtle: every cue short and well below the warnings
+    for (const c of Object.values(CUES)) {
+      for (const [hz, , len] of c.blips) {
+        expect(hz).toBeGreaterThan(500);
+        expect(len).toBeLessThan(0.1);
+      }
+      expect(c.level).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('launch sounds: seeded, bounded, a rocket short and bright, a Maverick long and deep', () => {
+    const SR = 48000;
+    const rocket = renderLaunch(SR, 'rocket');
+    const missile = renderLaunch(SR, 'missile');
+    expect(renderLaunch(SR, 'rocket')).toEqual(rocket);
+    for (const x of [rocket, missile]) {
+      expect(x.every(Number.isFinite)).toBe(true);
+      expect(peakOf(x)).toBeLessThanOrEqual(1);
+      expect(rmsOf(x)).toBeGreaterThan(0.02);
+    }
+    expect(rocket.length).toBeLessThan(missile.length);
+    const bright = (x: Float32Array) => {
+      let d = 0;
+      let e = 0;
+      for (let i = 1; i < x.length; i++) {
+        d += (x[i] - x[i - 1]) ** 2;
+        e += x[i] * x[i];
+      }
+      return d / e;
+    };
+    expect(bright(rocket)).toBeGreaterThan(bright(missile));
+  });
+});
+
+describe('explosions are heard once', () => {
+  const pool = (): PlannedBlast[] => Array.from({ length: 32 }, createPlannedBlast);
+  const at = (x: number, z = 0) => ({ x, y: 0, z });
+  const det = (
+    kind: Detonation['kind'],
+    charge: number,
+    x: number,
+    vehicleId = 0,
+    bodyId?: number,
+  ): SimEvent => ({
+    type: 'detonation',
+    t: 0,
+    position: at(x),
+    charge,
+    kind,
+    vehicleId,
+    surface: 'dirt',
+    bodyId,
+  });
+  const destroyed = (vehicleId: number, x: number, catastrophic = false): SimEvent => ({
+    type: 'vehicleDestroyed',
+    t: 0,
+    vehicleId,
+    vehicleKind: 'truckCargo',
+    catastrophic,
+    position: at(x),
+  });
+
+  it('a Mk-82 that destroys three trucks is one bang', () => {
+    const out = pool();
+    const n = planBlasts(
+      [det('bomb', 96, 0, 0, 5), destroyed(11, 12), destroyed(12, 25), destroyed(13, -18)],
+      out,
+    );
+    expect(n).toBe(1);
+    expect(out[0].size).toBe('large');
+    expect(out[0].thump).toBe(false);
+  });
+
+  it("a Maverick's hit and the tank's ammunition going up with it are one (bigger) bang", () => {
+    const out = pool();
+    const n = planBlasts(
+      [det('missile', 12, 0, 9, 6), destroyed(9, 0.5, true), det('secondary', 28, 0.5, 9)],
+      out,
+    );
+    expect(n).toBe(1);
+    expect(out[0].size).toBe('huge');
+  });
+
+  it('a secondary farther away, or later, is its own explosion', () => {
+    const out = pool();
+    expect(planBlasts([det('secondary', 70, SAME_BANG_DISTANCE + 40, 4)], out)).toBe(1);
+    expect(
+      planBlasts([det('bomb', 96, 0, 0, 5), det('secondary', 70, SAME_BANG_DISTANCE + 40, 4)], out),
+    ).toBe(2);
+  });
+
+  it('the same body detonating twice in a frame is heard once; each rocket of a ripple is heard', () => {
+    const out = pool();
+    expect(planBlasts([det('bomb', 96, 0, 0, 5), det('bomb', 96, 0, 0, 5)], out)).toBe(1);
+    const ripple: SimEvent[] = [];
+    for (let k = 0; k < 7; k++) ripple.push(det('rocket', 1.3, k * 9, 0, 20 + k));
+    expect(planBlasts(ripple, out)).toBe(7);
+  });
+
+  it('a dud thumps, an HEI shell is its impact, a gun kill booms on its own', () => {
+    const out = pool();
+    expect(planBlasts([det('dud', 0, 0, 0, 3)], out)).toBe(1);
+    expect(out[0].thump).toBe(true);
+    expect(planBlasts([det('hei', 0.05, 0)], out)).toBe(0);
+    expect(planBlasts([destroyed(4, 0)], out)).toBe(1);
+    expect(out[0].size).toBe('medium');
+    // and a catastrophic gun kill whose secondary the targets module reports: once, the secondary
+    expect(planBlasts([destroyed(4, 0, true), det('secondary', 28, 0, 4)], out)).toBe(1);
+    expect(out[0].size).toBe('huge');
+  });
+
+  it('never more than the pool holds', () => {
+    const out = Array.from({ length: 3 }, createPlannedBlast);
+    const many: SimEvent[] = [];
+    for (let k = 0; k < 10; k++) many.push(det('rocket', 1.3, k * 50, 0, 100 + k));
+    expect(planBlasts(many, out)).toBe(3);
+  });
+});
+
+describe('sound files and their credits', () => {
+  const credits = Object.values(
+    import.meta.glob<string>('/CREDITS.md', { eager: true, query: '?raw', import: 'default' }),
+  )[0];
+
+  it('every recorded sound the engine loads is credited; the store sounds are synthesised', () => {
+    expect(typeof credits).toBe('string');
+    for (const file of Object.values(SAMPLE_FILES)) {
+      expect(credits).toContain(file.replace(/^sounds\//, ''));
+    }
+    // wave 2 adds no recording: launches, motors and blasts are made in code (synth.ts)
+    expect(Object.keys(SAMPLE_FILES)).not.toContain('rocketLaunch');
   });
 });

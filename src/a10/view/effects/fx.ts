@@ -1,12 +1,14 @@
 /**
  * The effects runtime shared by EffectsView (which draws and updates it) and VehiclesView (which
- * emits dust and exhaust into it): one particle system, the decal pool, the pressure rings and the
- * director, under one group added to the world scene. Reference-counted so React StrictMode's
- * mount → unmount → mount and sandboxes create and dispose it cleanly.
+ * emits dust and exhaust into it): one particle system, the decal pool, the pressure rings, the
+ * director and the stores in flight (view/stores), under one group added to the world scene.
+ * Reference-counted so React StrictMode's mount → unmount → mount and sandboxes create and dispose
+ * it cleanly.
  */
 import { Group, Vector3, type Camera } from 'three';
-import type { SimEvent } from '../../core/types';
+import type { Sim, SimEvent } from '../../core/types';
 import type { FrameInfo } from '../frame';
+import { StoresPresenter } from '../stores/presenter';
 import { getA10Quality } from '../quality';
 import { disposeAtlas } from './atlas';
 import { DecalPool } from './decals';
@@ -22,7 +24,11 @@ export interface Fx {
   decals: DecalPool;
   rings: RingPool;
   director: EffectsDirector;
+  /** Stores in flight: their models, motor flames and smoke trails (view/stores). */
+  stores: StoresPresenter;
   ctx: FxContext;
+  /** Wire to `onSimFrame`: the frame's events to the director and the stores in flight. */
+  onSimFrame: (events: readonly SimEvent[], sim: Sim, info: FrameInfo) => void;
 }
 
 let fx: Fx | null = null;
@@ -49,7 +55,13 @@ function create(): Fx {
     groundAt: (x, z) => viewSim()?.world.terrain.heightAt(x, z) ?? 0,
   };
   const director = new EffectsDirector(ctx);
-  return { root, ps, decals, rings, director, ctx };
+  const stores = new StoresPresenter();
+  root.add(stores.root);
+  const onSimFrame = (events: readonly SimEvent[], sim: Sim, info: FrameInfo): void => {
+    director.onSimFrame(events, sim, info);
+    stores.onSimFrame(events, sim, info, ctx);
+  };
+  return { root, ps, decals, rings, director, stores, ctx, onSimFrame };
 }
 
 export function acquireFx(): Fx {
@@ -62,6 +74,7 @@ export function releaseFx(): void {
   refs = Math.max(0, refs - 1);
   if (refs > 0 || !fx) return;
   fx.root.removeFromParent();
+  fx.stores.dispose();
   fx.ps.dispose();
   fx.decals.dispose();
   fx.rings.dispose();
@@ -76,14 +89,17 @@ export function getFx(): Fx | null {
 
 /**
  * One frame of effects (EffectsView calls it at visual priority, after the camera moved):
- * quality → budget, director (gun, fires, emitters), then particles, decals and rings.
+ * quality → budget, director (gun, fires, emitters), the stores in flight (their motors' smoke
+ * is born this frame), then particles, decals and rings.
  */
 export function updateFx(f: Fx, dt: number, camera: Camera, budgetOverride?: number): void {
   const budget = budgetOverride ?? getA10Quality().particles;
   f.ps.budget = budget;
   f.ctx.detail = detailForBudget(budget);
   f.ctx.camera.copy(camera.position);
-  f.director.update(viewSim(), dt);
+  const sim = viewSim();
+  f.director.update(sim, dt);
+  f.stores.update(sim, dt, f.ctx);
   f.ps.update(dt, camera);
   f.decals.update(dt, camera);
   f.rings.update(dt, camera);
@@ -125,7 +141,7 @@ export function playFx(events: readonly SimEvent[], seconds: number, camera: Cam
       // the director places an event (t − frame start) into its frame
       batch.push({ ...e, t: sim.time - dt + Math.max(0, e.t - k * dt) });
     }
-    f.director.onSimFrame(batch, sim, info);
+    f.onSimFrame(batch, sim, info);
     updateFx(f, dt, camera);
   }
 }

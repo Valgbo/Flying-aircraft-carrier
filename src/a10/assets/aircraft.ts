@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   Points,
+  Quaternion,
   ShaderMaterial,
   SRGBColorSpace,
   RepeatWrapping,
@@ -28,11 +29,19 @@ import {
   Vector3,
   type Mesh,
 } from 'three';
+import { SIM_DT } from '../core/constants';
 import type { Sim } from '../core/types';
-import type { StationState } from '../core/weapons/types';
+import type { StationState, StoreBody } from '../core/weapons/types';
 import { A10, A10_FCS } from '../data/aircraft';
+import { frameInfo } from '../view/frame';
 import type { ExteriorInput, PivotMeta } from './meta';
-import { getAircraftTemplates, storeModelId, type AircraftTemplates } from './models';
+import {
+  getAircraftTemplates,
+  podTubesOf,
+  storeModelId,
+  type AircraftTemplates,
+  type PodTubes,
+} from './models';
 import { a10Asset } from './urls';
 
 // ---------------------------------------------------------------------------------------------
@@ -85,6 +94,13 @@ export interface AircraftVisualState {
   barrelAngle: number;
   /** Stores on the stations (null: leave the stations as they are). */
   stations: readonly StationState[] | null;
+  /**
+   * Store bodies in flight: a store whose release the draw time has not reached yet stays on its
+   * pylon, so it leaves at the very frame its body starts to be drawn (null: no such hand-off).
+   */
+  bodies: readonly StoreBody[] | null;
+  /** Sim time this frame is drawn at (view/frame drawPose: one step behind `time`). */
+  drawTime: number;
   /** 0 night … 1 day: navigation and anti-collision lights show below about 0.5. */
   daylight: number;
   /** Seconds, for the strobes. */
@@ -104,6 +120,8 @@ export function createVisualState(): AircraftVisualState {
     n1: [0, 0],
     barrelAngle: 0,
     stations: null,
+    bodies: null,
+    drawTime: 0,
     daylight: 1,
     time: 0,
   };
@@ -150,14 +168,21 @@ interface StationVisual {
   /** Rack type and the store list at the last rebuild. */
   rackType: string | null;
   initial: string[];
+  /** Stores of `initial` hidden (released or jettisoned). */
   released: number;
   /** One object per store of `initial`, in release order. */
   mounted: Object3D[];
+  /** A rocket pod's rockets (tube by tube), or null. */
+  pod: { mesh: Mesh; tubes: PodTubes } | null;
+  /** Rockets of the pod hidden (fired). */
+  fired: number;
 }
 
 export interface AircraftInstance {
   root: Group;
   forCockpit: boolean;
+  /** The templates it was made from (its stations are built from them too). */
+  templates: AircraftTemplates;
   /** The airframe (exterior file clone). */
   airframe: Group;
   /** Gear position shown, 0 up … 1 down. */
@@ -299,12 +324,15 @@ export function createAircraftInstance(opts: AircraftInstanceOptions): AircraftI
         initial: [],
         released: 0,
         mounted: [],
+        pod: null,
+        fired: 0,
       });
     }
 
   const inst: AircraftInstance = {
     root,
     forCockpit: opts.forCockpit,
+    templates: t,
     airframe,
     gear: 0,
     state: createVisualState(),
@@ -369,6 +397,9 @@ export function updateAircraftInstance(inst: AircraftInstance, sim: Sim, dayligh
   st.n1[1] = ac.engines?.[1]?.n1 ?? 0;
   st.barrelAngle = sim.gun?.barrelAngle ?? 0;
   st.stations = sim.stores?.stations ?? null;
+  st.bodies = sim.projectiles?.bodies ?? null;
+  // the frame is drawn one step behind the simulation, at drawPose (view/frame.ts)
+  st.drawTime = sim.time - (1 - frameInfo.alpha) * SIM_DT;
   st.daylight = daylight;
   st.time = sim.time;
   applyAircraftVisualState(inst, st, dt);
@@ -435,7 +466,7 @@ export function applyAircraftVisualState(
   for (const g of inst.gearPivots) g.visible = !up;
   for (const tg of inst.toggles) tg.obj.visible = tg.rule === 'lock0' ? st.gear <= 0 : st.gear > 0;
 
-  if (st.stations) syncStations(inst, st.stations);
+  if (st.stations) syncStations(inst, st.stations, st.bodies, st.drawTime);
   if (inst.lights) updateLights(inst.lights, st.daylight, st.time);
 }
 
@@ -481,6 +512,12 @@ export function setAircraftShadows(inst: AircraftInstance, on: boolean): void {
 const RACK_TYPES = new Set(['TER-9A', 'LAU-88', 'LAU-117', 'LAU-114']);
 /** FlightGear fills triple racks left, right, then centre. */
 const FILL_ORDER_3 = [0, 2, 1];
+/** Station numbers index these per-frame counters (1 … 11). */
+const STATION_SLOTS = 16;
+/** Per station: store bodies (rockets apart) released after the draw time, still drawn on it. */
+const _pending = new Int16Array(STATION_SLOTS);
+/** Per station: rockets released after the draw time, still drawn in their tubes. */
+const _rocketPending = new Int16Array(STATION_SLOTS);
 
 function sameTail(initial: string[], stores: readonly string[]): number {
   // returns k when stores equals initial.slice(k), else −1 (no allocation)
@@ -490,24 +527,69 @@ function sameTail(initial: string[], stores: readonly string[]): number {
   return k;
 }
 
-function syncStations(inst: AircraftInstance, stations: readonly StationState[]): void {
+/**
+ * Count the store bodies that left each station after `drawTime` (the time this frame is drawn
+ * at, one step behind the simulation): they are drawn on their pylon until the draw time reaches
+ * their release, at the moment the flying store view starts drawing them in flight.
+ */
+function countPending(bodies: readonly StoreBody[] | null, drawTime: number): void {
+  _pending.fill(0);
+  _rocketPending.fill(0);
+  if (!bodies) return;
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    if (!b.alive || !(b.releaseTime > drawTime)) continue;
+    const s = b.station;
+    if (!(s >= 1 && s < STATION_SLOTS)) continue;
+    if (b.kind === 'rocket') _rocketPending[s]++;
+    else _pending[s]++;
+  }
+}
+
+function syncStations(
+  inst: AircraftInstance,
+  stations: readonly StationState[],
+  bodies: readonly StoreBody[] | null,
+  drawTime: number,
+): void {
+  countPending(bodies, drawTime);
   for (const sv of inst.stations) {
     let st: StationState | null = null;
     for (let i = 0; i < stations.length; i++)
       if (stations[i].station === sv.station) st = stations[i];
     const rack = st?.rack ?? null;
     const stores = st?.stores ?? EMPTY;
-    if (rack === sv.rackType) {
+    const pending = sv.station < STATION_SLOTS ? _pending[sv.station] : 0;
+    if (rack !== sv.rackType) {
+      // a jettisoned rack goes with its stores when the draw time reaches the jettison
+      if (pending > 0 && rack === null && stores.length === 0) continue;
+      buildStation(inst, sv, rack, stores);
+    } else {
       const k = sameTail(sv.initial, stores);
-      if (k >= 0) {
-        if (k !== sv.released) {
-          sv.released = k;
-          for (let i = 0; i < sv.mounted.length; i++) sv.mounted[i].visible = i >= k;
+      if (k < 0) buildStation(inst, sv, rack, stores);
+      else {
+        const hide = Math.max(0, k - pending);
+        if (hide !== sv.released) {
+          sv.released = hide;
+          for (let i = 0; i < sv.mounted.length; i++) sv.mounted[i].visible = i >= hide;
         }
-        continue;
       }
     }
-    buildStation(inst, sv, rack, stores);
+    // a rocket pod stays; its rockets leave their tubes one by one
+    const pod = sv.pod;
+    if (pod) {
+      const tubes = pod.tubes.axes.length;
+      const left = st?.rockets;
+      const fired =
+        left === undefined
+          ? 0
+          : Math.min(tubes, Math.max(0, tubes - left - _rocketPending[sv.station]));
+      if (fired !== sv.fired) {
+        sv.fired = fired;
+        pod.mesh.geometry = pod.tubes.stages[fired];
+        pod.mesh.visible = fired < tubes;
+      }
+    }
   }
 }
 const EMPTY: string[] = [];
@@ -532,43 +614,209 @@ function cloneStore(t: AircraftTemplates, id: string): Object3D | null {
   return c;
 }
 
+/** What a station carries as drawn: the rack or launcher (explicit or implied) and its stores. */
+interface StationLayout {
+  /** Rack model id, or null for a store on the bare pylon. */
+  rackId: string | null;
+  /** Store model ids in release order. */
+  ids: (string | null)[];
+  /** The rack's mount used by each store (index into meta.racks[rackId].mounts). */
+  mountOf: number[];
+}
+
+const _layout: StationLayout = { rackId: null, ids: [], mountOf: [] };
+
+/**
+ * The drawn layout of a station loaded with `rack` and `stores` (release order): the launcher a
+ * store needs when the load names none (a Maverick: LAU-117 or LAU-88; AIM-9s: LAU-114; several
+ * bombs: TER-9A), and the rack mount of each store (FlightGear fills a triple rack left, right,
+ * then centre). Returns false when nothing can be drawn there.
+ */
+function stationLayout(
+  t: AircraftTemplates,
+  rack: string | null,
+  stores: readonly string[],
+  out: StationLayout,
+): boolean {
+  out.rackId = null;
+  out.ids.length = 0;
+  out.mountOf.length = 0;
+  let first = 0;
+  let rackType = rack;
+  if (!rackType && stores.length && RACK_TYPES.has(stores[0])) {
+    rackType = stores[0];
+    first = 1;
+  }
+  const lead = stores[first] ?? '';
+  if (!rackType && lead) {
+    const n = stores.length - first;
+    if (/^AGM-65/.test(lead)) rackType = n > 1 ? 'LAU-88' : 'LAU-117';
+    else if (lead === 'AIM-9M') rackType = 'LAU-114';
+    else if (n > 1) rackType = 'TER-9A';
+  }
+  for (let i = first; i < stores.length; i++) out.ids.push(storeModelId(stores[i], t.meta));
+  if (!rackType) return out.ids.length > 0 && out.ids[0] !== null;
+  const rid = storeModelId(rackType, t.meta);
+  if (!rid || !t.stores.has(rid)) return false;
+  out.rackId = rid;
+  const mounts = t.meta.racks[rid]?.mounts ?? [];
+  for (let i = 0; i < out.ids.length; i++) {
+    out.mountOf.push(i < mounts.length ? (mounts.length === 3 ? FILL_ORDER_3[i] : i) : -1);
+  }
+  return true;
+}
+
+const _mp = new Vector3();
+const _mq = new Quaternion();
+
+/**
+ * Where a store hangs, in the aircraft's BODY frame (the same placement the stations draw): the
+ * `index`-th store, in release order, of a station loaded with `rack` (null: none or implied) and
+ * `stores`. `index` −1 is the rack or launcher itself. `outPosition` is the store's reference
+ * point: its centre (`meta.stores[id].centre`, where a store in flight is drawn from) or, with
+ * `origin` 'lugs', its suspension lugs. Returns false when that store is not drawn there.
+ */
+export function storeMount(
+  t: AircraftTemplates,
+  station: number,
+  rack: string | null,
+  stores: readonly string[],
+  index: number,
+  outPosition: Vector3,
+  outQuaternion: Quaternion,
+  origin: 'centre' | 'lugs' = 'centre',
+): boolean {
+  if (!(station >= 1 && station <= t.meta.stations.length)) return false;
+  if (!stationLayout(t, rack, stores, _layout)) return false;
+  let id: string | null;
+  if (_layout.rackId) {
+    const pl = placementOf(t, station, _layout.rackId);
+    outPosition.set(pl.position[0], pl.position[1], pl.position[2]);
+    outQuaternion.set(pl.quaternion[0], pl.quaternion[1], pl.quaternion[2], pl.quaternion[3]);
+    if (index < 0) id = _layout.rackId;
+    else {
+      const mi = _layout.mountOf[index] ?? -1;
+      const mount = t.meta.racks[_layout.rackId]?.mounts[mi];
+      if (!mount) return false;
+      id = _layout.rackId === 'lau114' ? mount.model : (_layout.ids[index] ?? null);
+      _mp.set(mount.position[0], mount.position[1], mount.position[2]);
+      outPosition.add(_mp.applyQuaternion(outQuaternion));
+      _mq.set(mount.quaternion[0], mount.quaternion[1], mount.quaternion[2], mount.quaternion[3]);
+      outQuaternion.multiply(_mq);
+    }
+  } else {
+    if (index !== 0) return false;
+    id = _layout.ids[0];
+    if (!id) return false;
+    const pl = placementOf(t, station, id);
+    outPosition.set(pl.position[0], pl.position[1], pl.position[2]);
+    outQuaternion.set(pl.quaternion[0], pl.quaternion[1], pl.quaternion[2], pl.quaternion[3]);
+  }
+  if (!id || !t.meta.stores[id]) return false;
+  if (origin === 'centre') {
+    const c = t.meta.stores[id].centre;
+    outPosition.add(_mp.set(c[0], c[1], c[2]).applyQuaternion(outQuaternion));
+  }
+  return true;
+}
+
+/**
+ * Where the rocket of a pod's tube is, in the BODY frame: its centre on the tube's axis with its
+ * nose in the tube mouth, and its orientation (the pod's). `tube` counts in firing order (0 = the
+ * first to leave). False when the pod's tubes are not known.
+ */
+export function podRocketMount(
+  t: AircraftTemplates,
+  station: number,
+  pod: string,
+  tube: number,
+  outPosition: Vector3,
+  outQuaternion: Quaternion,
+): boolean {
+  const id = storeModelId(pod, t.meta);
+  const tpl = id ? t.stores.get(id) : null;
+  if (!id || !tpl || !storeMount(t, station, null, [pod], 0, outPosition, outQuaternion, 'lugs'))
+    return false;
+  let tubes: PodTubes | null = null;
+  tpl.traverse((o) => {
+    if (!tubes && (o as Mesh).isMesh) tubes = podTubesOf(o as Mesh);
+  });
+  const info = tubes as PodTubes | null;
+  const axis = info?.axes[tube];
+  if (!info || !axis) return false;
+  const rocket = t.meta.stores.hydra70;
+  const half = rocket ? rocket.length / 2 : 0.88;
+  _mp.set(axis.x, axis.y, info.noseZ + half).applyQuaternion(outQuaternion);
+  outPosition.add(_mp);
+  return true;
+}
+
+/**
+ * A rack or launcher with the stores it still carries, drawn on its own (a jettisoned rack in
+ * flight): BODY-aligned axes, origin at the rack's centre (`meta.stores[id].centre`, where a body
+ * in flight is drawn from). `first` is the release-order index of the first carried store in the
+ * rack's load, so each sits on the mount it hung from. Null when the rack has no model.
+ */
+export function createLoadedRack(
+  t: AircraftTemplates,
+  rack: string,
+  carried: readonly string[],
+  first = 0,
+): Group | null {
+  const list: string[] = [];
+  for (let i = 0; i < first; i++) list.push(carried[0] ?? '');
+  for (const c of carried) list.push(c);
+  if (!stationLayout(t, rack, list, _layout) || !_layout.rackId) return null;
+  const rid = _layout.rackId;
+  const rackObj = cloneStore(t, rid);
+  if (!rackObj) return null;
+  const mounts = t.meta.racks[rid]?.mounts ?? [];
+  for (let i = first; i < _layout.ids.length; i++) {
+    const m = mounts[_layout.mountOf[i]];
+    const id = m ? (rid === 'lau114' ? m.model : _layout.ids[i]) : null;
+    const obj = id ? cloneStore(t, id) : null;
+    if (!m || !obj) continue;
+    obj.position.set(m.position[0], m.position[1], m.position[2]);
+    obj.quaternion.set(m.quaternion[0], m.quaternion[1], m.quaternion[2], m.quaternion[3]);
+    rackObj.add(obj);
+  }
+  const c = t.meta.stores[rid]?.centre ?? [0, 0, 0];
+  rackObj.position.set(-c[0], -c[1], -c[2]);
+  const g = new Group();
+  g.name = `rack-${rid}`;
+  g.add(rackObj);
+  return g;
+}
+
 function buildStation(
   inst: AircraftInstance,
   sv: StationVisual,
   rack: string | null,
   stores: readonly string[],
 ): void {
-  const t = getAircraftTemplates();
+  const t = inst.templates;
   sv.group.clear();
   sv.mounted = [];
   sv.rackType = rack;
   sv.initial = stores.slice();
   sv.released = 0;
+  sv.pod = null;
+  sv.fired = 0;
   if (!t || (!rack && stores.length === 0)) return;
-  const list = stores.slice();
-  let rackType = rack;
-  if (!rackType && list.length && RACK_TYPES.has(list[0])) rackType = list.shift() ?? null;
-  // implicit launchers and racks for stores that cannot hang on a bare pylon
-  const first = list[0] ?? '';
-  if (!rackType && first) {
-    if (/^AGM-65/.test(first)) rackType = list.length > 1 ? 'LAU-88' : 'LAU-117';
-    else if (first === 'AIM-9M') rackType = 'LAU-114';
-    else if (list.length > 1) rackType = 'TER-9A';
-  }
-  const ids = list.map((x) => storeModelId(x));
-  if (rackType) {
-    const rid = storeModelId(rackType);
-    const rackObj = rid ? cloneStore(t, rid) : null;
-    if (!rid || !rackObj) return;
+  if (!stationLayout(t, rack, stores, _layout)) return;
+  if (_layout.rackId) {
+    const rid = _layout.rackId;
+    const rackObj = cloneStore(t, rid);
+    if (!rackObj) return;
     const pl = placementOf(t, sv.station, rid);
     rackObj.position.set(pl.position[0], pl.position[1], pl.position[2]);
     rackObj.quaternion.set(pl.quaternion[0], pl.quaternion[1], pl.quaternion[2], pl.quaternion[3]);
     sv.group.add(rackObj);
     const mounts = t.meta.racks[rid]?.mounts ?? [];
-    const order = mounts.length === 3 ? FILL_ORDER_3 : mounts.map((_, i) => i);
-    for (let i = 0; i < ids.length && i < order.length; i++) {
-      const m = mounts[order[i]];
-      const id = rid === 'lau114' ? m.model : ids[i];
+    for (let i = 0; i < _layout.ids.length; i++) {
+      const m = mounts[_layout.mountOf[i]];
+      if (!m) continue;
+      const id = rid === 'lau114' ? m.model : _layout.ids[i];
       const obj = id ? cloneStore(t, id) : null;
       if (!obj) continue;
       obj.position.set(m.position[0], m.position[1], m.position[2]);
@@ -576,14 +824,19 @@ function buildStation(
       rackObj.add(obj);
       sv.mounted.push(obj);
     }
-  } else if (ids[0]) {
-    const obj = cloneStore(t, ids[0]);
+  } else if (_layout.ids[0]) {
+    const obj = cloneStore(t, _layout.ids[0]);
     if (!obj) return;
-    const pl = placementOf(t, sv.station, ids[0]);
+    const pl = placementOf(t, sv.station, _layout.ids[0]);
     obj.position.set(pl.position[0], pl.position[1], pl.position[2]);
     obj.quaternion.set(pl.quaternion[0], pl.quaternion[1], pl.quaternion[2], pl.quaternion[3]);
     sv.group.add(obj);
     sv.mounted.push(obj);
+    // a rocket pod: its rockets, tube by tube
+    obj.traverse((o) => {
+      const tubes = !sv.pod && (o as Mesh).isMesh ? podTubesOf(o as Mesh) : null;
+      if (tubes) sv.pod = { mesh: o as Mesh, tubes };
+    });
   }
   if (inst.shadows) {
     inst.shadows = false;

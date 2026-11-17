@@ -237,7 +237,12 @@ export function levelFlightThrottle(sim: Sim, gamma = 0): number {
 
 /**
  * The first trim of a new flight: draw this airframe's asymmetry and trim the air start along
- * the flight path it was created on (level, or the AirStart's climb/dive angle).
+ * the flight path it was created on (level, or the AirStart's climb/dive angle), with the engines
+ * settled at the lever that holds the start speed there (levelFlightThrottle). The start is then
+ * steady flight: hands off, it neither climbs on excess thrust nor slows down (review FC-3).
+ * Where no lever can hold the speed (a dive too steep for idle, a climb too steep for MAX) the
+ * engines keep the lever they were created with. createSim gives the pilot's levers the engines'
+ * position, and the input layer takes its levers from them.
  */
 export function startTrim(sim: Sim): void {
   const ac = sim.aircraft;
@@ -245,5 +250,12 @@ export function startTrim(sim: Sim): void {
   f.trimPending = false;
   f.asymmetry = sim.rng.air.range(-1, 1);
   const v = ac.velocity;
-  trimAircraft(sim, Math.atan2(v.y, Math.hypot(v.x, v.z)));
+  const gamma = Math.atan2(v.y, Math.hypot(v.x, v.z));
+  const created = ac.engines[0].lever;
+  const lever = levelFlightThrottle(sim, gamma);
+  if (lever <= 0 || lever >= 1) {
+    ac.engines[0].lever = created;
+    ac.engines[1].lever = created;
+    trimAircraft(sim, gamma);
+  }
 }

@@ -587,7 +587,53 @@ export function renderWhoosh(sr: number, seed = 0x5005): Float32Array {
   return normalise(out);
 }
 
-/** An airframe creak under load (aluminium working against rivets). 0.35 s. */
+/**
+ * A motor lighting, as heard nearby (the follower loop carries the burn after it): for a Hydra 70
+ * a crack and a ripping hiss that rises in pitch and fades within a second as the rocket leaves
+ * at 700 m/s; for a Maverick a deep thump and a heavier roar of its larger motor leaving the
+ * rail, fading over two seconds. Seeded: the same buffer every time.
+ */
+export function renderLaunch(sr: number, kind: 'rocket' | 'missile', seed = 0x1a0c): Float32Array {
+  const rocket = kind === 'rocket';
+  const rng = mulberry32(seed + (rocket ? 1 : 2));
+  const seconds = rocket ? 1.1 : 2.8;
+  const n = Math.round(seconds * sr);
+  const out = new Float32Array(n);
+  // ignition: a short shock and a low thump
+  addNWave(out, sr, 1, rocket ? 0.6 : 1.2, rocket ? 0.8 : 0.6);
+  addSweptDecay(out, sr, 1, rocket ? 140 : 95, rocket ? 60 : 40, rocket ? 0.05 : 0.12, 0.7);
+  // the motor's roar: noise through a band that rises as the gas speeds up, then falls away
+  const noise = whiteNoise(n, rng);
+  const roar = Float32Array.from(noise);
+  const f0 = rocket ? 700 : 380;
+  const f1 = rocket ? 3200 : 1400;
+  const rise = rocket ? 0.05 : 0.12;
+  const away = rocket ? 0.55 : 1.6;
+  sweptBandpass(
+    roar,
+    sr,
+    (t) => f0 + (f1 - f0) * (1 - Math.exp(-t / rise)) * Math.exp(-t / (away * 1.6)),
+    rocket ? 0.8 : 0.6,
+  );
+  const body = brownNoise(n, rng);
+  biquadInPlace(body, sr, 'lowpass', rocket ? 500 : 280, 0.7);
+  normalise(body, 1);
+  mix(roar, body, rocket ? 0.6 : 1.1);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    // a rough, fluttering burn that fades as the motor goes away
+    const flutter = 0.75 + 0.25 * Math.sin(2 * Math.PI * (37 + 11 * rng()) * t);
+    roar[i] *= Math.min(1, t / (rocket ? 0.012 : 0.04)) * Math.exp(-t / away) * flutter;
+  }
+  mix(out, normalise(roar, 1), rocket ? 1.3 : 1.5);
+  biquadInPlace(out, sr, 'highpass', 30);
+  biquadInPlace(out, sr, 'lowpass', rocket ? 9000 : 6000);
+  const fade = Math.round(0.05 * sr);
+  for (let i = 0; i < fade; i++) out[n - 1 - i] *= i / fade;
+  return normalise(out);
+}
+
+/** An airframe creak under load (aluminium working against rivets). 0.35 s. *//** An airframe creak under load (aluminium working against rivets). 0.35 s. */
 export function renderCreak(sr: number, seed = 0xc2ea): Float32Array {
   const rng = mulberry32(seed);
   const n = Math.round(0.35 * sr);

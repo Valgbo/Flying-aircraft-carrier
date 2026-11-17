@@ -15,6 +15,7 @@ import {
   renderCreak,
   renderExplosion,
   renderImpact,
+  renderLaunch,
   renderMotor,
   renderWhoosh,
   terrainEchoImpulse,
@@ -34,6 +35,8 @@ export interface SynthBank {
   crackle: AudioBuffer;
   motor: AudioBuffer;
   whoosh: AudioBuffer;
+  /** A Hydra 70 and a Maverick lighting (wave 2). */
+  launches: Record<'rocket' | 'missile', AudioBuffer>;
   creak: AudioBuffer;
 }
 
@@ -71,6 +74,10 @@ export function buildSynthBank(ctx: BaseAudioContext): SynthBank {
     crackle: makeBuffer(ctx, renderCrackle(sr)),
     motor: makeBuffer(ctx, renderMotor(sr)),
     whoosh: makeBuffer(ctx, renderWhoosh(sr)),
+    launches: {
+      rocket: makeBuffer(ctx, renderLaunch(sr, 'rocket')),
+      missile: makeBuffer(ctx, renderLaunch(sr, 'missile')),
+    },
     creak: makeBuffer(ctx, renderCreak(sr)),
   };
 }

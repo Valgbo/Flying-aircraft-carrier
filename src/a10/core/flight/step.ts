@@ -240,7 +240,8 @@ export function stepFlight(sim: Sim, dt: number): void {
   if (ac.gLoad > ac.maxG) ac.maxG = ac.gLoad;
   if (ac.gLoad < ac.minG) ac.minG = ac.gLoad;
 
-  checkGroundContact(sim);
+  // A bounce (invulnerable) puts the aircraft into a new attitude and velocity: re-derive.
+  if (checkGroundContact(sim) && !ac.crashed) refreshDerived(sim, _ctx, 0);
 
   ac.externalForceBody.set(0, 0, 0);
   ac.externalMomentBody.set(0, 0, 0);

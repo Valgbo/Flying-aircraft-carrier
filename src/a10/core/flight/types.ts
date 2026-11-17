@@ -82,6 +82,11 @@ export interface PacState {
   aimValid: boolean;
   /** The pilot's stick or pedals override PAC this step (it re-captures when they centre). */
   overridden: boolean;
+  /**
+   * The pilot is walking the pipper: the controls are away from where they were when the point
+   * was captured, so the held point follows the pipper (it is captured again when they return).
+   */
+  walking: boolean;
   /** Pipper error to the aim point, rad (HUD azimuth + right, elevation + up). */
   errorAz: number;
   errorEl: number;
@@ -125,6 +130,14 @@ export interface FlightControlInternals {
   /** PAC integrators (fractions of its authority). */
   pacIntAz: number;
   pacIntEl: number;
+  /** Stick and pedal positions when PAC captured its point (walking is measured from them). */
+  pacRefPitch: number;
+  pacRefRoll: number;
+  pacRefRudder: number;
+  /** Time since the controls came back after a walk, s (−1: not settling). */
+  pacSettleTime: number;
+  /** How long the pipper has been slower than the settle rate while settling, s. */
+  pacSettleDwell: number;
   /** Commanded (pre-actuator) surface positions this step, -1..1. */
   elevatorCmd: number;
   aileronCmd: number;
@@ -146,6 +159,10 @@ export interface FlightControlInternals {
   gcasCounter: number;
   /** A body point was on the ground last step (invulnerable bounces). */
   inContact: boolean;
+  /** Sim time of the last GROUND CONTACT message, s (they are spaced out). */
+  contactMessageTime: number;
+  /** A bounce (invulnerable) happened: re-trim for 1 g at the start of the next control step. */
+  bounceTrimPending: boolean;
 }
 
 export interface AircraftState {

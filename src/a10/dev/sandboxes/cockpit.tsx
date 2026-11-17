@@ -10,9 +10,24 @@
  *   look=<az>,<el>  head look, degrees (+ right, + up)   fov=<deg>   time=<hours>
  *   preset=cruise|dive|turn|landing|dusk|warnings        view=cockpit|chase|flyby|orbit
  *   shadows=0|1     arm=1   g=<load>   vision=<0..1>     ui=0 (no panel)   cursor=x,y (NDC hover)
+ *   hud=0 (no HUD pass)   pages=<left>,<right> (MFCD pages, e.g. DSMS,TAD)
+ *   mfd=standin (the sandbox's own stand-in pages instead of the MFD module's)
+ *
+ * The MFCDs show the MFD module's pages (view/mfd useMfdPass) when it loads, else simple stand-in
+ * pages drawn here: the page name and each OSB's label from the avionics' table, next to its
+ * button — which checks that the labels and the buttons line up.
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import {
   Box3,
   CanvasTexture,
@@ -54,10 +69,14 @@ import { useA10Store, type ViewMode } from '../../state/store';
 import { useCameraRig, cameraRigHandle } from '../../view/cockpit/CameraRig';
 import { cockpitCamera } from '../../view/cockpit/cockpitCamera';
 import { cockpitHandle, useCockpit } from '../../view/cockpit/CockpitView';
+import { osbHoverLabel } from '../../view/cockpit/clickables';
+import { getDisplaySurfaces, type DisplaySurface } from '../../view/cockpit/displays';
+import { osbPlacement, OSB_COUNT } from '../../view/cockpit/mfcd';
+import { MFCD } from '../../view/cockpit/panelData';
+import type { MfdPage } from '../../core/avionics/types';
 import Environment from '../../view/environment/Environment';
 import { environmentOverrides } from '../../view/environment/envState';
 import { A10_PRIORITY, frameInfo } from '../../view/frame';
-import { useHudPass } from '../../view/hud/HudView';
 import RenderPipeline from '../../view/RenderPipeline';
 
 // ---------------------------------------------------------------------------------------------
@@ -292,6 +311,23 @@ if (typeof window !== 'undefined')
       viewInput.cursorFree = true;
       viewInput.click = { x, y, button };
     },
+    /** Hover (and with `button` click) a clickable control by id ('osb:L:6', 'masterArm' …). */
+    clickId: (id: string, button: number | null = 0) => {
+      const t = cockpitHandle.current?.targets.find((x) => x.id === id);
+      if (!t) return false;
+      const c = t.box.getCenter(new Vector3()).applyMatrix4(t.frame.matrixWorld);
+      c.project(cockpitCamera);
+      sandboxCursor = { x: c.x, y: c.y };
+      viewInput.cursorFree = true;
+      if (button !== null) viewInput.click = { x: c.x, y: c.y, button };
+      return true;
+    },
+    /** Show pages on the MFCDs. */
+    pages: (left: MfdPage, right: MfdPage) => {
+      if (!fakeSim) return;
+      fakeSim.avionics.mfd.left = left;
+      fakeSim.avionics.mfd.right = right;
+    },
     /** What the eye sees in a direction (degrees): the nearest cockpit surface. */
     probe: (azDeg: number, elDeg: number) => {
       const m = cockpitHandle.current;
@@ -340,6 +376,8 @@ let fakeSim: Sim | null = null;
 const getFakeSim = (): Sim | null => fakeSim;
 const _dir = new Vector3();
 
+const PAGES: readonly MfdPage[] = ['STAT', 'DSMS', 'TGP', 'MAV', 'TAD', 'MSG'];
+
 function createFakeSim(): Sim {
   const sim = createSim({
     terrain: TERRAIN,
@@ -349,8 +387,84 @@ function createFakeSim(): Sim {
   });
   sim.avionics.steerpoints.length = 0;
   sim.avionics.steerpoints.push({ id: 1, name: 'TGT1', position: new Vector3(6000, 0, -9000) });
+  sim.avionics.steerpoints.push({ id: 2, name: 'TGT2', position: new Vector3(-4000, 0, -12000) });
   sim.avionics.activeSteerpoint = 0;
+  const pages = new URLSearchParams(typeof location === 'undefined' ? '' : location.search)
+    .get('pages')
+    ?.split(',');
+  if (pages && pages.length === 2 && pages.every((p) => PAGES.includes(p as MfdPage))) {
+    sim.avionics.mfd.left = pages[0] as MfdPage;
+    sim.avionics.mfd.right = pages[1] as MfdPage;
+  }
   return sim;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Stand-in MFCD pages (when the MFD module is not loaded)
+// ---------------------------------------------------------------------------------------------
+
+const MFD_PARAM = new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get(
+  'mfd',
+);
+/** Draw the stand-in pages: asked for, or the MFD module failed to load. */
+let standInPages = MFD_PARAM === 'standin';
+
+/** One display's stand-in page: the page name and every OSB's label beside its button. */
+function paintStandIn(surface: DisplaySurface, sim: Sim, side: 'L' | 'R'): void {
+  const c = surface.canvas;
+  const ctx = c?.getContext('2d');
+  if (!c || !ctx || !surface.texture) return;
+  const W = c.width;
+  ctx.fillStyle = '#020604';
+  ctx.fillRect(0, 0, W, W);
+  const page = side === 'L' ? sim.avionics.mfd.left : sim.avionics.mfd.right;
+  const soi =
+    (side === 'L' && sim.avionics.soi === 'LMFD') || (side === 'R' && sim.avionics.soi === 'RMFD');
+  ctx.strokeStyle = soi ? '#f2f2f2' : '#1f6b2c';
+  ctx.lineWidth = soi ? 6 : 2;
+  ctx.strokeRect(4, 4, W - 8, W - 8);
+  ctx.fillStyle = '#3cff5a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 44px "Courier New", monospace';
+  ctx.fillText(page, W / 2, W / 2 - 16);
+  ctx.font = '20px "Courier New", monospace';
+  ctx.fillStyle = '#29b84a';
+  ctx.fillText('STAND-IN PAGE', W / 2, W / 2 + 28);
+  const px = W / MFCD.screen;
+  ctx.font = 'bold 22px "Courier New", monospace';
+  for (let b = 1; b <= OSB_COUNT; b++) {
+    const label = osbHoverLabel(sim, side, b);
+    if (!label) continue;
+    const p = osbPlacement(b);
+    // just inside the screen edge, in line with the button
+    const inset = 26;
+    let x = W / 2 + p.x * px;
+    let y = W / 2 - p.y * px;
+    if (p.edge === 0) y = inset;
+    else if (p.edge === 2) y = W - inset;
+    else if (p.edge === 1) x = W - inset - 4;
+    else x = inset + 4;
+    ctx.textAlign = p.edge === 1 ? 'right' : p.edge === 3 ? 'left' : 'center';
+    ctx.fillStyle = '#e8ffe8';
+    ctx.fillText(label.split(' ')[0], x, y);
+  }
+  surface.texture.needsUpdate = true;
+}
+
+function StandInPages() {
+  const clock = useMemo(() => ({ t: 1 }), []);
+  useFrame((_st, delta) => {
+    if (!standInPages || !fakeSim) return;
+    clock.t += delta;
+    if (clock.t < 0.25) return;
+    clock.t = 0;
+    const d = getDisplaySurfaces();
+    if (!d) return;
+    paintStandIn(d.left, fakeSim, 'L');
+    paintStandIn(d.right, fakeSim, 'R');
+  });
+  return null;
 }
 
 /** Write the panel into the fake flight (no flight model: the cockpit only reads it). */
@@ -555,9 +669,51 @@ function CockpitLayer() {
   sandboxGl = useThree((st) => st.gl);
   useCameraRig(getFakeSim);
   useCockpit(getFakeSim);
-  useHudPass(getFakeSim);
   return null;
 }
+
+/**
+ * The HUD pass, loaded on its own: while the HUD module is being edited (or with ?hud=0) the
+ * cockpit sandbox still runs, without the HUD.
+ */
+const HudLayer = lazy(() =>
+  import('../../view/hud/HudView').then((m) => ({
+    default: function HudLayer() {
+      m.useHudPass(getFakeSim);
+      return null;
+    },
+  })),
+);
+
+/** The MFD module's pages on the MFCDs, loaded on its own like the HUD. */
+const MfdLayer = lazy(() =>
+  import('../../view/mfd/MfdView').then((m) => ({
+    default: function MfdLayer() {
+      m.useMfdPass(getFakeSim);
+      return null;
+    },
+  })),
+);
+
+class Optional extends Component<
+  { children: ReactNode; what: string; onFail?: () => void },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(e: unknown) {
+    console.warn(`[cockpit sandbox] ${this.props.what} left out:`, String(e));
+    this.props.onFail?.();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const SHOW_HUD =
+  new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('hud') !== '0';
 
 // ---------------------------------------------------------------------------------------------
 // Panel
@@ -785,6 +941,21 @@ export default function CockpitSandbox() {
         <Environment />
         <Ground />
         {ready && <CockpitLayer />}
+        {ready && SHOW_HUD && (
+          <Optional what="HUD">
+            <Suspense fallback={null}>
+              <HudLayer />
+            </Suspense>
+          </Optional>
+        )}
+        {ready && MFD_PARAM !== 'standin' && (
+          <Optional what="MFD" onFail={() => (standInPages = true)}>
+            <Suspense fallback={null}>
+              <MfdLayer />
+            </Suspense>
+          </Optional>
+        )}
+        {ready && <StandInPages />}
         <RenderPipeline />
       </Canvas>
       {error && <div style={{ ...PANEL, color: '#f88' }}>{error}</div>}

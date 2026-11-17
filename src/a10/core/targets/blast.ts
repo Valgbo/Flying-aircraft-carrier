@@ -25,7 +25,7 @@ import {
 import type { Rng } from '../rng';
 import type { Sim } from '../types';
 import { densityAt } from '../world/atmosphere';
-import { damageBox, strikeNear, traceInterior } from './damage';
+import { breakTrack, damageBox, strikeNear, traceInterior } from './damage';
 import { plateNormalWorld, rayVehicle, type PartHit } from './hit';
 import { hullToWorld, vehiclePose, worldToHull, type V3 } from './pose';
 import {
@@ -196,10 +196,11 @@ export function applyBlast(
     if (Math.abs(v.position.x - position.x) > reach || Math.abs(v.position.z - position.z) > reach)
       continue;
     const rt = v.internal;
-    // HEI already resolved on this vehicle by resolveRoundHit
+    // A burst already resolved on this vehicle (HEI by resolveRoundHit, a warhead by
+    // applyWarheadHit) at this point in this step
     if (
-      rt.heiTime === sim.time &&
-      Math.hypot(rt.heiX - position.x, rt.heiY - position.y, rt.heiZ - position.z) < 0.5
+      rt.burstTime === sim.time &&
+      Math.hypot(rt.burstX - position.x, rt.burstY - position.y, rt.burstZ - position.z) < 0.5
     )
       continue;
     applyToVehicle(sim, v, position, W, w13, fragmentKg, mu, nFrag, v0, rho, weapon, sourceId, r);
@@ -384,6 +385,7 @@ function applyToVehicle(
           continue;
         if (pen > eff) {
           if (part.spaced) {
+            breakTrack(sim, v, _ph.part, scale, 'fragment', _list);
             strikeNear(
               sim,
               v,

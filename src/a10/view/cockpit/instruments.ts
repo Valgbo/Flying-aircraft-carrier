@@ -607,23 +607,28 @@ function bindPivot(root: Object3D, p: PivotMeta): PivotBinding | null {
 /**
  * Bind the cockpit model's animations (meta.cockpit) to the simulation. `root` is a cockpit
  * model instance (createCockpitModel); materials of drums must be this instance's own (the
- * driver moves their texture offsets).
+ * driver moves their texture offsets). Nodes for which `skip` returns true are not bound (the
+ * A-10A instruments the A-10C panel covers).
  */
-export function createInstrumentDriver(root: Object3D, meta: A10Meta): InstrumentDriver {
+export function createInstrumentDriver(
+  root: Object3D,
+  meta: A10Meta,
+  skip: (node: Object3D) => boolean = () => false,
+): InstrumentDriver {
   const values = new Float64Array(COCKPIT_PROPS.length);
   const lamps = createCockpitLamps();
   const memory = createCockpitMemory();
   const pivots: PivotBinding[] = [];
   for (const p of meta.cockpit.pivots) {
     const b = bindPivot(root, p);
-    if (b) pivots.push(b);
+    if (b && !skip(b.obj)) pivots.push(b);
   }
   const drums: UvBinding[] = [];
   for (const u of meta.cockpit.uvAnims) {
     const key = u.property ? FG_PROPERTY[u.property] : undefined;
     if (key === undefined) continue;
     const obj = root.getObjectByName(u.node);
-    if (!obj) continue;
+    if (!obj || skip(obj)) continue;
     const materials = meshMaterials(obj);
     if (!materials.length) continue;
     drums.push({
@@ -642,7 +647,7 @@ export function createInstrumentDriver(root: Object3D, meta: A10Meta): Instrumen
     const rule = toggleRule(t.node);
     if (!rule) continue;
     const obj = root.getObjectByName(t.node);
-    if (obj) toggles.push({ obj, rule });
+    if (obj && !skip(obj)) toggles.push({ obj, rule });
   }
 
   const apply = (dt = 0) => {

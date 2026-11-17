@@ -137,6 +137,123 @@ function prepare(gltf: GLTF, fileUrl: string): Group {
   return root;
 }
 
+// ---------------------------------------------------------------------------------------------
+// rocket pods: the rockets in their tubes, leaving one by one
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A rocket pod's rockets (the noses in the tube mouths), tube by tube in firing order. The
+ * converter merges the seven `Hydra70_n` objects into one mesh, each object's triangles
+ * contiguous in node order; at load their triangles are re-ordered by firing order (FlightGear's
+ * LAU-68 hides `Hydra70_1` first and the centre tube `Hydra70_7` last) so that `stages[k]`, a
+ * geometry sharing the same buffers with a draw range that starts after the first k tubes, shows
+ * the rockets left after k have been fired. One draw call whatever is left; the stage
+ * geometries are shared by every instance (switch `mesh.geometry`, never dispose them).
+ */
+export interface PodTubes {
+  /** `stages[k]`: the rockets left after k were fired (k = 0 … tubes). */
+  stages: BufferGeometry[];
+  /** Tube axes in the pod's frame (lugs origin), in firing order, and the noses' front, z. */
+  axes: { x: number; y: number }[];
+  noseZ: number;
+}
+
+const podTubes = new WeakMap<BufferGeometry, PodTubes>();
+
+/** The pod tubes of a mesh of a rocket pod (any stage geometry), or null. */
+export function podTubesOf(mesh: Mesh): PodTubes | null {
+  return podTubes.get(mesh.geometry as BufferGeometry) ?? null;
+}
+
+const _pv = new Vector3();
+
+/**
+ * Split a rocket pod template's merged rockets into firing-order stages (see PodTubes). Checks
+ * that each object's triangles form one compact tube; anything unexpected leaves the pod whole.
+ * Returns the number of tubes found (0 when the pod was left as it was).
+ */
+export function prepareRocketPod(template: Object3D): number {
+  const tubes: { n: number; tris: number }[] = [];
+  template.traverse((o) => {
+    const m = /^Hydra70_(\d+)$/.exec(String(o.userData?.acName ?? ''));
+    if (m && Number(o.userData.triangles) > 0)
+      tubes.push({ n: Number(m[1]), tris: Number(o.userData.triangles) });
+  });
+  if (tubes.length < 2) return 0;
+  const total = tubes.reduce((a, t) => a + t.tris, 0);
+  let mesh: Mesh | null = null;
+  template.traverse((o) => {
+    const g = (o as Mesh).isMesh ? ((o as Mesh).geometry as BufferGeometry) : null;
+    if (g?.index && g.index.count === total * 3) mesh = o as Mesh;
+  });
+  const found = mesh as Mesh | null;
+  if (!found) return 0;
+  const geometry = found.geometry as BufferGeometry;
+  const index = geometry.index!;
+  const position = geometry.getAttribute('position');
+  template.updateMatrixWorld(true);
+  const toPod = new Matrix4()
+    .copy(template.matrixWorld)
+    .invert()
+    .multiply(found.matrixWorld);
+  // each object's block: its tube axis (mean x, y) and that every vertex lies within the tube
+  const blocks: { n: number; start: number; tris: number; x: number; y: number }[] = [];
+  let start = 0;
+  let noseZ = Infinity;
+  for (const t of tubes) {
+    let sx = 0;
+    let sy = 0;
+    const count = t.tris * 3;
+    for (let i = start * 3; i < (start + t.tris) * 3; i++) {
+      _pv.fromBufferAttribute(position, index.getX(i)).applyMatrix4(toPod);
+      sx += _pv.x;
+      sy += _pv.y;
+      if (_pv.z < noseZ) noseZ = _pv.z;
+    }
+    const x = sx / count;
+    const y = sy / count;
+    for (let i = start * 3; i < (start + t.tris) * 3; i++) {
+      _pv.fromBufferAttribute(position, index.getX(i)).applyMatrix4(toPod);
+      // a 70 mm rocket in its tube: nothing farther than about 4 cm from the tube's axis
+      if (Math.hypot(_pv.x - x, _pv.y - y) > 0.06) return 0;
+    }
+    blocks.push({ n: t.n, start, tris: t.tris, x, y });
+    start += t.tris;
+  }
+  blocks.sort((a, b) => a.n - b.n);
+  const src = index.array;
+  const reordered = new (src.constructor as Uint16ArrayConstructor | Uint32ArrayConstructor)(
+    src.length,
+  );
+  let o = 0;
+  for (const b of blocks) {
+    for (let i = b.start * 3; i < (b.start + b.tris) * 3; i++) reordered[o++] = src[i];
+  }
+  const newIndex = new BufferAttribute(reordered, 1);
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const info: PodTubes = {
+    stages: [],
+    axes: blocks.map((b) => ({ x: b.x, y: b.y })),
+    noseZ,
+  };
+  let first = 0;
+  for (let k = 0; k <= blocks.length; k++) {
+    const g = new BufferGeometry();
+    g.name = `${geometry.name || 'rockets'}-stage${k}`;
+    g.setIndex(newIndex);
+    for (const name of Object.keys(geometry.attributes)) g.setAttribute(name, geometry.attributes[name]);
+    g.boundingSphere = geometry.boundingSphere;
+    g.boundingBox = geometry.boundingBox;
+    g.setDrawRange(first * 3, (total - first) * 3);
+    info.stages.push(g);
+    podTubes.set(g, info);
+    if (k < blocks.length) first += blocks[k].tris;
+  }
+  found.geometry = info.stages[0];
+  return blocks.length;
+}
+
 /** Merge the gear meshes of the exterior at rest into one Float32 mesh per material. */
 function buildGearUp(exterior: Group, meta: A10Meta): { group: Group; pivots: string[] } {
   const isGear = (input: string | null | undefined, node: string) =>
@@ -257,6 +374,8 @@ export function loadAircraftModels(
         const o = storeGroups[i].getObjectByName(t.node);
         if (o) o.visible = t.default;
       }
+      // rocket pods: the rockets leave their tubes one by one (stations and jettisoned pods)
+      prepareRocketPod(storeGroups[i]);
       stores.set(id, storeGroups[i]);
     });
     const gear = buildGearUp(exterior, meta);
@@ -284,9 +403,14 @@ registerFlightLoader('aircraft-models', 3, (onProgress) =>
   loadAircraftModels(onProgress).then(() => undefined),
 );
 
-/** Store model id for a simulation StoreType (null when the type has no model). */
-export function storeModelId(type: StoreType | string): string | null {
-  const meta = templates?.meta;
+/**
+ * Store model id for a simulation StoreType (null when the type has no model), from `meta`
+ * (default: the loaded templates' meta file).
+ */
+export function storeModelId(
+  type: StoreType | string,
+  meta: A10Meta | null = templates?.meta ?? null,
+): string | null {
   if (!meta) return null;
   if (meta.stores[type]) return type;
   return meta.storeTypes[type] ?? null;
@@ -315,15 +439,17 @@ export async function loadStoreModel(type: StoreType | string): Promise<Group | 
 export function createStoreInstance(
   type: StoreType | string,
   origin: 'centre' | 'lugs' = 'centre',
+  from: AircraftTemplates | null = templates,
 ): Group | null {
-  const tpl = getStoreTemplate(type);
-  const id = storeModelId(type);
-  if (!tpl || !id || !templates) return null;
+  if (!from) return null;
+  const id = storeModelId(type, from.meta);
+  const tpl = id ? from.stores.get(id) : undefined;
+  if (!tpl || !id) return null;
   const g = new Group();
   g.name = `store-${id}`;
   const c = tpl.clone(true);
   if (origin === 'centre') {
-    const [x, y, z] = templates.meta.stores[id].centre;
+    const [x, y, z] = from.meta.stores[id].centre;
     c.position.set(-x, -y, -z);
     c.updateMatrix();
   }

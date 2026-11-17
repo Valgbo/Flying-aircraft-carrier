@@ -8,7 +8,9 @@
  * while the zoom is held or by wheel steps), looks at the SPI while that key is held, centres
  * on request, moves a little under g and shakes as view/shake.ts asks (jolts, the gun's 65 Hz
  * buzz) and with the airframe's buffet. The head pose goes into cockpitCamera (body frame);
- * the world camera is the aircraft's pose composed with it, near plane 1 m.
+ * the world camera is the aircraft's DRAWN pose (drawPose: interpolated within the last 120 Hz
+ * step, ARCHITECTURE §6) composed with it, near plane 1 m — never the last step's pose, which
+ * would make the world judder whenever a frame takes 0 or 2 steps (cameraPose.ts).
  *
  * Outside views (outsideViews.ts): chase, flyby, orbit, weapon, target; near plane 0.5 m.
  */
@@ -21,8 +23,9 @@ import { A10_GEOMETRY } from '../../data/geometry';
 import { consumeLook, consumeZoom, viewInput } from '../../input/viewInput';
 import { getSim } from '../../state/runtime';
 import { useA10Store } from '../../state/store';
-import { A10_PRIORITY, frameInfo, onSimFrame } from '../frame';
+import { A10_PRIORITY, drawPose, frameInfo, onSimFrame } from '../frame';
 import { shakeState } from '../shake';
+import { cockpitWorldCamera } from './cameraPose';
 import {
   cockpitCamera,
   cockpitViewState,
@@ -45,6 +48,9 @@ const _pos = new Vector3();
 const _quat = new Quaternion();
 const _eyeW = new Vector3();
 const _dir = new Vector3();
+/** The aircraft's drawn pose this frame (interpolated within the last step). */
+const _acPos = new Vector3();
+const _acQuat = new Quaternion();
 const _angles = { az: 0, el: 0 };
 const _lookAt = { az: 0, el: 0 };
 const _pose: CameraPose = { position: new Vector3(), quaternion: new Quaternion(), fov: 50 };
@@ -170,9 +176,10 @@ export function useCameraRig(source: () => Sim | null): void {
       inp.lookAt = null;
       const target = viewInput.lookAtSpi ? lookAtTarget(sim) : null;
       if (target) {
-        // from the eye (as last placed) to the SPI, in body HUD angles
-        _eyeW.copy(cockpitCamera.position).applyQuaternion(ac.orientation).add(ac.position);
-        worldToBody(ac.orientation, _dir.subVectors(target, _eyeW), _dir);
+        // from the eye (as last placed, on the drawn pose) to the SPI, in body HUD angles
+        drawPose(sim, _acPos, _acQuat);
+        _eyeW.copy(cockpitCamera.position).applyQuaternion(_acQuat).add(_acPos);
+        worldToBody(_acQuat, _dir.subVectors(target, _eyeW), _dir);
         hudAnglesFromBodyDir(_dir, _angles);
         _lookAt.az = _angles.az;
         _lookAt.el = _angles.el;
@@ -188,9 +195,8 @@ export function useCameraRig(source: () => Sim | null): void {
       setPerspective(cockpitCamera, rig.head.fov, cockpitCamera.near, camera.aspect);
       cockpitCamera.updateMatrixWorld();
 
-      // world camera = aircraft pose ∘ head pose
-      camera.position.copy(_pos).applyQuaternion(ac.orientation).add(ac.position);
-      camera.quaternion.multiplyQuaternions(ac.orientation, _quat);
+      // world camera = the aircraft's drawn pose ∘ head pose
+      cockpitWorldCamera(sim, _pos, _quat, camera.position, camera.quaternion);
       setPerspective(camera, rig.head.fov, WORLD_NEAR_COCKPIT);
       rig.outside.leave();
       rig.handle.shownView = 'cockpit';

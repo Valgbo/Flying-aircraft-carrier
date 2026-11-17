@@ -290,19 +290,24 @@ describe('flight model: PLAN §5 checks', () => {
   );
 
   it(
-    'dive recovery: a 4 g pull-out from a 30° dive at 300 kn matches the closed form ± 15 %',
+    'dive recovery: a 4 g pull-out from a 30° dive at 300 kn matches the closed form ± 15 % and, with the g onset allowed for, the plan\'s 105 m ± 10 %',
     () => {
       const v0 = 300 * KT;
       const sim = createTestbed({ altitude: 1500, tas: v0, gamma: -30 * DEG, throttle: 0 });
       const pilot = gPilot(() => 4);
       const hStart = sim.aircraft.altitude;
+      const n0 = sim.aircraft.gLoad;
       let at4: { h: number; v: number; gamma: number } | null = null;
       let hMin = hStart;
       let level = false;
+      // Equivalent delay of the g onset: the time the pull lags an instantaneous 4 g,
+      // ∫ (1 − (n − n₀)/(4 − n₀)) dt over the pull.
+      let onsetDelay = 0;
       runFlightOnly(sim, 8, (s) => {
         if (level) return;
         pilot(s);
         const ac = s.aircraft;
+        onsetDelay += (1 - clamp((ac.gLoad - n0) / (4 - n0), 0, 1)) * SIM_DT;
         if (!at4 && ac.gLoad >= 4) at4 = { h: ac.altitude, v: ac.tas, gamma: ac.flightPathAngle };
         hMin = Math.min(hMin, ac.altitude);
         if (ac.flightPathAngle >= 0) level = true;
@@ -322,8 +327,19 @@ describe('flight model: PLAN §5 checks', () => {
         'dive recovery from the moment 4 g is reached',
         `${measured.toFixed(1)} m vs closed form ${reference.toFixed(1)} m (${(((measured - reference) / reference) * 100).toFixed(1)} %)`,
       );
-      report('dive recovery including the g onset', `${(hStart - hMin).toFixed(1)} m`);
+      // The plan's ≈105 m is the closed form for 4 g reached instantly (PLAN §5). The model's pull
+      // reaches 4 g after an onset; while it builds, the dive goes on at the start's sink rate.
+      // Take that allowance (sink rate × the onset's equivalent delay) off the loss measured from
+      // the start of the pull and compare with the plan's figure (review FC-8).
+      const total = hStart - hMin;
+      const onsetAllowance = v0 * Math.sin(30 * DEG) * onsetDelay;
+      report(
+        'dive recovery including the g onset',
+        `${total.toFixed(1)} m; onset delay ${onsetDelay.toFixed(2)} s → allowance ${onsetAllowance.toFixed(1)} m; without it ${(total - onsetAllowance).toFixed(1)} m vs the plan's 105 m`,
+      );
       expect(Math.abs(measured - reference) / reference).toBeLessThan(0.15);
+      expect(Math.abs(total - onsetAllowance - 105) / 105).toBeLessThan(0.1);
+      // The plan's figure is the closed form for these conditions.
       expect(Math.abs(nominal - 105) / 105).toBeLessThan(0.02);
     },
     LONG,

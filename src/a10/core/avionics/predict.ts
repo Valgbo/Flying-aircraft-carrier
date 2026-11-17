@@ -73,8 +73,9 @@ function load(i: number, out: Vector3): Vector3 {
 
 /**
  * Fly a body from `origin` with world velocity `velocity` until it meets `ground` or `maxTime`
- * passes; the wind is held constant. Returns false when there is no impact in that time (or the
- * ground has no data). Allocation-free.
+ * passes; the wind is held constant. `chordTime` is the length of the chords tested against the
+ * ground (see the file comment; stores use longer ones than rounds). Returns false when there is
+ * no impact in that time (or the ground has no data). Allocation-free.
  */
 export function predictImpact(
   model: BallisticModel,
@@ -85,16 +86,14 @@ export function predictImpact(
   maxTime: number,
   dt: number,
   out: ImpactPrediction,
+  chordTime: number = FIRE_CONTROL.groundChordTime,
 ): boolean {
   predictorStats.steps = 0;
   predictorStats.groundTests = 0;
   if (!ground.valid || !(dt > 0)) return false;
   // A plane above the start: the computer has no solution (the aircraft is below its ground).
   if (!ground.terrain && origin.y <= ground.plane) return false;
-  const chordSteps = Math.max(
-    1,
-    Math.min(MAX_CHORD_STEPS, Math.round(FIRE_CONTROL.groundChordTime / dt)),
-  );
+  const chordSteps = Math.max(1, Math.min(MAX_CHORD_STEPS, Math.round(chordTime / dt)));
   const ceiling = ground.ceiling;
   _p.copy(origin);
   _v.copy(velocity);

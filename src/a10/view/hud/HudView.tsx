@@ -1,15 +1,20 @@
 /**
- * Collimated HUD symbology, clipped to the combiner glass. OWNED BY THE HUD MODULE.
+ * Collimated HUD symbology, clipped to the combiner glass. OWNED BY THE HUD-MFD MODULE.
  *
  * Registers the `hud` render pass (order 300, docs/a10/ARCHITECTURE.md §6). It runs only in
  * the cockpit view (`cockpitViewState.active`) while a flight exists, after the world (100)
  * and cockpit (200) passes have drawn into the target. See HudRenderer.ts for how the
  * collimation works.
+ *
+ * It also mounts the two multifunction displays (view/mfd, wave 2): SceneRoot (foundation) mounts
+ * this component, and has no MfdView yet. If SceneRoot mounts `view/mfd/MfdView` itself, remove
+ * the `useMfdPass` line below.
  */
 import { useEffect } from 'react';
 import type { Sim } from '../../core/types';
 import { getSim } from '../../state/runtime';
 import { cockpitViewState } from '../cockpit/cockpitCamera';
+import { useMfdPass } from '../mfd/MfdView';
 import { registerRenderPass } from '../pipeline';
 import { HudRenderer } from './HudRenderer';
 
@@ -43,5 +48,6 @@ export function useHudPass(source: () => Sim | null): void {
 
 export default function HudView() {
   useHudPass(getSim);
+  useMfdPass(getSim);
   return null;
 }
