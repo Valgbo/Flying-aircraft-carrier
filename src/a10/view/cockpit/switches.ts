@@ -14,9 +14,9 @@
  *   Gear                  the landing-gear handle
  *   g-meter reset         the accelerometer's push-to-set button (cockpit only, no command)
  *
- * What the A-10A lacks gets a small labelled hotspot switch on an "A-10C" strip mounted below
- * the HUD control panel (hotspots.ts): LASER ARM, TGP, ALT SCE, AUTOPILOT engage and mode, and
- * the altitude alert (ALT ALERT).
+ * What the A-10A lacks gets a small labelled hotspot switch on an "A-10C" add-on box at the left
+ * end of the instrument panel, beside the HUD control panel (hotspots.ts): LASER ARM, TGP,
+ * ALT SCE, the autopilot's ENGAGE and MODE buttons, and the altitude alert (ALT ALERT).
  *
  * Clicks: the left button is the primary action (toggle / next position), the right button
  * the secondary one (the other way). Commands carry explicit values computed from the current

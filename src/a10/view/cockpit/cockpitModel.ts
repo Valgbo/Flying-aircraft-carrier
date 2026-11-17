@@ -2,7 +2,7 @@
  * Everything the cockpit pass draws, in BODY coordinates: the FlightGear cockpit with its
  * instruments driven by the simulation, the pilot's own airframe seen from the seat (canopy bow,
  * nose, wings, engines, tail), the ejection seat, the cockpit lighting and shadows, the glass,
- * the display surfaces, the A-10C strip of hotspot switches and the pick highlight.
+ * the display surfaces, the A-10C box of hotspot switches and the pick highlight.
  * OWNED BY THE COCKPIT MODULE. Built once when the aircraft models have loaded; CockpitView
  * updates it every frame and draws `cockpitScene` in the cockpit render pass.
  *
@@ -41,7 +41,7 @@ import { a10Env } from '../environment/env';
 import { a10Lights } from '../environment/envState';
 import { createDisplaySurfaces, disposeDisplaySurfaces, type DisplaySurface } from './displays';
 import { createCanopyGlass, createCombinerGlass, updateGlass } from './glass';
-import { HotspotStrip } from './hotspots';
+import { HotspotBox } from './hotspots';
 import { createInstrumentDriver, resetGMeter, type InstrumentDriver } from './instruments';
 import { CockpitLights } from './lighting';
 import { boundsInFrame, pickTarget, PickHighlight, rayFromCamera, type PickTarget } from './picking';
@@ -84,7 +84,7 @@ export class CockpitModel {
   readonly seat: Object3D | null;
   readonly driver: InstrumentDriver;
   readonly lights: CockpitLights;
-  readonly strip: HotspotStrip;
+  readonly box: HotspotBox;
   readonly highlight: PickHighlight;
   readonly targets: PickTarget[] = [];
   readonly displays: { left: DisplaySurface; right: DisplaySurface };
@@ -185,9 +185,9 @@ export class CockpitModel {
 
     this.displays = createDisplaySurfaces(scene, meta.displays.tv?.corners);
 
-    this.strip = new HotspotStrip();
-    scene.add(this.strip.group);
-    this.strip.group.updateMatrixWorld(true);
+    this.box = new HotspotBox();
+    scene.add(this.box.group);
+    this.box.group.updateMatrixWorld(true);
 
     // click targets
     for (const c of COCKPIT_CONTROLS) {
@@ -208,12 +208,12 @@ export class CockpitModel {
         const box = boundsInFrame(frame, new Box3());
         if (!box.isEmpty()) this.targets.push({ id: c.id, label: c.label, frame, box });
       } else {
-        const h = this.strip.targets.find((x) => x.id === c.id);
+        const h = this.box.targets.find((x) => x.id === c.id);
         if (h)
           this.targets.push({
             id: c.id,
             label: c.label,
-            frame: this.strip.group,
+            frame: this.box.group,
             box: new Box3(h.min.clone(), h.max.clone()),
           });
       }
@@ -264,7 +264,7 @@ export class CockpitModel {
     for (const t of this.airframe.toggles) t.obj.visible = false;
     for (const o of this.airframeHidden) o.visible = false;
 
-    this.strip.update(this.switchState, night);
+    this.box.update(this.switchState, night);
   }
 
   /** The control under a pointer (NDC), or null. */
@@ -304,7 +304,7 @@ export class CockpitModel {
     this.seat?.removeFromParent();
     disposeAircraftInstance(this.airframe);
     this.lights.dispose();
-    this.strip.dispose();
+    this.box.dispose();
     this.highlight.dispose();
     disposeDisplaySurfaces();
     for (const m of this.ownMaterials) m.dispose();

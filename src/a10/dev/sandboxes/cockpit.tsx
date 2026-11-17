@@ -209,7 +209,7 @@ if (typeof window !== 'undefined')
       const dir = bodyDirFromHudAngles(azDeg * DEG, elDeg * DEG, new Vector3());
       const rc = new Raycaster(new Vector3(e.x, e.y, e.z), dir, 0.05, 3);
       const hit = rc
-        .intersectObjects([m.root, m.airframe.root, m.strip.group], true)
+        .intersectObjects([m.root, m.airframe.root, m.box.group], true)
         .find((h) => isShown(h.object));
       if (!hit) return null;
       const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;

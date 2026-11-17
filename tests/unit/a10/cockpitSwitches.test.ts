@@ -66,12 +66,17 @@ describe('cockpit controls table', () => {
     }
   });
 
-  it('gives every hotspot control a switch on the A-10C strip, and the strip only those', () => {
+  it('gives every hotspot control a switch on the A-10C box, and the box only those', () => {
     const hot = COCKPIT_CONTROLS.filter((c) => c.target.kind === 'hotspot').map((c) => c.id);
     expect(HOTSPOTS.map((h) => h.id).sort()).toEqual([...hot].sort());
-    // the switches do not overlap on the strip
-    const xs = HOTSPOTS.map((h) => h.x).sort((a, b) => a - b);
-    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThan(0.025);
+    // one switch per cell of the 3 × 2 face
+    const cells = new Set(HOTSPOTS.map((h) => `${h.col},${h.row}`));
+    expect(cells.size).toBe(HOTSPOTS.length);
+    for (const h of HOTSPOTS) {
+      expect(h.col).toBeGreaterThanOrEqual(0);
+      expect(h.col).toBeLessThan(3);
+      expect(h.row === 0 || h.row === 1).toBe(true);
+    }
   });
 });
 

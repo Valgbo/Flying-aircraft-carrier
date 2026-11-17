@@ -3,7 +3,7 @@
  * around the control and a label with its name and position). OWNED BY THE COCKPIT MODULE.
  *
  * Every control is a box in the local frame of a node of the cockpit model (FlightGear's pick
- * boxes from meta.pick, the bounds of a moving part, or a hotspot of the A-10C strip). A ray from
+ * boxes from meta.pick, the bounds of a moving part, or a hotspot of the A-10C box). A ray from
  * the cockpit camera through the pointer is tested against the boxes in their own frames, so
  * moving parts (the gear handle, the flap lever) stay clickable wherever they are.
  */
