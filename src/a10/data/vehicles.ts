@@ -218,23 +218,35 @@ export const BMP_ARMOUR = {
 
 export const BMP_ARMOUR_NOTES: Record<keyof typeof BMP_ARMOUR, SourceNote> = {
   upperFront: {
-    source: 'plan',
+    source: 'warThunderBmp2',
     confidence: 'approximate',
     note: 'BMP-1/2 upper front 7 mm at ≈80° (War Thunder wiki BMP-2, Wikipedia BMP-2)',
   },
   frontTop: { source: 'plan', confidence: 'estimate' },
   lowerFront: {
-    source: 'plan',
+    source: 'warThunderBmp2',
     confidence: 'approximate',
     note: 'BMP-2 lower front ≈19 mm at 57°',
   },
-  sideUpper: { source: 'plan', confidence: 'approximate', note: 'BMP-2 upper side ≈16 mm' },
-  sideLower: { source: 'plan', confidence: 'approximate', note: 'BMP-2 lower side ≈18 mm' },
+  sideUpper: {
+    source: 'warThunderBmp2',
+    confidence: 'approximate',
+    note: 'BMP-2 upper side ≈16 mm',
+  },
+  sideLower: {
+    source: 'warThunderBmp2',
+    confidence: 'approximate',
+    note: 'BMP-2 lower side ≈18 mm',
+  },
   rear: { source: 'plan', confidence: 'approximate', note: 'rear doors are hollow fuel tanks' },
   roof: { source: 'plan', confidence: 'approximate' },
   belly: { source: 'plan', confidence: 'approximate' },
   sponsonFloor: { source: 'plan', confidence: 'estimate' },
-  turretFront: { source: 'plan', confidence: 'approximate', note: 'BMP-2 turret front ≈23 mm' },
+  turretFront: {
+    source: 'warThunderBmp2',
+    confidence: 'approximate',
+    note: 'BMP-2 turret front ≈23 mm',
+  },
   turretSide: { source: 'plan', confidence: 'approximate' },
   turretRear: { source: 'plan', confidence: 'estimate' },
   turretShoulderFront: { source: 'plan', confidence: 'estimate' },
@@ -267,14 +279,14 @@ export const BTR_ARMOUR = {
 
 export const BTR_ARMOUR_NOTES: Record<keyof typeof BTR_ARMOUR, SourceNote> = {
   upperFront: {
-    source: 'plan',
+    source: 'warThunderBtr80',
     confidence: 'approximate',
     note: 'BTR-80 front ≈10 mm sloped (War Thunder wiki BTR-80, Wikipedia BTR-80)',
   },
   lowerFront: { source: 'plan', confidence: 'approximate' },
   nose: { source: 'plan', confidence: 'approximate' },
   frontQuarter: { source: 'plan', confidence: 'estimate' },
-  sideUpper: { source: 'plan', confidence: 'approximate', note: 'BTR-80 sides 7–9 mm' },
+  sideUpper: { source: 'warThunderBtr80', confidence: 'approximate', note: 'BTR-80 sides 7–9 mm' },
   sideLower: { source: 'plan', confidence: 'approximate' },
   rear: { source: 'plan', confidence: 'approximate' },
   roof: { source: 'plan', confidence: 'approximate' },
@@ -1918,11 +1930,11 @@ export const BLAST = {
 
 export const BLAST_NOTES: Record<keyof typeof BLAST, SourceNote> = {
   impulseCoeff: {
-    source: 'plan',
+    source: 'ufc334002',
     confidence: 'approximate',
     note: 'fit to UFC 3-340-02 (2008) fig. 2-15, hemispherical surface burst',
   },
-  impulseExp: { source: 'plan', confidence: 'approximate' },
+  impulseExp: { source: 'ufc334002', confidence: 'approximate' },
   contactRadius: { source: 'plan', confidence: 'estimate' },
   dugInFactor: { source: 'plan', confidence: 'estimate', note: 'berm shields the side-on wave' },
   mk82ChargeKg: { source: 'plan', confidence: 'approximate', note: 'Mk-82: 87 kg Tritonal' },
@@ -2055,14 +2067,18 @@ export const FRAGMENTS = {
 
 export const FRAGMENTS_NOTES: Record<keyof typeof FRAGMENTS, SourceNote> = {
   mottMuRef: {
-    source: 'plan',
+    source: 'mott1947',
     confidence: 'estimate',
     note: 'Mott (1947) with B ≈ 0.055 lb½/in^(7/6), Mk-82 wall ≈11 mm, ID ≈250 mm → μ ≈ 3.5 g',
   },
   mottCaseRef: { source: 'plan', confidence: 'estimate' },
-  mottScaleExp: { source: 'plan', confidence: 'estimate', note: 'μ ∝ t^(5/6)·d^(2/3) ∝ M^(1/2)' },
+  mottScaleExp: {
+    source: 'mott1947',
+    confidence: 'estimate',
+    note: 'μ ∝ t^(5/6)·d^(2/3) ∝ M^(1/2)',
+  },
   gurney: {
-    source: 'plan',
+    source: 'gurney1943',
     confidence: 'approximate',
     note: 'Gurney (1943): TNT √(2E) ≈ 2.44 km/s',
   },

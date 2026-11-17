@@ -250,6 +250,8 @@ describe('mass, CG and inertia', () => {
       const ixx0 = ac.inertia.xx;
       sim.stores.mass = 3000;
       sim.stores.lateralMoment = 0;
+      // Spread over the stations, ≈3.3 m from the centreline on average (Σm·x²).
+      sim.stores.rollInertia = 3000 * 3.3 * 3.3;
       updateMassProperties(sim);
       expect(ac.gLimitPositive).toBeLessThan(A10.gLimitPositive);
       expect(ac.gLimitPositive).toBeGreaterThan(5);
@@ -258,6 +260,7 @@ describe('mass, CG and inertia', () => {
       const right = createTestbed({ altitude: 2000, ias: 250 * KT });
       right.stores.mass = 600;
       right.stores.lateralMoment = 600 * 5.9;
+      right.stores.rollInertia = 600 * 5.9 * 5.9;
       updateMassProperties(right);
       expect(right.aircraft.cgBody.x).toBeGreaterThan(0.15);
       runFlightOnly(right, 4);

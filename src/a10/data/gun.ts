@@ -97,18 +97,18 @@ export const GAU8_NOTES: Record<keyof typeof GAU8, SourceNote> = {
   },
   calibre: { source: 'wikiGau8', confidence: 'confirmed' },
   formFactorApi: {
-    source: 'plan',
+    source: 'mccoyG7',
     confidence: 'estimate',
     note:
       'boat-tailed projectile ≈ the G7 shape; gives 1.44 s to 1,220 m from a static gun (plan: ' +
       '1.3–1.5 s; AFTC history: 30 % less than an M61 round to 4,000 ft)',
   },
   formFactorHei: {
-    source: 'plan',
+    source: 'mccoyG7',
     confidence: 'estimate',
     note: 'M505 point-detonating fuze nose: 10 % more drag than the API',
   },
-  formFactorTp: { source: 'plan', confidence: 'estimate', note: 'matched to the API' },
+  formFactorTp: { source: 'mccoyG7', confidence: 'estimate', note: 'matched to the API' },
   dispersion80Diameter: {
     source: 'gdotsGau8',
     confidence: 'approximate',
@@ -233,7 +233,7 @@ export const GUN_DRAG_G7: ReadonlyArray<readonly [number, number]> = [
 ];
 
 export const GUN_DRAG_G7_NOTE: SourceNote = {
-  source: 'plan',
+  source: 'mccoyG7',
   confidence: 'confirmed',
   note: 'G7 standard drag function (US Army BRL; McCoy, Modern Exterior Ballistics, 1999)',
 };

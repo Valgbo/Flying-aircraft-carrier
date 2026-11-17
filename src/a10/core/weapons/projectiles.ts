@@ -34,6 +34,13 @@ const SURFACE_OFFSET = 0.01;
 /** Segments (impacts) followed within one step before the rest of the step is dropped. */
 const MAX_SEGMENTS = 8;
 /**
+ * A round that goes through a scoring panel or an outer layer with no armour behind it keeps this
+ * fraction of its speed (plywood or thin sheet barely slows a 30 mm round)…
+ */
+const PASS_THROUGH_SPEED = 0.97;
+/** …and flies on from this far beyond the entry point, m (past the sheet, so it is not hit again). */
+const PASS_THROUGH_STEP = 0.25;
+/**
  * Steps between wind samples at a round (staggered over the pool). In 4 steps a round moves
  * ≈30 m; the mean wind changes far less than that over its path.
  */
@@ -198,7 +205,7 @@ function groundImpact(
   _n.copy(_ground.normal);
   if (surface === 'water') {
     impactEvent(sim, type, tHit, _point, _vHit, _n, null, 'water');
-    if (type === RoundType.HEI) heiBurst(sim, tHit, 0, surface);
+    if (type === RoundType.HEI) heiBurst(sim, tHit, 0, surface, pool.id[i]);
     return false;
   }
   const speed = _vHit.length();
@@ -219,7 +226,7 @@ function groundImpact(
     return true;
   }
   impactEvent(sim, type, tHit, _point, _vHit, _n, null, 'ground');
-  if (type === RoundType.HEI) heiBurst(sim, tHit, 0, surface);
+  if (type === RoundType.HEI) heiBurst(sim, tHit, 0, surface, pool.id[i]);
   return false;
 }
 
@@ -254,7 +261,10 @@ function skipVelocity(sim: Sim, angle: number, speed: number): void {
     .multiplyScalar(keep * speed);
 }
 
-/** Vehicle impact of round i at tHit (hit in _vehicle). Returns true if it ricochets on. */
+/**
+ * Vehicle impact of round i at tHit (hit in _vehicle). Returns true if the round flies on: a
+ * ricochet, or through a scoring panel or a spaced layer with no armour behind it.
+ */
 function vehicleImpact(
   sim: Sim,
   pool: RoundPool,
@@ -263,7 +273,7 @@ function vehicleImpact(
   tHit: number,
 ): boolean {
   const hit = _vehicle;
-  resolveRoundHit(sim, hit, type, _vHit, _result);
+  resolveRoundHit(sim, hit, type, _vHit, _result, pool.id[i]);
   _point.copy(hit.point);
   _n.copy(hit.normal);
   impactEvent(sim, type, tHit, _point, _vHit, _n, hit, _result.outcome);
@@ -272,13 +282,19 @@ function vehicleImpact(
     countBurstHit(sim, pool.burst[i]);
   }
   if (type === RoundType.HEI) {
-    heiBurst(sim, tHit, hit.vehicleId, sim.world.terrain.surfaceAt(_point.x, _point.z));
+    heiBurst(sim, tHit, hit.vehicleId, sim.world.terrain.surfaceAt(_point.x, _point.z), pool.id[i]);
     return false;
   }
   if (_result.outcome === 'ricochet' && pool.ricochets[i] < ROUND_BEHAVIOUR.maxRicochets) {
     pool.ricochets[i]++;
     _v.copy(_result.ricochetVelocity);
     _p.copy(_point).addScaledVector(_n, SURFACE_OFFSET);
+    return true;
+  }
+  if (_result.outcome === 'passedThrough') {
+    // On through plywood or a thin outer layer, slightly slowed; start just beyond the entry.
+    _v.copy(_vHit).multiplyScalar(PASS_THROUGH_SPEED);
+    _p.copy(_point).addScaledVector(_v, PASS_THROUGH_STEP / _v.length());
     return true;
   }
   return false;
@@ -310,7 +326,13 @@ function impactEvent(
 }
 
 /** An HEI round bursts at _point: the detonation event and its blast and fragments. */
-function heiBurst(sim: Sim, t: number, vehicleId: number, surface: SurfaceKind): void {
+function heiBurst(
+  sim: Sim,
+  t: number,
+  vehicleId: number,
+  surface: SurfaceKind,
+  roundId: number,
+): void {
   sim.events.push({
     type: 'detonation',
     t,
@@ -320,5 +342,5 @@ function heiBurst(sim: Sim, t: number, vehicleId: number, surface: SurfaceKind):
     vehicleId,
     surface,
   });
-  applyBlast(sim, _point, GAU8.heiCharge, GAU8.heiFragmentMass);
+  applyBlast(sim, _point, GAU8.heiCharge, GAU8.heiFragmentMass, 'HEI', roundId);
 }

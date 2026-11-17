@@ -253,8 +253,23 @@ and spin-down; `gun.firing` is true while rounds leave; `gunStart`/`gunStop` car
 (§3); `roundImpact` is emitted for every round that hits something, HEI included (audio and
 effects draw HEI bursts from `roundImpact` and ignore `detonation` kind `'hei'`, so an HEI round
 must not produce two bangs); `RoundPool.id` is unique per round (slots are reused, ids are not).
-Optional `StoresState` fields the flight module uses when present: `rollInertia` (Σ m·x², kg·m²)
-and `dragMoment` (Σ CdA·x, m³, yaw from asymmetric store drag).
+`StoresState` also always fills `rollInertia` (Σ m·x², kg·m²) and `dragMoment` (Σ CdA·x, m³,
+yaw from asymmetric store drag).
+Also exported: `muzzleState(ac, type, pos, vel)` (the undispersed start of a round fired now;
+fire control uses it), `muzzleVelocity(type)`, `dragCoefficient(type, mach)`,
+`flyRoundToRange`, `gunLineBody`, `RECOIL_IMPULSE`, `DISPERSION_SIGMA`, `fitApiPenetration`
+(recomputes the §5 fit from the model), the pool helpers (`allocRound`, `freeRound`,
+`clearRoundPool`), the loadout rules for the loadout screen (`stationAccepts(station, type)`,
+`stationIssue`, `loadoutIssues(stations)`, `isRackType`, `STATION_COUNT`), `rearm(sim)` (ends any
+open burst, refills the drum, restores the flight's loadout) and `jettisonStores(sim, stations |
+'all')` (returns the number of stations cleared; racks drop with their stores, pods and the
+AIM-9 rails stay; emits `storeReleased` with `bodyId: 0` until store bodies exist in wave 2).
+Kinematic test bed: `core/weapons/testbed.ts`. `StoreType 'LAU-114'` is the dual-rail AIM-9
+adapter. `gun.rate` = 65 × spin at all times, spin-down included; `gun.firing` = rounds are
+leaving. A round that hits a scoring panel, or an outer layer with no armour behind it
+(`passedThrough`), flies on through it; a ricochet flies on with the velocity
+`resolveRoundHit` returns. An HEI `detonation` has the same `t` and position as its
+`roundImpact`.
 
 ### Avionics — `core/avionics`
 
@@ -274,13 +289,30 @@ them).
 
 `createTargetsState` · `createVehicle(sim, kind, x, z, heading, groupId)` ·
 `populateScenario(sim)` · `stepTargets` · `segmentHitVehicle(sim, p0, p1, out: VehicleHit)` ·
-`resolveRoundHit(sim, hit, roundType, velocity, out: RoundHitResult)` ·
-`applyBlast(sim, position, chargeKg, fragmentKg?)` · `VEHICLE_SHAPES` (data/vehicles.ts).
+`resolveRoundHit(sim, hit, roundType, velocity, out: RoundHitResult, sourceId?)` ·
+`applyBlast(sim, position, chargeKg, fragmentKg?, weapon?, sourceId?)` · `VEHICLE_SHAPES`
+(data/vehicles.ts). `sourceId` (a round id or a store body id) goes to the hit log; `weapon`
+names the hit and kill records (`'HEI'` for 30 mm bursts; for bombs, rockets and missiles the
+store name, e.g. `'MK-82'`, with the body id). The blast table is calibrated for a TNT-equivalent
+charge plus the fragmenting case mass. For an HEI impact on a vehicle, call `resolveRoundHit`
+BEFORE `applyBlast` at the same point in the same step (`applyBlast` then skips that vehicle,
+so the burst counts once). `'passedThrough'` = a scoring panel, or a spaced layer (rear drums,
+track run, gun barrel) with no armour behind it. Also exported: `VEHICLE_MODELS` (plates, parts,
+components), `segmentHitVehicleAll`, `spawnGroup(sim, 'column'|'open'|'treeline'|'dugIn',
+where, template)`, `digIn`, `findVehicle`, `isAlive`, `markTargetsMoved`, and the blast and
+fragment helpers. `vehicle.heat` is a thermal model (engine deck, exhaust, running gear, fires;
+cools over minutes) and `vehicle.fire` the larger of the inside and outside fires; a dug-in
+vehicle's `position.y` is the floor of its pit, with the hull top 0.25 m above the ground.
+`Vehicle.internal` is the targets module's own: other modules must not read or serialise it.
 The targets module emits `vehicleDamaged` / `vehicleDestroyed` and appends `debrief.hits` and
 `debrief.kills`. The weapons module emits `roundImpact` (with the outcome it got back).
 Cook-offs and ammunition explosions emit `detonation` kind `'secondary'` with the `vehicleId`
 (audio then skips the `vehicleDestroyed` boom of that vehicle in the same frame, so the blast is
-heard once).
+heard once). `vehicleDestroyed` may arrive twice for one vehicle: destroyed (burning), then
+`catastrophic: true` after a cook-off, with its `'secondary'` detonation in the same step; the
+kill counts once (listeners such as kill messages must de-duplicate by `vehicleId`).
+`vehicleDamaged` is sent for every hit that hurts a component. Ammunition trucks also emit
+small `'secondary'` detonations for a while after exploding.
 
 ### Sensors — `core/sensors` (wave 2) · Debrief — `core/debrief` (wave 2)
 

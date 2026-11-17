@@ -173,7 +173,7 @@ export const A10_MASS_NOTES: Record<keyof typeof A10_MASS, SourceNote> = {
   storesRollRadius: {
     source: 'flightgearA10',
     confidence: 'estimate',
-    note: 'until StoresState reports Σm·x² (see the flight report)',
+    note: 'fallback when StoresState gives no rollInertia (Σm·x² over the stations)',
   },
   gLimitReferenceMass: {
     source: 'plan',

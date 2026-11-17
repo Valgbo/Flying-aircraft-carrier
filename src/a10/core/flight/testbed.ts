@@ -66,6 +66,8 @@ export function createTestbed(opts: TestbedOptions = {}): Sim {
   st.mass = 0;
   st.dragArea = 0;
   st.lateralMoment = 0;
+  st.rollInertia = 0;
+  st.dragMoment = 0;
   sim.gun.rounds = opts.rounds ?? sim.gun.rounds;
   sim.gun.roundsLoaded = sim.gun.rounds;
   setTotalMass(sim, opts.mass);

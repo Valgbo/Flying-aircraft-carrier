@@ -183,7 +183,7 @@ export const STORES: Record<StoreType, StoreData> = {
     kind: 'pod',
     mass: 209.5,
     dragArea: 0.04,
-    length: 2.9,
+    length: 3.96,
     diameter: 0.3,
     jettisonable: false,
   },
@@ -245,7 +245,7 @@ export interface StoreNotes {
 }
 
 const DRAG_ESTIMATE: SourceNote = {
-  source: 'plan',
+  source: 'hoernerDrag',
   confidence: 'estimate',
   note: 'frontal area × typical store drag coefficient (Hoerner, Fluid-Dynamic Drag, ch. 13)',
 };
@@ -255,12 +255,12 @@ const MAVERICK_SIZE: SourceNote = {
   note: '2.49 m × 0.305 m',
 };
 const MK82_SIZE: SourceNote = {
-  source: 'plan',
+  source: 'wikiMk82',
   confidence: 'confirmed',
   note: 'Mk 82: 2.21 m × 0.273 m (Wikipedia, Mark 82 bomb)',
 };
 const LAU131_NOTE: SourceNote = {
-  source: 'gdotsHydra',
+  source: 'arnoldLau131',
   confidence: 'approximate',
   note: 'LAU-131/A empty 65 lb (Arnold Defense data sheet) + 7 rockets (HYDRA70)',
 };
@@ -301,7 +301,7 @@ export const STORE_NOTES: Record<StoreType, StoreNotes> = {
     size: MAVERICK_SIZE,
   },
   'MK-82': {
-    mass: { source: 'plan', confidence: 'confirmed', note: '531 lb (Wikipedia, Mark 82 bomb)' },
+    mass: { source: 'wikiMk82', confidence: 'confirmed', note: '531 lb' },
     dragArea: DRAG_ESTIMATE,
     size: MK82_SIZE,
   },
@@ -316,12 +316,12 @@ export const STORE_NOTES: Record<StoreType, StoreNotes> = {
   },
   'GBU-12': {
     mass: {
-      source: 'plan',
+      source: 'wikiGbu12',
       confidence: 'approximate',
       note: 'Mk 82 body + guidance kit: sources give 510–611 lb; 611 lb taken',
     },
     dragArea: DRAG_ESTIMATE,
-    size: { source: 'plan', confidence: 'approximate', note: '3.27 m long (Wikipedia, GBU-12)' },
+    size: { source: 'wikiGbu12', confidence: 'approximate', note: '3.27 m long' },
   },
   'LAU-131-M151': { mass: LAU131_NOTE, dragArea: DRAG_ESTIMATE, size: POD_SIZE },
   'LAU-131-M156': { mass: LAU131_NOTE, dragArea: DRAG_ESTIMATE, size: POD_SIZE },
@@ -343,12 +343,16 @@ export const STORE_NOTES: Record<StoreType, StoreNotes> = {
   },
   'AN/ALQ-184': {
     mass: {
-      source: 'plan',
+      source: 'alq184Forecast',
       confidence: 'approximate',
-      note: 'two-band pod: 461 lb, 2.9 m (AN Equipment Forecast, 2002)',
+      note: 'two-band pod: 461 lb',
     },
     dragArea: DRAG_ESTIMATE,
-    size: POD_SIZE,
+    size: {
+      source: 'flightgearA10',
+      confidence: 'approximate',
+      note: '3.96 m as modelled (the forecast gives 2.9 m; other public figures ≈3.9 m)',
+    },
   },
   'AIM-9M': {
     mass: {
@@ -357,7 +361,11 @@ export const STORE_NOTES: Record<StoreType, StoreNotes> = {
       note: '185–191 lb (FlightGear payload file cites CNATRA P-825)',
     },
     dragArea: DRAG_ESTIMATE,
-    size: { source: 'plan', confidence: 'confirmed', note: '2.87 m × 0.127 m (Wikipedia, AIM-9)' },
+    size: {
+      source: 'afAim9',
+      confidence: 'confirmed',
+      note: '9 ft 5 in × 5 in (2.87 m × 0.127 m)',
+    },
   },
   'TER-9A': {
     mass: {

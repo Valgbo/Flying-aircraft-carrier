@@ -34,8 +34,20 @@ interface Plate {
 
 const mock = vi.hoisted(() => ({
   plates: [] as Plate[],
-  blasts: [] as { x: number; y: number; z: number; charge: number; fragments: number }[],
+  blasts: [] as {
+    x: number;
+    y: number;
+    z: number;
+    charge: number;
+    fragments: number;
+    weapon?: string;
+    sourceId?: number;
+  }[],
   resolved: 0,
+  /** Round ids passed to resolveRoundHit, in call order. */
+  sourceIds: [] as number[],
+  /** Vehicles whose plates the rounds go through (scoring panels). */
+  panels: new Set<number>(),
 }));
 
 const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -78,8 +90,10 @@ vi.mock('../../../src/a10/core/targets', async (importOriginal) => {
       type: number,
       velocity: { x: number; y: number; z: number },
       out: import('../../../src/a10/core/targets/types').RoundHitResult,
+      sourceId = 0,
     ) {
       mock.resolved++;
+      mock.sourceIds.push(sourceId);
       const n = hit.normal;
       const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
       const along = -(velocity.x * n.x + velocity.y * n.y + velocity.z * n.z) / speed;
@@ -90,6 +104,7 @@ vi.mock('../../../src/a10/core/targets', async (importOriginal) => {
       out.damaged = [];
       out.ricochetVelocity.set(0, 0, 0);
       if (type === 1) out.outcome = 'burst';
+      else if (mock.panels.has(hit.vehicleId)) out.outcome = 'passedThrough';
       else if (obliquity > 70 * (Math.PI / 180)) {
         out.outcome = 'ricochet';
         const k = 2 * (velocity.x * n.x + velocity.y * n.y + velocity.z * n.z);
@@ -99,8 +114,15 @@ vi.mock('../../../src/a10/core/targets', async (importOriginal) => {
       } else out.outcome = 'penetrated';
       return out;
     },
-    applyBlast(_sim: Sim, p: { x: number; y: number; z: number }, charge: number, fragments = 0) {
-      mock.blasts.push({ x: p.x, y: p.y, z: p.z, charge, fragments });
+    applyBlast(
+      _sim: Sim,
+      p: { x: number; y: number; z: number },
+      charge: number,
+      fragments = 0,
+      weapon?: string,
+      sourceId?: number,
+    ) {
+      mock.blasts.push({ x: p.x, y: p.y, z: p.z, charge, fragments, weapon, sourceId });
     },
   };
 });
@@ -161,6 +183,8 @@ beforeEach(() => {
   mock.plates.length = 0;
   mock.blasts.length = 0;
   mock.resolved = 0;
+  mock.sourceIds.length = 0;
+  mock.panels.clear();
 });
 
 describe('rounds against vehicles (targets mocked)', () => {
@@ -260,6 +284,31 @@ describe('rounds against vehicles (targets mocked)', () => {
     expect(mock.blasts[0].charge).toBe(GAU8.heiCharge);
     expect(mock.blasts[0].fragments).toBe(GAU8.heiFragmentMass);
     expect(mock.blasts[0].z).toBeCloseTo(-250, 6);
+    // The hit and kill records name the weapon and the round.
+    expect(mock.blasts[0].weapon).toBe('HEI');
+    expect(mock.sourceIds[0]).toBeGreaterThan(0);
+    expect(mock.blasts[0].sourceId).toBe(mock.sourceIds[0]);
+  });
+
+  it('passes the round id to the hit log, and a round goes on through a scoring panel', () => {
+    mock.plates.push(board(77, -150));
+    mock.panels.add(77);
+    // A round 5 m up, 1° down: through the panel at 150 m, into the grass ≈290 m out.
+    const sim = createGunTestbed({ altitude: 500, terrain: ground('grass') });
+    const v = new Vector3(0, -Math.sin(1 * DEG), -Math.cos(1 * DEG)).multiplyScalar(1000);
+    const i = shoot(sim, RoundType.API, new Vector3(0, 5, 0), v);
+    const id = sim.projectiles.rounds.id[i];
+    runUntilEmpty(sim);
+    const ev = impacts(sim);
+    expect(ev.map((e) => e.outcome)).toEqual(['passedThrough', 'ground']);
+    expect(ev[0].target).toEqual({ kind: 'vehicle', vehicleId: 77, part: 'hull' });
+    expect(ev[1].position.z).toBeLessThan(-200);
+    // Barely slowed by the sheet.
+    const s0 = Math.hypot(ev[0].velocity.x, ev[0].velocity.y, ev[0].velocity.z);
+    const s1 = Math.hypot(ev[1].velocity.x, ev[1].velocity.y, ev[1].velocity.z);
+    expect(s1 / s0).toBeGreaterThan(0.8);
+    expect(s1 / s0).toBeLessThan(0.97);
+    expect(mock.sourceIds).toEqual([id]);
   });
 
   it('the burst record counts each hitting round once, also those landing after the burst', () => {

@@ -156,6 +156,61 @@ export const SOURCES = {
     title: 'Leopold & Wolman, River meanders, GSA Bulletin 71(6), 1960',
     url: 'https://doi.org/10.1130/0016-7606(1960)71[769:RM]2.0.CO;2',
   },
+  ndiaGau8: {
+    title:
+      'General Dynamics OTS, 30mm GAU-8/A ammunition briefing, NDIA Gun & Missile Systems conference, 2008',
+    url: 'https://ndia.dtic.mil/wp-content/uploads/2008/gun_missile/6337GimmyKirk.pdf',
+  },
+  aftcGau8: {
+    title:
+      'Air Force Test Center history: 26 Feb 1974, live firing tests of a 30mm GAU-8 cannon mounted in an A-10',
+    url: 'https://www.aftc.af.mil/News/On-This-Day-in-Test-History/Article-Display-Test-History/Article/2482833/',
+  },
+  mccoyG7: {
+    title:
+      'McCoy, Modern Exterior Ballistics, Schiffer, 1999: the G7 standard drag function (US Army BRL)',
+    url: 'https://search.worldcat.org/search?q=McCoy+Modern+Exterior+Ballistics',
+  },
+  hoernerDrag: {
+    title: 'Hoerner, Fluid-Dynamic Drag, 1965, ch. 13: drag of external stores',
+    url: 'https://search.worldcat.org/search?q=Hoerner+Fluid-Dynamic+Drag',
+  },
+  wikiMk82: { title: 'Wikipedia: Mark 82 bomb', url: 'https://en.wikipedia.org/wiki/Mark_82_bomb' },
+  wikiGbu12: {
+    title: 'Wikipedia: GBU-12 Paveway II',
+    url: 'https://en.wikipedia.org/wiki/GBU-12_Paveway_II',
+  },
+  afAim9: {
+    title: 'Air & Space Forces: AIM-9 Sidewinder (USAF fact sheet)',
+    url: 'https://www.airandspaceforces.com/weapons/aim-9/',
+  },
+  arnoldLau131: {
+    title: 'Arnold Defense: LAU-131/A rocket launcher data sheet',
+    url: 'https://arnolddefense.com/product/lau-131-a/',
+  },
+  alq184Forecast: {
+    title: 'Forecast International, AN Equipment Forecast (2002): AN/ALQ-184(V)',
+    url: 'https://www.scribd.com/document/548921242/AN-ALQ-184',
+  },
+  ufc334002: {
+    title:
+      'UFC 3-340-02, Structures to Resist the Effects of Accidental Explosions (2008): hemispherical surface-burst blast parameters (Kingery–Bulmash)',
+    url: 'https://www.wbdg.org/',
+  },
+  mott1947: {
+    title: 'N. F. Mott, Fragmentation of shell cases, Proc. R. Soc. A 189 (1947) 300–308',
+    url: 'https://doi.org/10.1098/rspa.1947.0042',
+  },
+  gurney1943: {
+    title:
+      'R. W. Gurney, The initial velocities of fragments from bombs, shells and grenades, BRL Report 405 (1943)',
+    url: 'https://apps.dtic.mil/',
+  },
+  warThunderBmp2: { title: 'War Thunder wiki: BMP-2', url: 'https://wiki.warthunder.com/BMP-2' },
+  warThunderBtr80: {
+    title: 'War Thunder wiki: BTR-80A',
+    url: 'https://wiki.warthunder.com/BTR-80A',
+  },
   plan: { title: 'PLAN_A10.md (this project): design decision', url: 'PLAN_A10.md' },
 } as const;
 

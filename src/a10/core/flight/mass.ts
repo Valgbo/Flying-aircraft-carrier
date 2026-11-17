@@ -76,8 +76,13 @@ export function computeMassProperties(
     const sp = M.storesPosition;
     addPoint(sm, sx, sp.y, sp.z);
     // The stores are spread over the stations: their own roll (and yaw) inertia about the
-    // centreline beyond what the single point at their lateral CG carries.
-    const spread = sm * Math.max(0, M.storesRollRadius * M.storesRollRadius - sx * sx);
+    // centreline beyond what the single point at their lateral CG carries. The weapons module
+    // reports Σm·x² over the stations; without it, an even spread at storesRollRadius.
+    const sumMx2 =
+      stores.rollInertia !== undefined
+        ? stores.rollInertia
+        : sm * M.storesRollRadius * M.storesRollRadius;
+    const spread = Math.max(0, sumMx2 - sm * sx * sx);
     acc.ixx += spread;
     acc.izz += spread;
   }
