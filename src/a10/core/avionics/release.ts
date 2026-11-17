@@ -313,7 +313,7 @@ export function solveReleaseTime(
   const fc = sim.avionics.fc;
   const vx = ac.velocity.x;
   const vz = ac.velocity.z;
-  const vg = Math.hypot(vx, vz);
+  const vg = Math.sqrt(vx * vx + vz * vz);
   if (vg < 1) {
     fc.solveValid = false;
     return false;
@@ -403,7 +403,7 @@ function measureLoftGain(
 ): void {
   const ac = sim.aircraft;
   const fc = sim.avionics.fc;
-  const vg = Math.hypot(ac.velocity.x, ac.velocity.z);
+  const vg = Math.sqrt(ac.velocity.x * ac.velocity.x + ac.velocity.z * ac.velocity.z);
   if (vg < 1) return;
   const ux = ac.velocity.x / vg;
   const uz = ac.velocity.z / vg;

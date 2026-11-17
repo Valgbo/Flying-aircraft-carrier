@@ -3,16 +3,13 @@
  * surface wind (its speed, and the clock direction it blows FROM seen along the event's run-in,
  * the way a range officer reads it to a pilot), the turbulence, and on the tactical lane the
  * moving column's speed. Chosen on the main menu (RangeOptionsDialog), remembered under
- * 'a10-range-v1' (a key of its own: the loadout choices keep their 'a10-ui-v1' format), and
- * applied to every range flight before its first step (flightSetup.ts). Free hunt keeps the
- * world's own conditions.
- *
- * The world module keeps the weather constant through a flight and documents setting it before
- * the first step (core/world stepWorld); the column follows its group's cruise speed every step
- * (core/targets behaviour stepColumn).
+ * 'a10-range-v1' (a key of its own: the loadout choices keep their 'a10-ui-v1' format). The UI
+ * store hands them to the app store as SimOptions.range (toRangeConditions); startFlight passes
+ * them to createSim, which puts them on a range event before its first step (core/sim
+ * applyRangeConditions). Free hunt keeps the world's own conditions.
  */
-import { findRangeLayout } from '../core/debrief';
-import type { Sim } from '../core/types';
+import { rangeWind as rangeWindAlong } from '../core/debrief';
+import type { RangeConditions } from '../core/types';
 import { KT } from '../core/units';
 import { MOBILITY } from '../data/vehicles';
 import { formatClockDirection } from './format';
@@ -121,37 +118,24 @@ export function saveRangeOptions(o: RangeOptions): void {
 /**
  * The surface wind of a clock direction along a run-in, world m/s (x east, z south), the
  * direction the air MOVES toward (WorldState.surfaceWind). From 12 o'clock it blows down the
- * run-in, against the aircraft.
+ * run-in, against the aircraft (core/debrief rangeWind, which createSim uses).
  */
 export function rangeWind(
   speedKt: number,
   clock: number,
   runIn: number,
 ): { x: number; y: number; z: number } {
-  const from = runIn + ((clock % 12) * Math.PI) / 6;
-  const to = from + Math.PI;
-  const u = speedKt * KT;
-  return { x: u * Math.sin(to), y: 0, z: -u * Math.cos(to) };
+  const out = { x: 0, y: 0, z: 0 };
+  rangeWindAlong(speedKt * KT, clock, runIn, out);
+  return out;
 }
 
-/**
- * Put the options on a range flight before its first step: the wind (relative to the event's
- * run-in) and the turbulence, and on the tactical lane the column's cruise speed (its vehicles
- * start at it). Free hunt and an empty world are left alone. Returns whether it applied.
- */
-export function applyRangeOptions(sim: Sim, o: RangeOptions): boolean {
-  const layout = findRangeLayout(sim);
-  if (layout.event === 'none') return false;
-  const w = rangeWind(o.windKt, o.windClock, layout.runIn);
-  sim.world.surfaceWind.set(w.x, w.y, w.z);
-  sim.world.turbulence = TURBULENCE_LEVELS[o.turbulence].value;
-  if (layout.event === 'tacticalLane') {
-    const speed = o.columnKmh / 3.6;
-    for (const g of sim.targets.groups) {
-      if (g.template !== 'laneColumn') continue;
-      g.speed = speed;
-      for (const v of sim.targets.vehicles) if (g.vehicleIds.includes(v.id)) v.speed = speed;
-    }
-  }
-  return true;
+/** The options as the simulation takes them (SimOptions.range: SI units, the world's values). */
+export function toRangeConditions(o: RangeOptions): RangeConditions {
+  return {
+    windSpeed: o.windKt * KT,
+    windClock: o.windClock,
+    turbulence: TURBULENCE_LEVELS[o.turbulence].value,
+    columnSpeed: o.columnKmh / 3.6,
+  };
 }

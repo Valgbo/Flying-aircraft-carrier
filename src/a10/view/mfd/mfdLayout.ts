@@ -181,7 +181,7 @@ export const MFD_NOTES: Record<string, SourceNote> = {
     note: 'the SOI display has a green box round the page; sensor-capable pages that are not SOI say NOT SOI',
   },
   tgp: {
-    source: 'wikiLitening',
+    source: 'uoafCodexTgp',
     confidence: 'approximate',
     note: 'TGP page: slant range at the lower left behind its source letter ("L" laser, flashing while firing; "T" track; none when slaved), "M" when masked, MASK; NOT TIMED OUT while warming up; the options (picture, FOV, zoom, track, latch, code) on the OSB labels (DCS forum and wiki summaries)',
   },

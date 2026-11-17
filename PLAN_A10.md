@@ -548,12 +548,14 @@ browser reports can be bound, axis by axis and button by button.
 | Throttles | Page Up / Page Down | D-pad ↑ / ↓ |
 | Speed brake | B | B |
 | Flaps, gear | F, G | — |
-| Trim | Ctrl + arrow keys | LT + D-pad |
+| Trim | Ctrl + arrow keys, or Ctrl + Shift + arrow keys (macOS takes Ctrl + arrows) | LT + D-pad |
 | Trigger: first detent (PAC-1), second detent (fire) | Left Shift, Space | RT half, RT full |
 | Weapon release | Enter | A |
 | Master mode: NAV, GUNS, CCIP, CCRP | M | X |
 | Previous / next weapon profile | [ / ] | Y |
 | Sensor of interest: HUD, left display, right display | H, comma, full stop | D-pad ← / → |
+| Coolie left / right: step that display's page (hold: make it the SOI) | Ctrl + comma, Ctrl + full stop | — |
+| Up-front controller: laser code digits, CLR | Click | Click |
 | Slew the sensor or cursor | W A S D | LT + right stick |
 | Target management up: track; hold to set the SPI | T | LT + A |
 | Target management down: break track; hold to reset the SPI | R | LT + B |

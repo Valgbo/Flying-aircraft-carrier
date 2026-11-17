@@ -3,8 +3,8 @@
  * choice ('Custom': a load per station, from what the weapons module allows there), a top-down
  * schematic of the eleven stations, what hangs on each, the total stores weight and drag, and
  * the gun load for the next flight. store.setLoadout(id) picks the load every flight uses; the
- * custom load itself lives in the UI store (customLoadout.ts) and reaches the flight through
- * flightSetup.ts.
+ * custom load itself lives in the UI store (customLoadout.ts), which hands a legal one to the
+ * app store; startFlight creates the flight with it (SimOptions.customLoadout).
  */
 import { useMemo, useState } from 'react';
 import { loadoutIssues } from '../core/weapons';

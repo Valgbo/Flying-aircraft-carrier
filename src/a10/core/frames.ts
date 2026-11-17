@@ -92,7 +92,7 @@ export function omegaFromRates(p: number, q: number, r: number, out: Vector3): V
 /** HUD azimuth/elevation of a body-frame direction (need not be unit length). */
 export function hudAnglesFromBodyDir(d: Vector3, out: HudAngles): HudAngles {
   out.az = Math.atan2(d.x, -d.z);
-  out.el = Math.atan2(d.y, Math.hypot(d.x, d.z));
+  out.el = Math.atan2(d.y, Math.sqrt(d.x * d.x + d.z * d.z));
   return out;
 }
 

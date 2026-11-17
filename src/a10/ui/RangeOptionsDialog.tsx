@@ -2,8 +2,9 @@
  * Weapons-range options (main menu, PLAN_A10.md §11.2): the wind each range event is flown in —
  * its speed and the clock direction it blows from along the run-in, drawn on a small range
  * card — the turbulence, and the tactical lane's column speed. The choices are saved at once
- * (useA10Ui.setRangeOptions) and apply to every range flight from its first step
- * (flightSetup.ts); free hunt keeps the world's own weather. Escape or Done closes it (UIRoot).
+ * (useA10Ui.setRangeOptions) and apply to every range flight from its first step (createSim
+ * takes them as SimOptions.range); free hunt keeps the world's own weather. Escape or Done
+ * closes it (UIRoot).
  */
 import { useRef } from 'react';
 import { IconClose, PresetChips, SelectRow, useModalFocus } from '../../engine';

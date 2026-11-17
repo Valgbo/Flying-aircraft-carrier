@@ -148,4 +148,34 @@ describe('loadout choices persistence', () => {
     expect(isAmmoLoad('allTP')).toBe(false);
     expect(isAmmoLoad(undefined)).toBe(false);
   });
+  it('hands the custom load and the range options to the app store for the next flight', async () => {
+    const storage = memoryStorage({
+      'a10-loadout-v1': JSON.stringify({ 4: ['MK-82'] }),
+      'a10-range-v1': JSON.stringify({
+        windKt: 15,
+        windClock: 3,
+        turbulence: 'moderate',
+        columnKmh: 30,
+      }),
+    });
+    const { useA10Store, useA10Ui, persistLoadoutChoices } = await load(storage);
+    const { KT } = await import('../../../src/a10/core/units');
+    expect(useA10Store.getState().customLoadout).toBeNull();
+    expect(useA10Store.getState().rangeConditions).toBeNull();
+    persistLoadoutChoices();
+    expect(useA10Store.getState().customLoadout).toEqual({ 4: ['MK-82'] });
+    const c = useA10Store.getState().rangeConditions!;
+    expect(c.windSpeed).toBeCloseTo(15 * KT, 12);
+    expect(c.windClock).toBe(3);
+    expect(c.turbulence).toBe(0.5);
+    expect(c.columnSpeed).toBeCloseTo(30 / 3.6, 12);
+    // later choices follow; an illegal custom load is never handed on
+    useA10Ui.getState().setRangeOptions({ windKt: 5, turbulence: 'calm' });
+    expect(useA10Store.getState().rangeConditions?.windSpeed).toBeCloseTo(5 * KT, 12);
+    expect(useA10Store.getState().rangeConditions?.turbulence).toBe(0);
+    useA10Ui.getState().setCustomStations({ 5: ['AGM-65D'] });
+    expect(useA10Store.getState().customLoadout).toBeNull();
+    useA10Ui.getState().setCustomStations({ 4: ['GBU-12'] });
+    expect(useA10Store.getState().customLoadout).toEqual({ 4: ['GBU-12'] });
+  });
 });

@@ -24,7 +24,6 @@ import { useA10Store } from '../state/store';
 import { useSimBridge } from './bridge';
 import CreditsScreen from './CreditsScreen';
 import DebriefScreen from './DebriefScreen';
-import { installFlightSetup } from './flightSetup';
 import FlightOverlay from './FlightOverlay';
 import HelpPanel from './HelpPanel';
 import LoadingScreen from './LoadingScreen';
@@ -39,10 +38,9 @@ import './ui.css';
 
 let flagsApplied = false;
 
-// The player's last preset and gun load are in the store before any flight can start, and every
-// flight gets the custom load and the range options before its first step (also with ?ui=0).
+// The player's last preset, gun load, custom load and range options are in the app store before
+// any flight can start (also with ?ui=0): startFlight creates each flight with them.
 persistLoadoutChoices();
-installFlightSetup();
 
 // Leaving the pause (by any key, button or module) also closes what was open on top of it.
 useA10Store.subscribe((s, prev) => {

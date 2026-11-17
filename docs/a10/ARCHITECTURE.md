@@ -178,7 +178,9 @@ system draws only from its own `sim.rng` stream.
   `sensorZoom` ±1; `flaps` `0|1|2` (next position) or `'up'`/`'down'`; `gear` `'toggle'`;
   `autopilot` `'toggle'`/`'mode'`; `altitudeAlert` in metres above the ground, 0 = off (steps
   off, 200, 500, 1,000, 1,500, 2,000 ft); `steerpoint` ±1; `jettison` `{stations: 'all'}` only
-  after a 0.4 s hold. `mfdPage`, `osb` and `rearm` come from the cockpit and UI.
+  after a 0.4 s hold. `mfdPage`, `osb`, `ufc` and `rearm` come from the cockpit and UI (`ufc`
+  `{key}`: an up-front controller key for the avionics scratchpad, `'0'`–`'9'` and `'CLR'` from
+  the cockpit; `'STEER_UP'`/`'STEER_DN'` are accepted too).
 - Continuous controls are in `PilotInput`: stick, pedals, two throttles, the two-stage gun
   trigger (`trigger: 0 | 1 | 2`; 1 = PAC-1 detent, 2 = fire; the input layer already applies the
   one-stage realism rule), weapon release (held), speed-brake switch (the key latches ±1 until
@@ -285,11 +287,14 @@ setters (`setFlapHandle`, `setGear`, `autopilotCommand`, `setAltitudeAlert`) ins
 mode, profile, SOI, altitude-source and display change (audio clicks on them; nothing else emits
 them). Switch-event names: `masterArm`, `gunPac`, `laserArm`, `tgpPower`, `altSource`,
 `masterMode`, `profile`, `soi`, `leftMfd`, `rightMfd`, `osb`, `steerpoint`, `spi`, `slave`,
-`gunSight`, `flaps`, `gear`, `autopilot`, `altitudeAlert`, `jettison`.
+`gunSight`, `flaps`, `gear`, `autopilot`, `altitudeAlert`, `jettison`, and in wave 2
+`laserLatch`, `mavPower`, `laserCode`, `ufc`.
 `createSim` calls `initAvionics(sim)` (steerpoints from the target areas and the airbase, the
 SPI at the active steerpoint, one default weapon profile per store type from
 `data/avionics.ts` `PROFILE_DEFAULTS`); a set-up that wants its own steerpoints or profiles
-replaces the lists after `createSim`. State a HUD or display reads: `sight` (`'NONE' | 'GUN' |
+replaces the lists after `createSim` (and calls `spiToSteerpoint(sim)` afterwards, or the SPI
+stays at the generated steerpoint until the first step's fire control). State a HUD or display
+reads: `sight` (`'NONE' | 'GUN' |
 'CCIP' | 'CCRP'`: which weapon sight to draw; the gun reticle also in CCIP when the gun is the
 CCIP weapon), `ccipInvalid`, `gunSight`, `spi`, `steerpoints`/`activeSteerpoint`, `mfd`, `soi`,
 `selectedProfile`/`profiles`, `buildDsmsView(sim, out)` for the stores page. `GunSolution` also
@@ -304,7 +309,12 @@ store's ballistic model: the same integrator that moves the live store bodies) a
 master mode that is not available is refused with a `message`. Also exported: `rearm`,
 `jettison`, `previousMasterMode`/`nextMasterMode`/`modeAvailable`, `cycleProfile`,
 `cycleSteerpoint`, `spiToSteerpoint`, `computeGunSolution`, `predictImpact`, `eyeWorld`,
-`hudAnglesOfPoint`, the OSB and HOTAS tables.
+`hudAnglesOfPoint`, the OSB and HOTAS tables. Wave 2 adds to `AvionicsState`: `selectedStation`,
+`laserLatch`, `laserCode`, `mavPower`, `pages` (page state: DSMS cursor and profile editing, TAD
+range, the UFC `scratchpad`), `delivery` (the release in progress); the UFC scratchpad
+(`ufcKey(sim, key)`; CODE on the DSMS and TGP pages takes a typed four-digit code:
+`scratchpadLaserCode`, `takeScratchpadCode`); a Master Arm TRAIN release appends a
+`simulated: true` WeaponRecord to `debrief.weapons` itself (negative ids, `bodyId` 0).
 
 ### Targets — `core/targets`
 
@@ -333,7 +343,14 @@ heard once). `vehicleDestroyed` may arrive twice for one vehicle: destroyed (bur
 `catastrophic: true` after a cook-off, with its `'secondary'` detonation in the same step; the
 kill counts once (listeners such as kill messages must de-duplicate by `vehicleId`).
 `vehicleDamaged` is sent for every hit that hurts a component. Ammunition trucks also emit
-small `'secondary'` detonations for a while after exploding.
+small `'secondary'` detonations for a while after exploding. Since wave 2 secondary
+explosions (cook-offs, the ammunition truck's pops) apply blast and fragments to the vehicles
+around them: their hit records have weapon `'secondary'`, sourceId 0 and outcome `'blast'` or
+`'fragment'` (the debrief treats them as indirect), and their kills are credited to the weapon
+that started the chain. An HEI round that strikes a vehicle always resolves as `'burst'` (or
+`'passedThrough'` on a panel), never `'ricochet'`. Tracks break only from a penetrator or
+fragment that defeats the track run, or from heavy blast. `setColumnSpeed(sim, groupId, speed)`
+sets a column's cruise speed before the first step (createSim's range conditions use it).
 
 ### Sensors — `core/sensors` (wave 2) · Debrief — `core/debrief` (wave 2)
 
@@ -429,8 +446,8 @@ Rules:
   the cockpit view it hides itself and the cockpit pass draws the body-frame instance.
 - **Cockpit display surfaces** (`view/cockpit/displays.ts`, cockpit module):
   `getDisplaySurfaces()` / `onDisplaySurfaces(fn)` give wave 2's MFDs two screens in the cockpit
-  scene: `right` = the A-10A TV monitor's screen, `left` = its mirror image left of the ADI
-  (hidden until `show(true)`: it covers the A-10A AoA gauge, clock and standby ADI). Each has a
+  scene, at the two A-10C MFCD screens the cockpit module builds (wave 2; both shown, the
+  A-10A parts they cover hidden). Each has a
   512-px canvas + `CanvasTexture` slot (draw, then `texture.needsUpdate = true`) or
   `setPicture(texture)` for a render target; unlit, not tone-mapped; `corners`, `normal`,
   `width`, `height` in the body frame. The cockpit passes are `cockpit` (200) and `vision` (450,
@@ -493,8 +510,12 @@ bloom → vignette → ACES; the carrier persists settings under `fac-settings-v
   validated by `sanitizeSettings`, per-visit URL overrides via `overrideSettings`), `telemetry`
   (≈10 Hz snapshot in display units), `view`, `scenario`, `loadoutId`, `ammoLoad` (the preset
   and gun load for the next flight; `setLoadout`, `setAmmoLoad`, passed to `SimOptions`; the UI
-  restores both from `a10-ui-v1` at start-up and saves every change, `ui/uiStore.ts`),
-  `flightNonce`,
+  restores both from `a10-ui-v1` at start-up and saves every change, `ui/uiStore.ts`;
+  `loadoutId` may be `'custom'`), `customLoadout` (the loadout screen's free choice, a legal
+  load or null; `SimOptions.customLoadout` when `loadoutId` is `'custom'`), `rangeConditions`
+  (the main menu's range options, `SimOptions.range`; createSim applies them to a range event
+  before its first step) — the UI keeps those two under `a10-loadout-v1` and `a10-range-v1` and
+  hands them to the store (`setCustomLoadout`, `setRangeConditions`), `flightNonce`,
   `loading`, `messages` (`pushMessage(text, level, ttl)`), `settingsOpen`, `helpOpen`.
 - **Runtime** (`state/runtime.ts`): `getSim()`, `getTerrain()`, `onTerrain()`,
   `prepareWorld(seed)`, `startFlight(opts)`, `endFlight()`. The live sim is never in the store.
@@ -734,9 +755,22 @@ export interface ReleaseRequest {
   `'LD' | 'HD'`; `WeaponProfile.laserCode` for the GBU-12). `BallisticModel.integrate(pos, vel,
   wind, dt, t)` has a 5th argument `t` (seconds since release, for the motor burn and the ballute
   delay); the live bodies call the very same function.
+- **In the code since wave 2:** `StoreBody` also has `prevPosition`/`prevOrientation` (the pose
+  at the start of the last step: views interpolate to the current one by `frameInfo.alpha`),
+  `flight` (its model; a body with `flight === null` is left alone by `stepBodies`, e.g. a view
+  test's stand-in), `fuze`, `runIn` (ground track at release), `carried`/`rockets` (a jettisoned
+  rack or pod and what it holds) and `mass`; `motorTime` is kept current.
+  `ProjectileState.bodyPool` recycles bodies. The weapons index exports the model functions
+  (`integrateStore`, `storeModel`, `modelFor`, `motorThrustAt`, `ejectionVelocity`, `dragTable`…),
+  `releaseStateOf(ac, station, ejection, outPos, outVel)` (how a release starts, for avionics),
+  `fragmentEnvelope`, `missClock`, `stationMass` and `interpolatePose` (shared with the gun).
 
 ### 12.3 Guided weapons (weapons/guided)
 
+- **Not built in wave 2:** the foundation stand-in stays (Mavericks leave the rail and fall
+  ballistic with no motor, GBU-12s fall ballistic); the stores, avionics, sensors, displays and
+  views already call the interface below, and the two view tests that need real guidance skip
+  themselves until `motorThrust` returns thrust.
 - `core/weapons/guided/index.ts` (guided module; a foundation stand-in flies everything
   ballistic) exports, called by the stores module's body integration for bodies whose `kind` is
   `'missile'` or `'laserBomb'`:
@@ -760,9 +794,13 @@ export interface ReleaseRequest {
 
 - `applyWarheadHit(sim, hit: VehicleHit, warhead: WarheadStrike, weapon: string, sourceId:
   number): void` (`core/targets/warheads.ts`; `WarheadStrike = { kind: 'shapedCharge';
-  penetrationMm; chargeKg }`; the foundation stand-in applies only the blast) — a shaped-charge jet
-  at the hit point (penetrates any plate it can, then behind-armour effects as for a round with
-  far greater lethality), plus the warhead's blast. Logged like any hit (one kill per vehicle).
+  penetrationMm; chargeKg; caseKg?; direction? }`: `caseKg` the fragmenting case mass, whose
+  fragments reach the other vehicles; `direction` the weapon's velocity at impact, the jet's line
+  — default the store body `sourceId`'s velocity, else straight into the struck plate) — a
+  shaped-charge jet at the hit point (spent plate by plate along its line; each compartment it
+  perforates gets the residual jet, a debris cone and overpressure), then the warhead's contact
+  blast on the struck vehicle; one hit record and at most one kill for it, while the blast and
+  case fragments reach the others (applyBlast skips the struck vehicle).
 - The free-hunt and range scenarios stay as in wave 1; the tactical lane's column and hulks are
   the Maverick / LGB targets.
 
@@ -804,6 +842,11 @@ export interface ReleaseRequest {
   pass and panel, open- and cease-fire range, fouls for firing inside the foul line or below
   the minimum altitude), bombing circle (miss distance and clock of each bomb, the session
   average), tactical lane (kills per weapon). Types live in debrief/types.ts (debrief module).
+- **Range conditions:** `SimOptions.range` (`RangeConditions {windSpeed, windClock,
+  turbulence, columnSpeed}`) — the surface wind from a clock direction along the event's run-in,
+  the world turbulence and the tactical lane column's speed; `createSim` applies them to a range
+  event before its first step (`applyRangeConditions`, with `rangeWind` and `findRangeLayout`
+  from core/debrief); free hunt keeps the world's own weather.
 - The debrief screen (after each pass on request and at the end of a flight) shows per pass:
   the weapon, release conditions (dive, speed, slant range, height, g), an overhead plot of the
   impacts against the target, and what each hit did.
@@ -825,11 +868,13 @@ export interface ReleaseRequest {
   (pipper or target from the eye), `timeToRelease`, `timeOfFall`, `belowMinimum`, `belowGlass`,
   `releaseNow`, `designated`/`designatedValid` (consent target or CCRP target), `azimuthError`
   (CCRP steering, + = steer right), `cueEl` (CCRP solution cue above the velocity vector, 0 =
-  release).
+  release; it grows without limit far from release, so the HUD holds it at the top of the
+  steering line); wave 2 also `store`, `station`, `delayCue`/`delayCueValid`/`delayCueAz`/
+  `delayCueEl`, `armed`, `passed`, `timeToImpact`, `fuzeNoArm`, `releaseHeight`, `pulsesLeft`.
 - **HUD wave 2** (`view/hud/**`, hud-mfd module): CCIP bomb/rocket pipper with the bomb fall
   line, delay cue and consent release, minimum-range / fuze cue, CCRP azimuth steering line,
   release cue, time to release and to impact, SPI marker, TGP and MAV line-of-sight diamonds.
-- **Cockpit A-10C** (`view/cockpit/**`, cockpit module): shows the left MFCD; MFCD bezels with
+- **Cockpit A-10C** (`view/cockpit/**`, cockpit module): shows both MFCDs; MFCD bezels with
   20 clickable OSBs each (`osb` commands) and their rockers; the AHCP switches in place of the
   added box where the model allows; UFC keys for the steerpoint and laser-code entry the
   avionics module supports; the weapon camera follows the newest store body, the target camera
@@ -852,7 +897,7 @@ export interface ReleaseRequest {
 | sensor view | `view/sensors/**`, `dev/sandboxes/sensors*.tsx`, `tests/unit/a10/sensorView*.test.ts` |
 | hud-mfd | `view/hud/**`, `view/mfd/**`, `dev/sandboxes/{hud,mfd}*.tsx`, `tests/unit/a10/{hud,mfd}*.test.ts` |
 | cockpit | `view/cockpit/**`, `dev/sandboxes/cockpit*.tsx`, `tests/unit/a10/cockpit*.test.ts` |
-| debrief + range | `core/debrief/**`, `src/a10/ui/**` (debrief screen and range scenario options; the rest of the UI too in wave 2), `tests/unit/a10/{debrief,range,ui}*.test.ts`, `tests/e2e/a10/**` |
+| debrief + range | `core/debrief/**`, `data/range.ts`, `src/a10/ui/**` (debrief screen and range scenario options; the rest of the UI too in wave 2), `tests/unit/a10/{debrief,range,ui}*.test.ts`, `tests/e2e/a10/**` |
 | stores view | `view/stores/**`, `view/effects/**`, `view/vehicles/**`, `view/aircraft/**`, `src/a10/assets/**` (except `urls.ts`), `src/a10/audio/**`, `public/a10/sounds/**`, `scripts/a10/sound*`, `tests/unit/a10/{effects,vehicles,audio,assets,storesView}*.test.ts` |
 | maintenance (wave-1 fixes, targets additions) | `core/targets/**`, `core/flight/**`, `core/world/**`, `src/a10/input/**`, `data/{vehicles,aircraft}.ts`, `view/{terrain,environment}/**`, their tests |
 | foundation | as in §11 |

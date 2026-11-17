@@ -140,7 +140,7 @@ export const RADIOMETRY_NOTES: Record<keyof typeof RADIOMETRY, SourceNote> = {
   },
   skyZenithHazy: { source: 'plan', confidence: 'estimate' },
   skyZenithEmissivity: {
-    source: 'plan',
+    source: 'bliss1961',
     confidence: 'estimate',
     note: 'Bliss (1961): ε(θ) = 1 − (1 − ε_z)^(1/cos θ)',
   },
@@ -254,14 +254,18 @@ export const SENSOR_AGC_NOTES: Record<keyof typeof SENSOR_AGC, SourceNote> = {
   irHighQuantile: { source: 'plan', confidence: 'estimate' },
   irMinSpan: { source: 'plan', confidence: 'estimate' },
   irMaxSpan: { source: 'plan', confidence: 'estimate' },
-  irNoiseSpan: { source: 'plan', confidence: 'estimate' },
+  irNoiseSpan: {
+    source: 'zuiderveld1994',
+    confidence: 'estimate',
+    note: 'the contrast limit of the equalization (as in CLAHE): no bin steeper than the gain this span allows',
+  },
   irLevelBalance: {
-    source: 'plan',
+    source: 'flirCoreAgc',
     confidence: 'estimate',
     note: 'the mean-output-level (ITT mean) control of plateau-equalizing thermal cores',
   },
   irPlateau: {
-    source: 'plan',
+    source: 'vickers1996',
     confidence: 'estimate',
     note: 'plateau histogram equalization (Vickers, 1996), the usual thermal-imager AGC',
   },
@@ -283,7 +287,11 @@ export const SENSOR_AGC_NOTES: Record<keyof typeof SENSOR_AGC, SourceNote> = {
   tvMaxBlack: { source: 'plan', confidence: 'estimate' },
   tvMinScene: { source: 'plan', confidence: 'estimate' },
   tvMaxGain: { source: 'plan', confidence: 'estimate' },
-  tvGamma: { source: 'plan', confidence: 'confirmed', note: 'ITU-R BT.709 camera transfer (0.45)' },
+  tvGamma: {
+    source: 'ituBt709',
+    confidence: 'confirmed',
+    note: 'ITU-R BT.709 camera transfer (0.45)',
+  },
   refocusTime: { source: 'plan', confidence: 'estimate' },
 };
 

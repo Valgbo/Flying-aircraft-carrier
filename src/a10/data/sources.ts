@@ -211,6 +211,83 @@ export const SOURCES = {
     title: 'War Thunder wiki: BTR-80A',
     url: 'https://wiki.warthunder.com/BTR-80A',
   },
+  // ---- wave 2 (stores, sensors, displays, cockpit, effects) ----
+  dod605509: {
+    title:
+      'DoD 6055.09-M, DoD Ammunition and Explosives Safety Standards: a hazardous fragment carries 58 ft-lb (79 J) or more',
+    url: 'https://www.esd.whs.mil/Directives/issuances/dodm/',
+  },
+  ndiaHydra2003: {
+    title:
+      'NDIA Joint Armaments Conference 2003 (guns and missiles): US Army Hydra-70 briefing, 29 mil CEP from helicopters',
+    url: 'https://ndia.dtic.mil/',
+  },
+  l3harrisRelease: {
+    title:
+      'L3Harris weapons release systems (BRU-55/A class): about 20 ft/s ejection for 500-lb stores',
+    url: 'https://www.l3harris.com/',
+  },
+  fmu139: {
+    title:
+      'FMU-139 series electronic bomb fuze: short-delay settings of 10–60 ms (public summaries)',
+    url: 'https://www.globalsecurity.org/',
+  },
+  saafLitening: {
+    title:
+      'South African Air Force fact page: Litening III pod (field of regard pitch +45°/−150°, roll ±400°; web summary)',
+    url: 'https://www.saairforce.co.za/',
+  },
+  middleton1952: {
+    title:
+      "W. E. K. Middleton, Vision through the Atmosphere, University of Toronto Press (1952): Koschmieder's law",
+    url: 'https://search.worldcat.org/search?q=Middleton+Vision+through+the+Atmosphere',
+  },
+  uoafCodexTgp: {
+    title: 'UOAF codex: Air-to-ground TGP (A-10C targeting pod page and its cues)',
+    url: 'https://codex.uoaf.net/index.php/Air-to-ground_TGP',
+  },
+  dcsForums: {
+    title:
+      'DCS World forums: A-10C threads on the TGP page cues and the cockpit model size (web summaries)',
+    url: 'https://forum.dcs.world/',
+  },
+  didA10c: {
+    title: 'Defense Industry Daily: A Higher-Tech Hog: The A-10C (two 5 × 5 in colour displays)',
+    url: 'https://www.defenseindustrydaily.com/',
+  },
+  briggs1969: {
+    title: 'G. A. Briggs, Plume Rise, USAEC Critical Review Series TID-25075 (1969)',
+    url: 'https://www.osti.gov/',
+  },
+  turner1970: {
+    title:
+      'D. B. Turner, Workbook of Atmospheric Dispersion Estimates, US EPA AP-26 (1970): Pasquill–Gifford spread',
+    url: 'https://nepis.epa.gov/',
+  },
+  vickers1996: {
+    title:
+      'V. E. Vickers, Plateau equalization algorithm for real-time display of high-quality infrared imagery, Optical Engineering 35(7) (1996)',
+    url: 'https://www.spiedigitallibrary.org/journals/optical-engineering',
+  },
+  bliss1961: {
+    title:
+      'R. W. Bliss, Atmospheric radiation near the surface of the ground: a summary for engineers, Solar Energy 5(3) (1961)',
+    url: 'https://www.sciencedirect.com/journal/solar-energy',
+  },
+  zuiderveld1994: {
+    title:
+      'K. Zuiderveld, Contrast limited adaptive histogram equalization, in Graphics Gems IV, Academic Press (1994)',
+    url: 'https://www.graphicsgems.org/',
+  },
+  ituBt709: {
+    title: 'ITU-R Recommendation BT.709: HDTV parameter values (camera transfer characteristic)',
+    url: 'https://www.itu.int/rec/R-REC-BT.709',
+  },
+  flirCoreAgc: {
+    title:
+      'Teledyne FLIR thermal camera cores (Boson, Tau 2): AGC documentation, plateau equalization and ITT mean',
+    url: 'https://www.flir.com/',
+  },
   plan: { title: 'PLAN_A10.md (this project): design decision', url: 'PLAN_A10.md' },
 } as const;
 

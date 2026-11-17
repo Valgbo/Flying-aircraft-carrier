@@ -4,8 +4,8 @@
  * store holds what React needs: screen, pause, settings, a 10 Hz telemetry snapshot, messages.
  */
 import { create } from 'zustand';
-import type { RealismPreset, ScenarioKind } from '../core/types';
-import type { AmmoLoad } from '../core/weapons/types';
+import type { RangeConditions, RealismPreset, ScenarioKind } from '../core/types';
+import type { AmmoLoad, StoreType } from '../core/weapons/types';
 
 export type A10Screen = 'menu' | 'loadout' | 'loading' | 'flight' | 'debrief' | 'credits';
 export type QualityLevel = 'low' | 'medium' | 'high';
@@ -168,6 +168,11 @@ export interface A10Store {
   loadoutId: string;
   /** The gun's ammunition load for the next flight (the loadout screen sets it). */
   ammoLoad: AmmoLoad;
+  /** The loadout screen's free choice (station → rack first, then stores), flown when
+   *  `loadoutId` is 'custom'; null while no legal one is chosen. */
+  customLoadout: Record<number, StoreType[]> | null;
+  /** The range options for the next range event (null: the world's own conditions). */
+  rangeConditions: RangeConditions | null;
   /** Bumped on every (re)start of a flight; components key on it. */
   flightNonce: number;
   loading: { progress: number; label: string };
@@ -187,6 +192,8 @@ export interface A10Store {
   setScenario(scenario: ScenarioKind): void;
   setLoadout(id: string): void;
   setAmmoLoad(load: AmmoLoad): void;
+  setCustomLoadout(load: Record<number, StoreType[]> | null): void;
+  setRangeConditions(conditions: RangeConditions | null): void;
   bumpFlight(): void;
   setLoading(progress: number, label: string): void;
   pushMessage(text: string, level?: UiMessage['level'], ttlMs?: number): void;
@@ -205,6 +212,8 @@ export const useA10Store = create<A10Store>((set, get) => ({
   scenario: 'freeHunt',
   loadoutId: 'tankHunter',
   ammoLoad: 'combatMix',
+  customLoadout: null,
+  rangeConditions: null,
   flightNonce: 0,
   loading: { progress: 0, label: '' },
   messages: [],
@@ -229,6 +238,8 @@ export const useA10Store = create<A10Store>((set, get) => ({
   setScenario: (scenario) => set({ scenario }),
   setLoadout: (loadoutId) => set({ loadoutId }),
   setAmmoLoad: (ammoLoad) => set({ ammoLoad }),
+  setCustomLoadout: (customLoadout) => set({ customLoadout }),
+  setRangeConditions: (rangeConditions) => set({ rangeConditions }),
   bumpFlight: () => set({ flightNonce: get().flightNonce + 1 }),
   setLoading: (progress, label) => set({ loading: { progress, label } }),
   pushMessage: (text, level = 'info', ttlMs = 3500) => {

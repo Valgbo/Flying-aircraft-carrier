@@ -6,14 +6,16 @@
 import { describe, expect, it } from 'vitest';
 import { SIM_DT } from '../../../src/a10/core/constants';
 import { createDebriefTestbed } from '../../../src/a10/core/debrief/testbed';
+import { applyRangeConditions } from '../../../src/a10/core/sim';
 import { createVehicle } from '../../../src/a10/core/targets';
+import type { SimOptions } from '../../../src/a10/core/types';
 import {
   buildDebriefModel,
   passPlot,
   rangeConditions,
   rangeView,
 } from '../../../src/a10/ui/debriefModel';
-import { applyRangeOptions, rangeWind } from '../../../src/a10/ui/rangeOptions';
+import { rangeWind, toRangeConditions } from '../../../src/a10/ui/rangeOptions';
 
 const DEG = Math.PI / 180;
 const AREA = { x: 0, z: -6000 };
@@ -225,12 +227,13 @@ describe('debrief screen model: range scores', () => {
     expect(at(0, 5, 0.15)).toBe('Calm wind · light turbulence');
     // a range flight with the options applied states them on its card
     const s = createDebriefTestbed('bombCircle');
-    applyRangeOptions(s.sim, {
+    (s.sim.options as SimOptions).range = toRangeConditions({
       windKt: 15,
       windClock: 9,
       turbulence: 'moderate',
       columnKmh: 15,
     });
+    expect(applyRangeConditions(s.sim)).toBe(true);
     s.step(SIM_DT);
     expect(rangeView(s.sim)!.conditions).toBe("Wind 15 kn from 9 o'clock · moderate turbulence");
   });

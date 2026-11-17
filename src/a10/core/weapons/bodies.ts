@@ -22,7 +22,7 @@
  */
 import { Quaternion, Vector3 } from 'three';
 import { BSU49, FUZE, STORE_BODY, WARHEADS } from '../../data/munitions';
-import { applyBlast, applyWarheadHit, segmentHitVehicle } from '../targets';
+import { applyBlast, applyWarheadHit, segmentHitVehicle, type WarheadStrike } from '../targets';
 import type { VehicleHit } from '../targets/types';
 import type { Sim } from '../types';
 import { densityAt, windAt } from '../world';
@@ -148,7 +148,15 @@ const _vehicle: VehicleHit = {
   face: 'front',
   plate: 0,
 };
-const _strike = { kind: 'shapedCharge' as const, penetrationMm: 0, chargeKg: 0 };
+/** A direct hit's shaped charge: its case fragments reach the other vehicles, its jet runs along
+ *  the body's velocity at impact (_vHit). */
+const _strike: WarheadStrike = {
+  kind: 'shapedCharge',
+  penetrationMm: 0,
+  chargeKg: 0,
+  caseKg: 0,
+  direction: _vHit,
+};
 
 const NONE = 0;
 const GROUND = 1;
@@ -335,6 +343,7 @@ function detonate(
   if (vehicle && warhead.penetrationMm > 0) {
     _strike.penetrationMm = warhead.penetrationMm;
     _strike.chargeKg = charge;
+    _strike.caseKg = caseKg;
     applyWarheadHit(sim, vehicle, _strike, name, b.id);
   } else {
     applyBlast(sim, _burst, charge, caseKg, name, b.id);

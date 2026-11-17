@@ -9,8 +9,9 @@
  *   OSBs         'osb:L:1' … 'osb:R:20': each queues { type: 'osb', display, button }; the hover
  *                label is the avionics' label for the page the display shows (OSB_TABLE, read
  *                through osbBinding), with its live value when the binding has one
- *   UFC keys     'ufc:<key>' for the keys without a simulation command yet (digits, ENT, CLR…):
- *                they move, queue nothing
+ *   UFC keys     'ufc:<key>' for the keys without a control of their own: the digits and CLR
+ *                queue { type: 'ufc', key } for the avionics scratchpad (laser codes); ENT, FUNC
+ *                and the rest move and queue nothing
  *   AHCP decor   'ahcp:<switch>' for the decorative switches (HUD DAY/NIGHT, NORM/STBY, CICU,
  *                JTRS, IFFCC): they move, queue nothing
  */
@@ -32,7 +33,7 @@ import {
   type CockpitControlId,
   type CockpitSwitchState,
 } from './switches';
-import { UFC_KEYS, ufcKey, type UfcKeyId } from './ufc';
+import { UFC_KEYS, ufcKey, ufcScratchpadKey, type UfcKeyId } from './ufc';
 
 export type OsbClickId = `osb:${MfcdSide}:${number}`;
 export type UfcClickId = `ufc:${UfcKeyId}`;
@@ -96,13 +97,16 @@ function isControl(id: string): id is CockpitControlId {
 }
 
 /**
- * The command a click queues (null: nothing — a decorative switch, a UFC key without a command
- * yet, the g-meter reset). `button`: 0 left, 2 right.
+ * The command a click queues (null: nothing — a decorative switch, a UFC key the avionics does
+ * not take, the g-meter reset). `button`: 0 left, 2 right.
  */
 export function clickCommand(id: ClickId, button: number, s: CockpitSwitchState): Command | null {
   if (isControl(id)) return commandForControl(id, button, s);
   const osb = parseOsb(id);
   if (osb) return { type: 'osb', display: osb.display, button: osb.button };
+  const ufc = ufcKeyOf(id);
+  const key = ufc ? ufcScratchpadKey(ufc) : null;
+  if (key) return { type: 'ufc', key };
   return null;
 }
 

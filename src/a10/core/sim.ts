@@ -4,7 +4,7 @@
  */
 import { applyCommands, createAvionicsState, initAvionics, stepFireControl } from './avionics';
 import { SIM_DT } from './constants';
-import { createDebriefState, stepDebrief } from './debrief';
+import { createDebriefState, findRangeLayout, rangeWind, stepDebrief } from './debrief';
 import {
   createAircraftState,
   stepFlight,
@@ -15,7 +15,7 @@ import {
 } from './flight';
 import { createRngStreams } from './rng';
 import { createSensorsState, stepSensors } from './sensors';
-import { createTargetsState, populateScenario, stepTargets } from './targets';
+import { createTargetsState, populateScenario, setColumnSpeed, stepTargets } from './targets';
 import type {
   Command,
   PilotInput,
@@ -102,6 +102,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     loadoutId: opts.loadoutId ?? 'tankHunter',
     customLoadout: opts.customLoadout,
     ammoLoad: opts.ammoLoad ?? 'combatMix',
+    range: opts.range,
   };
   const world = createWorldState(opts.terrain);
   const start = opts.start ?? defaultAirStart(opts.terrain);
@@ -128,9 +129,29 @@ export function createSim(opts: CreateSimOptions): Sim {
   sim.input.throttle[0] = sim.aircraft.engines[0].lever;
   sim.input.throttle[1] = sim.aircraft.engines[1].lever;
   populateScenario(sim);
+  applyRangeConditions(sim);
   // Steerpoints, SPI and weapon profiles exist before the first step (paused start, first HUD).
   initAvionics(sim);
   return sim;
+}
+
+/**
+ * Put the options' range conditions on a range event before its first step (PLAN_A10.md §11.2):
+ * the surface wind (its clock direction taken along the event's run-in) and the turbulence on
+ * the world, which keeps them through the flight (core/world), and on the tactical lane the
+ * moving column's speed. Free hunt and the empty world keep their own. Returns whether it applied.
+ */
+export function applyRangeConditions(sim: Sim): boolean {
+  const c = sim.options.range;
+  if (!c || sim.stepCount > 0) return false;
+  const layout = findRangeLayout(sim);
+  if (layout.event === 'none') return false;
+  rangeWind(Math.max(0, c.windSpeed), c.windClock, layout.runIn, sim.world.surfaceWind);
+  sim.world.turbulence = Math.max(0, c.turbulence);
+  if (layout.event === 'tacticalLane')
+    for (const g of sim.targets.groups)
+      if (g.template === 'laneColumn') setColumnSpeed(sim, g.id, c.columnSpeed);
+  return true;
 }
 
 /**

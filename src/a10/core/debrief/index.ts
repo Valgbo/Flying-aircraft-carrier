@@ -26,7 +26,7 @@ export {
   toHeadingFrame,
   type FramePoint,
 } from './geometry';
-export { emptyLayout, findRangeLayout, rangeEventOf } from './layout';
+export { emptyLayout, findRangeLayout, rangeEventOf, rangeWind } from './layout';
 export { burstOfRound, isIndirect, isRoundWeapon, recordOfBody, ROUND_NAMES } from './recorder';
 export {
   burstHits,

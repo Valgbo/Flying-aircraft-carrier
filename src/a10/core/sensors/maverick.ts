@@ -456,7 +456,7 @@ function point(sim: Sim, s: MaverickSeekerState): void {
   s.offAxis = _body.angleTo(_axis);
   s.los.copy(_body).applyQuaternion(q);
   s.gimbalAz = Math.atan2(_body.x, -_body.z);
-  s.gimbalEl = Math.atan2(_body.y, Math.hypot(_body.x, _body.z));
+  s.gimbalEl = Math.atan2(_body.y, Math.sqrt(_body.x * _body.x + _body.z * _body.z));
 }
 
 /** Hold or break the lock of the selected seeker; IR capture by a burning object. */

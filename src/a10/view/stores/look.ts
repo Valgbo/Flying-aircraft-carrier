@@ -120,7 +120,7 @@ export const WP_MARK_NOTES: Record<keyof typeof WP_MARK, SourceNote> = {
     note: 'the burning pellets cover metres of ground: the smoke is a dense cloud at once; visual',
   },
   puffS1: {
-    source: 'plan',
+    source: 'turner1970',
     confidence: 'estimate',
     note:
       'a plume ≈40–80 m wide a few hundred metres downwind (Pasquill–Gifford class D spread: ' +

@@ -90,7 +90,10 @@ export type Command =
   | { type: 'altitudeAlert'; value: number }
   | { type: 'jettison'; stations: number[] | 'all' }
   | { type: 'rearm' }
-  | { type: 'steerpoint'; dir: 1 | -1 };
+  | { type: 'steerpoint'; dir: 1 | -1 }
+  /** An up-front controller key for the avionics scratchpad: '0'–'9', 'CLR', 'STEER_UP', 'STEER_DN'
+   *  (others are ignored; core/avionics ufcKey). */
+  | { type: 'ufc'; key: string };
 
 export type Vec3Like = { x: number; y: number; z: number };
 
@@ -185,6 +188,24 @@ export interface SimOptions {
   customLoadout?: Record<number, StoreType[]>;
   /** The gun's ammunition load (default: the combat mix). */
   ammoLoad?: AmmoLoad;
+  /** Weapons-range conditions for a range event (ignored in free hunt and the empty world). */
+  range?: RangeConditions;
+}
+
+/**
+ * The conditions a weapons-range event is flown in (PLAN_A10.md §11.2), chosen on the main menu
+ * and put on the world and the targets by createSim before the first step (core/debrief
+ * applyRangeConditions). Free hunt keeps the world's own weather.
+ */
+export interface RangeConditions {
+  /** Surface wind (10 m above the ground), m/s; 0 = calm. */
+  windSpeed: number;
+  /** Where the wind blows FROM, as a clock direction along the event's run-in (12 = headwind). */
+  windClock: number;
+  /** The world's turbulence value (core/world: 0 calm, 1 moderate). */
+  turbulence: number;
+  /** Tactical lane: the moving column's speed, m/s (0 = halted). */
+  columnSpeed: number;
 }
 
 export interface Sim {

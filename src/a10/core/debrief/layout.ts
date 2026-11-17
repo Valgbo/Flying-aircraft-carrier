@@ -23,6 +23,23 @@ export function emptyLayout(event: RangeEvent = 'none'): RangeLayout {
   return { event, x: 0, z: 0, runIn: 0, panels: [], vehicles: [], centreId: -1 };
 }
 
+/**
+ * The surface wind of a clock direction along a run-in, world m/s (x east, z south): the
+ * direction the air MOVES toward (WorldState.surfaceWind). From 12 o'clock it blows down the
+ * run-in, against the aircraft; from 3 o'clock it comes from the pilot's right.
+ */
+export function rangeWind(
+  speed: number,
+  clock: number,
+  runIn: number,
+  out: { x: number; y: number; z: number },
+): void {
+  const to = runIn + ((clock % 12) * Math.PI) / 6 + Math.PI;
+  out.x = speed * Math.sin(to);
+  out.y = 0;
+  out.z = -speed * Math.cos(to);
+}
+
 /** The layout of the flight's range event (an empty one for free hunt or a missing event). */
 export function findRangeLayout(sim: Sim): RangeLayout {
   const event = rangeEventOf(sim.options.scenario);

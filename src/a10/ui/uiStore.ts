@@ -10,7 +10,8 @@
  * it. A saved preset the weapons module no longer offers is ignored. The loadout screen's free
  * choice ('custom', customLoadout.ts) and the weapons-range options (rangeOptions.ts) are
  * remembered under keys of their own ('a10-loadout-v1', 'a10-range-v1'); 'custom' is restored as
- * the preset only while a legal custom load is saved.
+ * the preset only while a legal custom load is saved. Both are handed to the app store too
+ * (`customLoadout`, `rangeConditions`), from which startFlight passes them to createSim.
  */
 import { create } from 'zustand';
 import type { AmmoLoad } from '../core/weapons/types';
@@ -18,6 +19,7 @@ import { useA10Store } from '../state/store';
 import {
   CUSTOM_ID,
   loadCustomStations,
+  sanitizeCustomStations,
   saveCustomStations,
   type CustomStations,
 } from './customLoadout';
@@ -26,6 +28,7 @@ import {
   loadRangeOptions,
   saveRangeOptions,
   sanitizeRangeOptions,
+  toRangeConditions,
   type RangeOptions,
 } from './rangeOptions';
 
@@ -112,6 +115,10 @@ export function persistLoadoutChoices(): void {
   const store = useA10Store.getState();
   if (saved.loadoutId && saved.loadoutId !== store.loadoutId) store.setLoadout(saved.loadoutId);
   if (saved.gunLoad && saved.gunLoad !== store.ammoLoad) store.setAmmoLoad(saved.gunLoad);
+  // the free choice and the range options the next flight is created with
+  const ui = useA10Ui.getState();
+  store.setCustomLoadout(sanitizeCustomStations(ui.customStations));
+  store.setRangeConditions(toRangeConditions(ui.rangeOptions));
   useA10Store.subscribe((s, prev) => {
     if (s.loadoutId !== prev.loadoutId || s.ammoLoad !== prev.ammoLoad)
       saveLoadoutChoices(s.loadoutId, s.ammoLoad);
@@ -152,9 +159,12 @@ export const useA10Ui = create<A10UiState>((set, get) => ({
     const rangeOptions = sanitizeRangeOptions({ ...get().rangeOptions, ...patch });
     saveRangeOptions(rangeOptions);
     set({ rangeOptions });
+    useA10Store.getState().setRangeConditions(toRangeConditions(rangeOptions));
   },
   setCustomStations: (customStations) => {
     saveCustomStations(customStations);
     set({ customStations });
+    // only a load the aircraft can carry is flown (null: 'custom' flies the gun only)
+    useA10Store.getState().setCustomLoadout(sanitizeCustomStations(customStations));
   },
 }));

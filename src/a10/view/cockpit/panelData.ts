@@ -40,12 +40,12 @@ export const MFCD = {
 
 export const MFCD_NOTES: Record<keyof typeof MFCD, SourceNote> = {
   screen: {
-    source: 'plan',
+    source: 'didA10c',
     confidence: 'approximate',
     note: 'Two 5 x 5 inch MFCDs (Defense Industry Daily "A Higher-Tech Hog"; Warthog News, "Identifying the upgraded A-10C"); an article quoted on the DCS forum gives 4.90 x 4.90 in of active area',
   },
   bezel: {
-    source: 'plan',
+    source: 'dcsForums',
     confidence: 'approximate',
     note: 'About 171 mm square: a home-cockpit builder measured 178 mm on the DCS model and found it about 4 % oversize (DCS forum, "A-10C cockpit model size")',
   },

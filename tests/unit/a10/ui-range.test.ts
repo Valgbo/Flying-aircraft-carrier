@@ -2,17 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SIM_DT } from '../../../src/a10/core/constants';
 import { findRangeLayout } from '../../../src/a10/core/debrief';
 import { createDebriefTestbed } from '../../../src/a10/core/debrief/testbed';
-import { createSim, runSim } from '../../../src/a10/core/sim';
-import type { ScenarioKind } from '../../../src/a10/core/types';
+import { applyRangeConditions, createSim, runSim } from '../../../src/a10/core/sim';
+import type { ScenarioKind, SimOptions } from '../../../src/a10/core/types';
 import { KT } from '../../../src/a10/core/units';
 import { createFlatTerrain } from '../../../src/a10/core/world';
 import { MOBILITY } from '../../../src/a10/data/vehicles';
 import { sensorMessage } from '../../../src/a10/ui/bridge';
-import { setUpFlight } from '../../../src/a10/ui/flightSetup';
 import { createCallState, rangeCalls } from '../../../src/a10/ui/rangeCalls';
 import { KILL_MESSAGES, RANGE_CALLS, SENSOR_MESSAGES } from '../../../src/a10/ui/realism';
 import {
-  applyRangeOptions,
   DEFAULT_RANGE_OPTIONS,
   describeRangeOptions,
   LANE_SPEED_KMH,
@@ -21,6 +19,7 @@ import {
   rangeWind,
   sanitizeRangeOptions,
   saveRangeOptions,
+  toRangeConditions,
   TURBULENCE_LEVELS,
   windClockName,
   type RangeOptions,
@@ -29,13 +28,19 @@ import {
 /**
  * Weapons-range options (PLAN_A10.md §11.2, src/a10/ui/rangeOptions.ts): the wind given as the
  * clock direction it blows from along the event's run-in, the turbulence, the tactical lane's
- * column speed; applied to a range flight before its first step, never to free hunt.
+ * column speed; createSim puts them (SimOptions.range) on a range flight before its first step,
+ * never on free hunt.
  */
 
 const DEG = Math.PI / 180;
 
-function sim(scenario: ScenarioKind) {
-  return createSim({ terrain: createFlatTerrain(0), scenario, seed: 5 });
+function sim(scenario: ScenarioKind, range?: RangeOptions) {
+  return createSim({
+    terrain: createFlatTerrain(0),
+    scenario,
+    seed: 5,
+    range: range ? toRangeConditions(range) : undefined,
+  });
 }
 
 const opts = (patch: Partial<RangeOptions>): RangeOptions => ({
@@ -91,28 +96,24 @@ describe('range wind: the clock direction it blows from, seen along the run-in',
 describe('range options on a flight', () => {
   it('a range event takes the wind along its run-in and the turbulence; free hunt is left alone', () => {
     for (const scenario of ['strafePit', 'bombCircle', 'tacticalLane'] as const) {
-      const s = sim(scenario);
+      const s = sim(scenario, opts({ windKt: 15, windClock: 4, turbulence: 'strong' }));
       const runIn = findRangeLayout(s).runIn;
-      expect(applyRangeOptions(s, opts({ windKt: 15, windClock: 4, turbulence: 'strong' }))).toBe(
-        true,
-      );
       const w = rangeWind(15, 4, runIn);
       expect(s.world.surfaceWind.x).toBeCloseTo(w.x, 9);
       expect(s.world.surfaceWind.z).toBeCloseTo(w.z, 9);
       expect(s.world.surfaceWind.y).toBe(0);
       expect(s.world.turbulence).toBe(TURBULENCE_LEVELS.strong.value);
     }
-    const free = sim('freeHunt');
-    const turbulence = free.world.turbulence;
-    expect(applyRangeOptions(free, opts({ windKt: 25, turbulence: 'calm' }))).toBe(false);
+    const own = sim('freeHunt');
+    const free = sim('freeHunt', opts({ windKt: 25, turbulence: 'calm' }));
+    expect(applyRangeConditions(free)).toBe(false);
     expect(free.world.surfaceWind.length()).toBe(0);
-    expect(free.world.turbulence).toBe(turbulence);
+    expect(free.world.turbulence).toBe(own.world.turbulence);
   });
 
   it('the defaults are the world’s own conditions (an unchanged dialog changes nothing)', () => {
     const plain = sim('bombCircle');
-    const set = sim('bombCircle');
-    applyRangeOptions(set, DEFAULT_RANGE_OPTIONS);
+    const set = sim('bombCircle', DEFAULT_RANGE_OPTIONS);
     expect(set.world.surfaceWind.length()).toBe(plain.world.surfaceWind.length());
     expect(set.world.turbulence).toBe(plain.world.turbulence);
     expect(LANE_SPEED_KMH).toBe(Math.round(MOBILITY.laneSpeed * 3.6));
@@ -120,8 +121,7 @@ describe('range options on a flight', () => {
 
   it('the tactical lane column drives at the chosen speed, or stays halted', () => {
     const column = (kmh: number) => {
-      const s = sim('tacticalLane');
-      applyRangeOptions(s, opts({ columnKmh: kmh }));
+      const s = sim('tacticalLane', opts({ columnKmh: kmh }));
       const g = s.targets.groups.find((x) => x.template === 'laneColumn')!;
       expect(g.speed).toBeCloseTo(kmh / 3.6, 9);
       const ids = g.vehicleIds;
@@ -149,26 +149,20 @@ describe('range options on a flight', () => {
       expect(v.moved).toBeGreaterThan((40 / 3.6) * 6 * 0.75);
     }
     // the hulks of the lane never move
-    const s = sim('tacticalLane');
-    applyRangeOptions(s, opts({ columnKmh: 40 }));
+    const s = sim('tacticalLane', opts({ columnKmh: 40 }));
     const hulks = s.targets.groups.find((x) => x.template === 'laneHulks')!;
     for (const id of hulks.vehicleIds)
       expect(s.targets.vehicles.find((v) => v.id === id)!.speed).toBe(0);
   });
 
-  it('the flight set-up applies them to a range flight that has not stepped yet', () => {
-    const s = sim('bombCircle');
-    expect(setUpFlight(s, 'tankHunter', {}, opts({ windKt: 20, windClock: 6 }))).toEqual({
-      custom: false,
-      range: true,
-    });
+  it('createSim applies them before the first step only; a flown flight keeps its weather', () => {
+    const s = sim('bombCircle', opts({ windKt: 20, windClock: 6 }));
     expect(s.world.surfaceWind.length()).toBeCloseTo(20 * KT, 9);
+    expect(s.options.range).toEqual(toRangeConditions(opts({ windKt: 20, windClock: 6 })));
     const stepped = sim('bombCircle');
     runSim(stepped, 0.1);
-    expect(setUpFlight(stepped, 'tankHunter', {}, opts({ windKt: 20 }))).toEqual({
-      custom: false,
-      range: false,
-    });
+    (stepped.options as SimOptions).range = toRangeConditions(opts({ windKt: 20 }));
+    expect(applyRangeConditions(stepped)).toBe(false);
     expect(stepped.world.surfaceWind.length()).toBe(0);
   });
 });

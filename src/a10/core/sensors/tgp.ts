@@ -365,7 +365,7 @@ function pointHead(sim: Sim): void {
   t.masked = t.maskReason !== 'NONE';
   t.los.copy(_losBody).applyQuaternion(q);
   t.gimbalAz = Math.atan2(_losBody.x, -_losBody.z);
-  t.gimbalEl = Math.atan2(_losBody.y, Math.hypot(_losBody.x, _losBody.z));
+  t.gimbalEl = Math.atan2(_losBody.y, Math.sqrt(_losBody.x * _losBody.x + _losBody.z * _losBody.z));
 }
 
 /** Point track: follow the vehicle, coast when it is lost. */

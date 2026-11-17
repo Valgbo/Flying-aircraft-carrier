@@ -73,6 +73,26 @@
   white-space: nowrap;
 }
 
+/* Said once, then out of the way: the cursor-free badge would sit over the left display's
+   bottom buttons and their hover labels while the pilot clicks them. */
+.a10in-badge--brief {
+  animation: a10in-badge-out 0.6s ease-in 2.4s forwards;
+}
+
+@keyframes a10in-badge-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a10in-badge--brief {
+    animation-duration: 0.01s;
+    animation-delay: 3s;
+  }
+}
+
 /* ---------- Controls panel ------------------------------------------------------------- */
 
 .a10in-panel {

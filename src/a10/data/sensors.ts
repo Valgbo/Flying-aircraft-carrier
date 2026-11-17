@@ -100,7 +100,7 @@ export const TGP_NOTES: Record<keyof typeof TGP, SourceNote> = {
     note: 'Stirling-cooled FLIR: a couple of minutes to cool ("NOT TIMED OUT")',
   },
   gimbalMaxOffAxis: {
-    source: 'wikiLitening',
+    source: 'saafLitening',
     confidence: 'approximate',
     note: 'Litening III field of regard: pitch +45° / −150°, roll ±400° (SAAF fact page, web summary)',
   },
@@ -424,7 +424,7 @@ export const CONTRAST_NOTES: Record<keyof typeof CONTRAST, SourceNote> = {
   irScaleK: { source: 'plan', confidence: 'estimate', note: 'a few K of contrast against clutter' },
   tvScale: { source: 'plan', confidence: 'estimate' },
   skyGroundRatio: {
-    source: 'plan',
+    source: 'middleton1952',
     confidence: 'estimate',
     note: "Koschmieder's law (Middleton, Vision through the Atmosphere, 1952): sky/ground ratio 2–5",
   },

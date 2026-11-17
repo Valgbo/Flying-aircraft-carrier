@@ -31,6 +31,16 @@ The list with URLs is `src/a10/data/sources.ts`. The main ones:
 | `wikiTf34`, `geTf34` | TF34 engine |
 | `tankograd`, `warThunderT72` | T-72 armour estimates |
 | `hoggitHud`, `dcsForumPac`, `dcsForumGunLine`, `dcsMaverick` | Hobbyist simulator documentation of HUD symbology, PAC, gun line, Maverick procedure |
+| `uoafCodexTgp`, `dcsForums`, `didA10c`, `saafLitening` | A-10C targeting-pod page cues, MFCD size, Litening field of regard (web summaries) |
+| `dod605509`, `ndiaHydra2003`, `l3harrisRelease`, `fmu139`, `hoernerDrag` | Stores: hazardous fragment energy, Hydra dispersion, ejection, fuze delays, store drag |
+| `middleton1952`, `bliss1961`, `vickers1996`, `zuiderveld1994`, `ituBt709`, `flirCoreAgc` | Sensors and their pictures: haze, sky emissivity, thermal-imager gain control, TV gamma |
+| `briggs1969`, `turner1970` | Smoke marks: plume rise and spread |
+
+Not consulted (unreachable from the build machine), so the values that would come from them
+stay estimates: the DSTO Mk 82 aerodynamic tables (DSTO-TR-0554; the drag is a Hoerner
+build-up), the Eglin BSU-49 deployment tests, M. Held's behind-armour-debris studies of shaped
+charges (the jet's behind-armour constants), the FM 5-250 / FM 3-34.214 contact-charge formula,
+NAVFAC MIL-HDBK-1027/3B and AFI 13-212 (the strafe foul line and minimum altitude).
 
 ---
 
@@ -157,9 +167,13 @@ Filled in from the modules' acceptance tests at each integration (see `tests/uni
 | Engine spool, idle → 95 % thrust | 4–8 s | 6.51 s | flight |
 | Static thrust per engine | 40.3 kN | 40.32 kN | flight |
 | Overspeed (Vne 450 kn) | warning and buffet above | warning on at 460 kn, off at 440 kn | flight |
-| Dive recovery from 300 kn, 30°, 4 g once reached | ≈105 m (closed form) | 82.6 m vs 84.8 m closed form from the same state; 143.7 m including the g onset | flight |
+| Dive recovery from 300 kn, 30°, 4 g once reached | ≈105 m (closed form) | 99.1 m with the 0.58 s g-onset allowance (44.5 m); 82.6 m vs 84.8 m closed form from the 4 g point; 143.7 m including the whole onset | flight |
 | PAC-1, 30° dive, 300 kn, turbulence 0.6 | large reduction of pipper motion | RMS pipper rate 18.4 → 2.2 mrad/s | flight |
 | Trimmed straight and level, hands off 60 s | ± 30 m | 5.8 m | flight |
+| Default air start, hands off 60 s | ± 30 m | ±0.5–3.2 m, ±0.8–0.9 kn (levers 0.766 / 0.681) | flight |
+| PAC-2 recoil, peak pitch rate | small with the feed-forward | 0.40 °/s (feed-forward off 0.95, PAC off 1.94) | flight |
+| PAC squeezed while pitching 0.7–7.5 °/s, 310–382 kn | < 1 mrad within 2 s | 0.25–0.53 mrad; burst σ 1.7–3.0 m vs 2.7–4.6 m PAC off | flight |
+| Held pull key at 300 / 400 / 450 kn | no over-g | 5.99 / 6.64 / 6.58 g | input |
 | Time of flight to 1,220 m, static gun, sea level | 1.3–1.5 s | 1.44 s (707 m/s left) | ballistics |
 | Trajectory vs the frozen table (§2.6) | within 2 % | < 0.1 % | ballistics |
 | Gun-line predictor vs a live round | same model | < 1 cm, < 1 ms | ballistics |
@@ -169,5 +183,33 @@ Filled in from the modules' acceptance tests at each integration (see `tests/uni
 | T-72 side (80 mm) | never beyond 400 m | crossover 369 m | armour |
 | T-72 front | never | 0 of 120 rounds at 200–400 m | armour |
 | IFV and APC at 1,500 m | penetrated from any side | ≥ 90 % on the hull plates | armour |
-| Mk-82 blast against a tank / truck | a few metres / 30 m | destroyed within ≈4 m, nothing at 16 m / destroyed within 30 m | damage |
+| Mk-82 blast against a tank / truck | a few metres / 30 m | destroyed within ≈4 m, damaged with a mobility kill at 4.5–20 m in some seeds (statistical fragments on the running gear) / destroyed within 30 m | damage |
 | Strafing pass on a tank, flight model and real gun | the target's state changes | 46 of 50 rounds on the tank, 26 API penetrations, catastrophic | targets |
+| Strafing, 1 s frontal burst at 873 m on a T-72 (24 seeds) | a minority immobilised | 5/24, no penetrations | targets |
+| Strafing, 2 s 30° rear pass at 1,417 m (24 seeds) | rarely immobilised | 1–2/24 | targets |
+| AGM-65-sized shaped charge (1,000 mm, 39 kg) into a T-72, 144 hits from every aspect | destroyed from any aspect, often catastrophically | 144/144 destroyed, 132 catastrophic at once; the jet alone 144/144 after 12 s | warhead |
+| Ammunition truck (70 kg) exploding, cargo truck / T-72 at 20 m | destroyed / not | 10/10 / 0/10 | damage |
+| Bomb CCIP, Mk-82, 30° dive, 300 kn, release 1,500 m above the target | within 5 m of the pipper; 10 m in a 15 kn crosswind | 0.01 m still air; 0.07 m in 15 kn (the wind moves the bomb 2.3 m); 0.07 m against the avionics' own pipper | bombs |
+| Bomb CCRP, level 5,000 ft, 300 kn | miss < 10 m | 0.005 m with the stores solver (0.09 m in 15 kn); 1.4 m through the avionics' release | bombs |
+| CCIP consent release flown by the weapons module | within 5 m | 0.94 m from the designated point (station 0.57 m off the centreline) | release |
+| Mk-82 low drag, 30° / 300 kn / 1,500 m | — | time of fall 11.2 s, 1,420 m ahead, 56° impact | bombs |
+| Mk-82 AIR high vs low drag, same release | steeper, well short | 873 vs 1,419 m ahead (546 m short), 19.5 vs 11.2 s, 82.5° vs 56°; at 300 ft / 450 kn it lands 374 m behind the aircraft vs 14 m | bombs |
+| High-drag live body vs its fire-control model | within 0.5 m | ≤ 0.08 m | bombs |
+| Fuze arming height, 4 s arming, level 300 kn | dud below, burst above | 102.9 m | bombs |
+| Mk-82 through its detonation path (MBT / IFV / truck) | a few m / — / 30 m | MBT destroyed ≤ 3.5 m; IFV destroyed at 8 m, intact at 16 m; truck destroyed at 30 m (8/8), not at 45–60 m (0/8) | bombs |
+| Mk-82 safe-escape fragment envelope | ≈300 m | 347 m (413 m at 3,000 m); M151 122 m | stores |
+| Hydra 70 static burn-out | 739 m/s ± 3 %, burn 1.05–1.10 s | 737.7 m/s at 1.07 s (tube exit 0.074 s at ≈45 m/s); 6,739 N·s, 6.30 kN mean | rockets |
+| Hydra 70 in a crosswind | turns into the wind | 45 m/s and 23 m upwind at burn-out (13.7 m/s wind, 10° dive, 300 kn) | rockets |
+| Hydra 70 launch dispersion | a few mrad | 3.6 mrad σ across (140 shots) | rockets |
+| Exact-time release at 300 kn | within a few cm | 0.1 mm (a step-boundary release would be 48 cm off) | stores |
+| Fire-control predictor step vs live body (1/8 s bombs, 1/15 s rockets) | within 0.5 m | ≤ 0.12 m at 3.5 km | stores |
+| Ripple single 4 × 75 ft at 300 kn | interval = spacing / ground speed | 148.1 ms; CCRP ripple 4 × 100 ft lands −45.7, −15.2, +15.2, +45.7 m from the SPI | release |
+| Maverick launch hold | ≈1 s | 1.000 s after the press; refused outside the zone, unlocked or not ready | release |
+| Tank lock range, idling broadside, from 1,500 m, clear day | ≈3–7 nmi | WIDE 3.43 nmi, NARROW 6.42 nmi | sensors |
+| IR contrast at 21:00, 3 nmi: cold stopped vs running tank | below vs above 0.25 | 0.199 vs 0.967 | sensors |
+| TV contrast at 2.5 nmi: visibility 3 km / night / 30 km | no lock in haze or at night | 0.004 / 0.000 / 0.855 | sensors |
+| Maverick seeker alignment after power-on | ≈3 min | 180 s | sensors |
+| Heading change before the seeker gimbal breaks a lock | 30° gimbal | 27.9° | sensors |
+| Pod POINT track on a tank at 40 km/h | holds while visible | 94.2 s to the ridge, within 0.078 m of the tank's centre; AREA 1.0 s after the loss | sensors |
+| Sensors step cost, 80 vehicles, pod lasing and a Maverick locked | < 200 µs | 17 µs best-of-5 (30 µs mean; worst 118 µs) | sensors |
+| Fire-control cost per step, CCRP with cold solves | < 0.3 ms | 113 µs median, 187 µs p99 | avionics |

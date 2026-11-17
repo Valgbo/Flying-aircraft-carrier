@@ -8,13 +8,11 @@
  *
  * The custom load is remembered under 'a10-loadout-v1' (the 'a10-ui-v1' choices keep their
  * format; the store's `loadoutId` is 'custom' while it is the chosen load). A flight carries it
- * from its first step: flightSetup.ts puts it on the sim (SimOptions.customLoadout) until the
- * flow passes it to createSim itself.
+ * from its first step: the UI store hands a legal load to the app store (`customLoadout`), and
+ * startFlight passes it to createSim (SimOptions.customLoadout), whose stations, fire-control
+ * profiles and mass start with it; a rearm restores it.
  */
-import { refreshStores } from '../core/avionics';
-import { updateMassProperties } from '../core/flight';
-import type { Sim } from '../core/types';
-import { loadoutIssues, rearm, stationAccepts, stationIssue, STATION_COUNT } from '../core/weapons';
+import { loadoutIssues, stationAccepts, stationIssue, STATION_COUNT } from '../core/weapons';
 import type { StoreType } from '../core/weapons/types';
 import { STATION_EXCLUSIVE, STORES } from '../data/munitions';
 import { stationLabel, storeLabel } from './loadout';
@@ -188,19 +186,4 @@ export function customSummary(stations: CustomStations): string {
   }
   if (counts.size === 0) return 'Gun only: pick a load for each station';
   return [...counts.entries()].map(([f, n]) => (n > 1 ? `${n} × ${f}` : f)).join(' · ');
-}
-
-/**
- * Put a custom load on a flight before its first step: the sim's options name it (a rearm
- * restores it), the stations take it (weapons' rearm refills them from the options; the gun is
- * full at the start anyway), the fire-control computer builds its weapon profiles for it, and
- * the flight model weighs it. Refused (false) for a load the aircraft cannot carry.
- */
-export function applyCustomLoadout(sim: Sim, stations: CustomStations): boolean {
-  if (loadoutIssues(stations).length > 0) return false;
-  sim.options.customLoadout = copyStations(stations);
-  rearm(sim);
-  refreshStores(sim);
-  updateMassProperties(sim);
-  return true;
 }

@@ -79,7 +79,7 @@ export default function InputManager() {
         </div>
       )}
       {hints.cursorFree && (
-        <div className="a10in-badge" role="status" data-testid="cursor-free">
+        <div className="a10in-badge a10in-badge--brief" role="status" data-testid="cursor-free">
           Cursor free: click switches in the cockpit
           {cursorKey ? ` · ${bindingName(cursorKey, config)} to fly` : ''}
         </div>

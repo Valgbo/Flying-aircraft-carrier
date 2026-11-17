@@ -822,8 +822,8 @@ define(
     growTau: 9,
     drag: 0.9,
     // the burning phosphorus (≈25 MJ/kg) makes a hot plume that climbs a few tens of metres
-    // while the wind bends it over (bent-over plume rise of a ≈0.3 MW source: ≈20–35 m at
-    // 200–500 m downwind in a 4 m/s wind)
+    // while the wind bends it over (bent-over plume rise of a ≈0.3 MW source, Briggs 1969
+    // 'briggs1969': ≈20–35 m at 200–500 m downwind in a 4 m/s wind)
     rise: 1.6,
     riseTau: 25,
     wind: 1,

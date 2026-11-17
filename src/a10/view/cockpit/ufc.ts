@@ -10,13 +10,10 @@
  * What the simulation supports today: STEER ▲/▼ steps the steerpoint ({ type: 'steerpoint' }),
  * ALT ALRT steps the altitude alert (left up, right down: the wave-1 altitude-alert control),
  * and the MASTER CAUTION lamp lights with the flight's master caution (it replaces the A-10A's
- * lamp, which the left MFCD covers). The avionics has a UFC scratchpad for laser codes (type four
- * digits, then press CODE on the DSMS or TGP page; CLR empties it: core/avionics ufcKey), and
- * `ufcScratchpadKey` gives the key it takes for each of our keys — but no Command carries a key
- * press to it yet (core/types.ts is the foundation's: the module report asks for
- * `{ type: 'ufc'; key: string }`, as the avionics module did). Until then the digits, CLR, ENT
- * and the other keys move when pressed and queue nothing; the codes are set on the DSMS and TGP
- * pages' OSBs (CODE moves the cursor digit, INC steps it).
+ * lamp, which the left MFCD covers). The digits and CLR queue { type: 'ufc', key } for the
+ * avionics scratchpad (`ufcScratchpadKey` gives the key each of ours sends): type a four-digit
+ * laser code, then press CODE on the DSMS or TGP page (core/avionics ufcKey); CLR empties the
+ * pad. ENT, FUNC, the rockers other than STEER and the remaining keys move and queue nothing.
  *
  * Draw calls: the plate (stencils and every key legend on one canvas texture), the key caps (one
  * merged mesh: each cap's top samples its legend from the same texture; a press moves only that

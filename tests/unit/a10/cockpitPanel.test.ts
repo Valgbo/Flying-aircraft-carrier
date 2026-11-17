@@ -402,7 +402,7 @@ describe('the armament HUD control panel', () => {
 });
 
 describe('the up-front controller', () => {
-  it('steps the steerpoint and the altitude alert; the other keys queue nothing yet', () => {
+  it('steps the steerpoint and the altitude alert; digits and CLR feed the scratchpad', () => {
     expect(clickCommand(ufcClickId('STEER_UP'), LEFT, state())).toEqual({
       type: 'steerpoint',
       dir: 1,
@@ -417,7 +417,9 @@ describe('the up-front controller', () => {
     for (const k of UFC_KEYS) {
       const id = ufcClickId(k.id);
       if (['STEER_UP', 'STEER_DN', 'ALT_ALRT'].includes(k.id)) continue;
-      expect(clickCommand(id, LEFT, state()), k.id).toBeNull();
+      const pad = ufcScratchpadKey(k.id);
+      if (pad) expect(clickCommand(id, LEFT, state()), k.id).toEqual({ type: 'ufc', key: pad });
+      else expect(clickCommand(id, LEFT, state()), k.id).toBeNull();
       expect(ufcKeyOf(id)).toBe(k.id);
     }
     // the UFC holds the wave-1 altitude-alert control
@@ -427,7 +429,7 @@ describe('the up-front controller', () => {
     });
   });
 
-  it("names the avionics scratchpad's key for each digit and CLR (for a future ufc command)", () => {
+  it("names the avionics scratchpad's key for each digit and CLR", () => {
     for (const k of UFC_KEYS) {
       const key = ufcScratchpadKey(k.id);
       if (/^[0-9]$/.test(k.id) || k.id === 'CLR') expect(key, k.id).toBe(k.id);

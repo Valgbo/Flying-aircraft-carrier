@@ -210,10 +210,12 @@ const DEFAULT_TABLE: Record<ControlId, Binding[]> = {
   dmsDown: [],
   dmsLeft: [],
   dmsRight: [],
+  // Coolie left/right: a short press steps that display's page, a long one makes it the SOI
+  // (core/avionics handleCoolie); plain comma / full stop pick the SOI display directly.
   coolieUp: [],
   coolieDown: [],
-  coolieLeft: [],
-  coolieRight: [],
+  coolieLeft: [key('Comma', undefined, { ctrl: true })],
+  coolieRight: [key('Period', undefined, { ctrl: true })],
   throttleBoth: [key('PageUp', 1), key('PageDown', -1), pad(PAD.up, 1), pad(PAD.down, -1)],
   throttleLeft: [],
   throttleRight: [],

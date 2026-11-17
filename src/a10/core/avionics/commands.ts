@@ -36,6 +36,7 @@ import {
   previousMasterMode,
 } from './profiles';
 import type { AltSource, GunPacSwitch, LaserArm, MasterArm } from './types';
+import { ufcKey } from './ufc';
 
 /**
  * Order a 'cycle' command steps through each three-position switch. GUN/PAC goes to ARM (gun
@@ -200,6 +201,9 @@ export function applyCommand(sim: Sim, c: Command): void {
       break;
     case 'steerpoint':
       cycleSteerpoint(sim, c.dir);
+      break;
+    case 'ufc':
+      ufcKey(sim, c.key);
       break;
     default: {
       const unhandled: never = c;

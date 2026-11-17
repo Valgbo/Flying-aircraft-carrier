@@ -237,7 +237,7 @@ function startRun(sim: Sim, ground: FireControlGround, now: number, dt: number):
 /** Ground track (unit) and the ripple interval from the present ground speed. */
 function setTrackAndInterval(sim: Sim, d: DeliveryState, rocket: boolean): void {
   const v = sim.aircraft.velocity;
-  const vg = Math.hypot(v.x, v.z);
+  const vg = Math.sqrt(v.x * v.x + v.z * v.z);
   if (vg > 1e-3) {
     d.trackX = v.x / vg;
     d.trackZ = v.z / vg;
@@ -426,12 +426,12 @@ function simulatedRecord(
   }
   const v = ac.velocity;
   const speed = v.length();
-  const vg = Math.hypot(v.x, v.z);
+  const vg = Math.sqrt(v.x * v.x + v.z * v.z);
   const ux = vg > 1e-3 ? v.x / vg : 0;
   const uz = vg > 1e-3 ? v.z / vg : -1;
   const dx = ix - aim.x;
   const dz = iz - aim.z;
-  const miss = Math.hypot(dx, dz);
+  const miss = Math.sqrt(dx * dx + dz * dz);
   const fuzeEffects = sim.options.realism.fuzeEffects;
   let nSim = 0;
   for (const r of sim.debrief.weapons) if (r.simulated) nSim++;
@@ -445,9 +445,7 @@ function simulatedRecord(
       // The release is less than a step after the present state: its height is the present one
       // moved along the flight path.
       agl: ac.agl + v.y * (t - now),
-      slantRange: aimValid
-        ? Math.hypot(aim.x - ac.position.x, aim.y - ac.position.y, aim.z - ac.position.z)
-        : 0,
+      slantRange: aimValid ? ac.position.distanceTo(aim) : 0,
       gLoad: ac.gLoad,
       bank: ac.bank,
     },
@@ -470,7 +468,7 @@ function simulatedRecord(
 
 /** Clock direction (1–12) of a miss (dx, dz) from the aim, 12 = along the track (ux, uz). */
 export function missClock(dx: number, dz: number, ux: number, uz: number): number {
-  if (Math.hypot(dx, dz) < 1e-6) return 12;
+  if (dx * dx + dz * dz < 1e-12) return 12;
   const ahead = dx * ux + dz * uz;
   const right = -dx * uz + dz * ux;
   const hours = Math.round(Math.atan2(right, ahead) / (Math.PI / 6));

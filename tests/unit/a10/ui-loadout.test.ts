@@ -11,7 +11,6 @@ import type { StoreType } from '../../../src/a10/core/weapons/types';
 import { createFlatTerrain } from '../../../src/a10/core/world';
 import { STORES } from '../../../src/a10/data/munitions';
 import {
-  applyCustomLoadout,
   copyStations,
   CUSTOM_ID,
   customSummary,
@@ -21,8 +20,6 @@ import {
   setStationLoad,
   stationOptions,
 } from '../../../src/a10/ui/customLoadout';
-import { setUpFlight } from '../../../src/a10/ui/flightSetup';
-import { DEFAULT_RANGE_OPTIONS } from '../../../src/a10/ui/rangeOptions';
 import {
   humanizeId,
   loadoutPresets,
@@ -182,18 +179,23 @@ describe('presets and the free choice follow the weapons module’s loading rule
       8: ['GBU-12'],
       10: ['AN/AAQ-28'],
     } as Record<number, StoreType[]>;
-    const s = createSim({
+    // startFlight creates a custom flight with the app store's legal custom load
+    const bare = createSim({
       terrain: createFlatTerrain(0),
       scenario: 'empty',
       loadoutId: CUSTOM_ID,
       seed: 2,
     });
-    // the flow creates a custom flight with nothing on the stations; the set-up loads it
-    expect(s.stores.mass).toBe(0);
-    const empty = s.aircraft.mass;
-    expect(setUpFlight(s, CUSTOM_ID, custom, DEFAULT_RANGE_OPTIONS)).toEqual({
-      custom: true,
-      range: false,
+    expect(bare.stores.mass).toBe(0);
+    const empty = bare.aircraft.mass;
+    const legal = sanitizeCustomStations(custom);
+    expect(legal).toEqual(custom);
+    const s = createSim({
+      terrain: createFlatTerrain(0),
+      scenario: 'empty',
+      loadoutId: CUSTOM_ID,
+      customLoadout: legal!,
+      seed: 2,
     });
     expect(s.options.customLoadout).toEqual(custom);
     const on = (n: number) => s.stores.stations.find((x) => x.station === n)!;
@@ -216,36 +218,24 @@ describe('presets and the free choice follow the weapons module’s loading rule
     expect(on(3).stores).toEqual(['AGM-65D']);
   });
 
-  it('an illegal or empty choice is refused: the flight keeps the gun only', () => {
+  it('an illegal choice is never flown: the custom flight keeps the gun only', () => {
+    // the UI store hands the app store only a load the aircraft can carry (null otherwise)
+    expect(sanitizeCustomStations({ 5: ['AGM-65D'] })).toBeNull();
+    expect(sanitizeCustomStations({})).toEqual({});
     const s = createSim({
       terrain: createFlatTerrain(0),
       scenario: 'empty',
       loadoutId: CUSTOM_ID,
       seed: 2,
     });
-    expect(applyCustomLoadout(s, { 5: ['AGM-65D'] })).toBe(false);
     expect(s.stores.mass).toBe(0);
-    // a preset flight is not touched, nor one created with its custom load already
+    // a preset flight ignores any custom load the store holds (startFlight passes none)
     const preset = createSim({
       terrain: createFlatTerrain(0),
       scenario: 'empty',
       loadoutId: 'gunOnly',
       seed: 2,
     });
-    expect(setUpFlight(preset, 'gunOnly', { 4: ['MK-82'] }, DEFAULT_RANGE_OPTIONS).custom).toBe(
-      false,
-    );
     expect(preset.stores.mass).toBe(0);
-    const given = createSim({
-      terrain: createFlatTerrain(0),
-      scenario: 'empty',
-      loadoutId: CUSTOM_ID,
-      customLoadout: { 4: ['GBU-12'] },
-      seed: 2,
-    });
-    expect(setUpFlight(given, CUSTOM_ID, { 4: ['MK-82'] }, DEFAULT_RANGE_OPTIONS).custom).toBe(
-      false,
-    );
-    expect(given.stores.stations[3].stores).toEqual(['GBU-12']);
   });
 });

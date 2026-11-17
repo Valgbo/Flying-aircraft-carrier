@@ -19,7 +19,7 @@ import type { TargetsState } from './types';
 export type * from './types';
 export { VEHICLE_MODELS, VEHICLE_SHAPES };
 export { createVehicle, findVehicle, isAlive } from './state';
-export { populateScenario, digIn, spawnGroup, type Placement } from './scenario';
+export { populateScenario, digIn, setColumnSpeed, spawnGroup, type Placement } from './scenario';
 export { stepTargets } from './behaviour';
 export { segmentHitVehicle, segmentHitVehicleAll } from './hit';
 export { resolveRoundHit } from './damage';

@@ -799,11 +799,11 @@ export const EJECTOR = {
 
 export const EJECTOR_NOTES: Record<keyof typeof EJECTOR, SourceNote> = {
   energy: {
-    source: 'flightgearA10',
+    source: 'l3harrisRelease',
     confidence: 'approximate',
     note:
-      'FlightGear payload file: Mk 82 ejector 20 ft/s; L3Harris quotes 20 ft/s for 500-lb ' +
-      'stores (BRU-55 class); constant ejector work is our model',
+      'L3Harris quotes 20 ft/s for 500-lb stores (BRU-55 class), as the FlightGear payload file ' +
+      'gives for the Mk 82; constant ejector work is our model',
   },
   maxVelocity: { source: 'plan', confidence: 'estimate' },
 };
@@ -911,7 +911,7 @@ export const MK66_NOTES: Record<keyof typeof MK66, SourceNote> = {
     note: 'base drag removed while burning',
   },
   dispersion: {
-    source: 'plan',
+    source: 'ndiaHydra2003',
     confidence: 'estimate',
     note:
       'fixed-wing launch at 300 kn; the Army’s 2003 NDIA Hydra briefing gives 29 mil CEP for ' +
@@ -1088,8 +1088,8 @@ export const FUZE = {
 
 export const FUZE_NOTES: Record<keyof typeof FUZE, SourceNote> = {
   tailDelay: {
-    source: 'plan',
-    confidence: 'estimate',
+    source: 'fmu139',
+    confidence: 'approximate',
     note: 'FMU-139 / M905 short-delay settings (10–60 ms)',
   },
   buriedBlast: {
@@ -1120,8 +1120,8 @@ export const SAFE_ESCAPE = {
 
 export const SAFE_ESCAPE_NOTES: Record<keyof typeof SAFE_ESCAPE, SourceNote> = {
   hazardousEnergy: {
-    source: 'plan',
-    confidence: 'approximate',
+    source: 'dod605509',
+    confidence: 'confirmed',
     note: 'DoD 6055.09-M: a hazardous fragment has 58 ft-lb (79 J) of kinetic energy',
   },
   presentedArea: { source: 'plan', confidence: 'estimate', note: 'A-10 planform 47 m² wing' },

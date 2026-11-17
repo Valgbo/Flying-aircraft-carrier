@@ -18,7 +18,7 @@ import type { Sim } from '../types';
 import { createRoadPoint, pointAlongRoad, roadLength } from '../world/roads';
 import type { TargetArea } from '../world/types';
 import { loopPath, routePoint } from './route';
-import { createVehicle, setEngineCold } from './state';
+import { createVehicle, isAlive, setEngineCold } from './state';
 import type { GroupBehaviour, Vehicle, VehicleGroup, VehicleKind } from './types';
 
 export type Placement = 'column' | 'dugIn' | 'treeline' | 'open';
@@ -323,6 +323,23 @@ function placeColumn(
     warmMoving(v);
   });
   return g;
+}
+
+/**
+ * Set a column's cruise speed, m/s (0 halts it): the group and each of its living vehicles,
+ * which start at it. For set-up before the first step (the range options, createSim); a column
+ * on the move eases to its group's speed through its own behaviour.
+ */
+export function setColumnSpeed(sim: Sim, groupId: number, speed: number): void {
+  const g = sim.targets.groups.find((x) => x.id === groupId);
+  if (!g) return;
+  g.speed = Math.max(0, speed);
+  for (const id of g.vehicleIds) {
+    const v = sim.targets.vehicles.find((x) => x.id === id);
+    if (!v || !isAlive(v)) continue;
+    v.speed = g.speed;
+    v.internal.cruise = g.speed;
+  }
 }
 
 /** A loop column for the range lane (remote-controlled: does not react to attacks). */

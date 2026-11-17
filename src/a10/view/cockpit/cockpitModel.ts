@@ -226,8 +226,9 @@ export class CockpitModel {
     root.updateMatrixWorld(true);
     this.driver = createInstrumentDriver(root, meta, (o) => insideAny(o, covered));
 
-    // the pilot's own airframe, from the inside (no stores: they hang below the wing)
-    this.airframe = createAircraftInstance({ forCockpit: true, stores: false, templates });
+    // the pilot's own airframe, from the inside, with its pylon stores: they follow sim.stores
+    // (releases, rocket tubes, jettison) as on the outside model, so the pilot sees them leave
+    this.airframe = createAircraftInstance({ forCockpit: true, templates });
     this.airframe.root.name = 'cockpit-airframe';
     for (const n of AIRFRAME_HIDDEN) {
       const o = this.airframe.root.getObjectByName(n);
