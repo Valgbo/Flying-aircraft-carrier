@@ -164,7 +164,8 @@ export function gustAt(world: WorldState, position: Vector3, time: number, out: 
   const ground = world.terrain.heightAt(position.x, position.z);
   const agl = Math.max(1, position.y - ground);
   windAt(world, position, _wind);
-  const u10 = Math.hypot(world.surfaceWind.x, world.surfaceWind.z);
+  const sw = world.surfaceWind;
+  const u10 = Math.sqrt(sw.x * sw.x + sw.z * sw.z);
   gustScales(world, agl, u10, _scales);
   if (_scales.sigmaU <= 0 && _scales.sigmaW <= 0) return out.set(0, 0, 0);
   // Frozen field advected with the mean wind; slow evolution through the vertical coordinate.
@@ -180,7 +181,7 @@ export function gustAt(world: WorldState, position: Vector3, time: number, out: 
   // Along-wind (u), cross-wind (v) and vertical (w) axes; world x/z when the air is still.
   let ax = _wind.x;
   let az = _wind.z;
-  const l = Math.hypot(ax, az);
+  const l = Math.sqrt(ax * ax + az * az);
   if (l > 1e-6) {
     ax /= l;
     az /= l;

@@ -7,7 +7,7 @@
  * Map frame: the anchor (own aircraft, or the SPI when the map is centred on it) sits at a page
  * point; the map turns so the aircraft's heading points up; `range` nautical miles reach from the
  * anchor to the top of the screen (the A-10C TAD's range convention). Range and centre are the
- * avionics' page settings (TAD OSBs), read defensively (context.ts).
+ * avionics' page settings (TAD OSBs: `sim.avionics.pages`).
  *
  * Cost: every polyline is culled by its bounding circle, and a vertex is kept only once it is
  * ≈1.5 px from the last one kept, so the whole 64 km map at 160 nm is a few hundred strokes.
@@ -16,8 +16,8 @@ import type { Sim } from '../../core/types';
 import { NM } from '../../core/units';
 import type { RoadPolyline } from '../../core/world/types';
 import { clipSegment, type Box, type Segment, type Vec2 } from '../hud/hudMath';
-import { ALIGN_LEFT, ALIGN_RIGHT } from '../hud/strokeFont';
-import { createPageSettings, pageSettings, type PageContext } from './context';
+import { ALIGN_LEFT } from '../hud/strokeFont';
+import type { PageContext } from './context';
 import { MFD_COLOR as C, MFD_TEXT as T, TAD } from './mfdLayout';
 import type { MfdPainter } from './painter';
 
@@ -115,7 +115,6 @@ const _f = createTadFrame();
 const _p: Vec2 = { x: 0, y: 0 };
 const _q: Vec2 = { x: 0, y: 0 };
 const _seg: Segment = { x0: 0, y0: 0, x1: 0, y1: 0 };
-const settings = createPageSettings();
 
 /** Bounding circles of polylines (x, z, radius), computed once per polyline. */
 const bounds = new WeakMap<Float64Array, Float64Array>();
@@ -166,7 +165,14 @@ function polyline(p: MfdPainter, f: TadFrame, pts: Float64Array, w: number): num
 }
 
 /** A clipped stroke between two world points. */
-function worldSeg(p: MfdPainter, f: TadFrame, x0: number, z0: number, x1: number, z1: number): void {
+function worldSeg(
+  p: MfdPainter,
+  f: TadFrame,
+  x0: number,
+  z0: number,
+  x1: number,
+  z1: number,
+): void {
   tadProject(f, x0, z0, _p);
   tadProject(f, x1, z1, _q);
   if (clipSegment(_p.x, _p.y, _q.x, _q.y, CLIP, _seg)) p.seg(_seg.x0, _seg.y0, _seg.x1, _seg.y1);
@@ -188,7 +194,7 @@ export function drawTad(ctx: PageContext, p: MfdPainter, info: TadInfo): void {
   const ac = sim.aircraft;
   const av = sim.avionics;
   const terrain = sim.world.terrain;
-  const ps = pageSettings(sim, settings);
+  const ps = av.pages;
   const spi = av.spi;
   const f = tadFrame(
     ac.position.x,
@@ -309,7 +315,7 @@ export function drawTad(ctx: PageContext, p: MfdPainter, info: TadInfo): void {
   p.color(C.cyan);
   if (inside(ownX, ownY)) ownShip(p, ownX, ownY);
 
-  // North arrow (top left) and the range (top right).
+  // North arrow (top left); the range is the RNG buttons' value.
   p.color(C.white);
   const nx = -0.55;
   const ny = 0.6;
@@ -318,6 +324,4 @@ export function drawTad(ctx: PageContext, p: MfdPainter, info: TadInfo): void {
   const sy = f.cos;
   p.seg(nx - sx * 0.05, ny - sy * 0.05, nx + sx * 0.06, ny + sy * 0.06, 1.4);
   p.str('N', nx + sx * 0.1, ny + sy * 0.1, T.small);
-  p.buf.clear().int(ps.tadRange).str(' NM');
-  p.text(0.62, 0.62, T.body, ALIGN_RIGHT);
 }

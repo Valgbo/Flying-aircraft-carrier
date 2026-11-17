@@ -41,7 +41,12 @@ import {
   stepHead,
   type HeadState,
 } from './headPose';
-import { OutsideCameras, type CameraPose, type OutsideView } from './outsideViews';
+import {
+  OutsideCameras,
+  type CameraPose,
+  type OutsideInput,
+  type OutsideView,
+} from './outsideViews';
 
 const _look = { x: 0, y: 0 };
 const _pos = new Vector3();
@@ -104,7 +109,15 @@ export function useCameraRig(source: () => Sim | null): void {
     const head = createHeadState(useA10Store.getState().settings.fov);
     const outside = new OutsideCameras();
     const input = createHeadInput();
-    const outsideInput = { dt: 0, lookDX: 0, lookDY: 0, lookRateX: 0, lookRateY: 0, zoomSteps: 0 };
+    const outsideInput: OutsideInput = {
+      dt: 0,
+      simDt: 0,
+      lookDX: 0,
+      lookDY: 0,
+      lookRateX: 0,
+      lookRateY: 0,
+      zoomSteps: 0,
+    };
     const handle: CameraRigHandle = {
       head,
       outside,
@@ -207,6 +220,7 @@ export function useCameraRig(source: () => Sim | null): void {
       shakeState.impulse *= Math.exp(-frameInfo.simDt / 0.35);
       const o = rig.outsideInput;
       o.dt = dt;
+      o.simDt = frameInfo.simDt;
       o.lookDX = viewInput.cursorFree ? 0 : _look.x;
       o.lookDY = viewInput.cursorFree ? 0 : _look.y;
       o.lookRateX = viewInput.lookX;

@@ -56,7 +56,9 @@ function Glyph({ cls, x, y, r }: { cls: MarkClass; x: number; y: number; r: numb
   const c = `a10-impact a10-impact--${cls}`;
   switch (cls) {
     case 'defeated':
-      return <rect className={c} x={x - r * 0.9} y={y - r * 0.9} width={r * 1.8} height={r * 1.8} />;
+      return (
+        <rect className={c} x={x - r * 0.9} y={y - r * 0.9} width={r * 1.8} height={r * 1.8} />
+      );
     case 'burst':
       return (
         <path
@@ -86,7 +88,9 @@ function Glyph({ cls, x, y, r }: { cls: MarkClass; x: number; y: number; r: numb
       return (
         <g className={c}>
           <circle cx={x} cy={y} r={r} />
-          <path d={`M${x - r * 0.6} ${y - r * 0.6}L${x + r * 0.6} ${y + r * 0.6}M${x + r * 0.6} ${y - r * 0.6}L${x - r * 0.6} ${y + r * 0.6}`} />
+          <path
+            d={`M${x - r * 0.6} ${y - r * 0.6}L${x + r * 0.6} ${y + r * 0.6}M${x + r * 0.6} ${y - r * 0.6}L${x - r * 0.6} ${y + r * 0.6}`}
+          />
         </g>
       );
     default:
@@ -223,7 +227,9 @@ export default function PassPlot({ plot, label }: { plot: PassPlotModel; label: 
         {/* the run-in: an arrow up from the bottom edge */}
         <g className="a10-plot__runin">
           <line x1={-R * 0.86} x2={-R * 0.86} y1={R * 0.92} y2={R * 0.7} />
-          <path d={`M${-R * 0.86} ${R * 0.66}L${-R * 0.885} ${R * 0.72}L${-R * 0.835} ${R * 0.72}Z`} />
+          <path
+            d={`M${-R * 0.86} ${R * 0.66}L${-R * 0.885} ${R * 0.72}L${-R * 0.835} ${R * 0.72}Z`}
+          />
           <text x={-R * 0.83} y={R * 0.92} fontSize={font * 0.85}>
             RUN-IN
           </text>
@@ -235,7 +241,12 @@ export default function PassPlot({ plot, label }: { plot: PassPlotModel; label: 
             y1={R - R * 0.08}
             y2={R - R * 0.08}
           />
-          <text x={R - plot.step / 2 - R * 0.06} y={R - R * 0.12} textAnchor="middle" fontSize={font}>
+          <text
+            x={R - plot.step / 2 - R * 0.06}
+            y={R - R * 0.12}
+            textAnchor="middle"
+            fontSize={font}
+          >
             {plot.step} m
           </text>
         </g>

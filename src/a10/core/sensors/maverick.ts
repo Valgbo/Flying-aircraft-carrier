@@ -4,7 +4,7 @@
  * One seeker per missile on the stations (`sensors.mavericks`, the selected one first), in each
  * station's release order: the weapons module releases a station's first store first, so only a
  * station's first missile can be the selected one, and the seeker that locked is the missile that
- * leaves. The avionics decides which station launches next (`selectedStation` for a Maverick
+ * leaves. Each seeker looks out of its missile's nose on the launcher rail it was loaded on. The avionics decides which station launches next (`selectedStation` for a Maverick
  * profile); without one the selection stays where it was, or moves to the next missile of the
  * same type (another station first) after a launch, which takes over the line of sight ("the next
  * missile can be slaved to the same line of sight").
@@ -17,9 +17,10 @@
  * BORESIGHT (caged), STAB (held on a ground point, after a slew, a broken lock or a hand-over),
  * SLAVE (on the SPI, following it) and TRACK (locked). With the MAV page as the sensor of
  * interest: TMS forward short locks, TMS aft short breaks the lock (or cages), China hat forward
- * short toggles WIDE / NARROW, the picture key toggles an infrared seeker's polarity, the slew
- * moves the line of sight (rate ∝ field of view), China hat long (or the page's SLV) slaves it to
- * the SPI. The gimbal stops the line of sight MAVERICK.gimbalLimit from the missile's axis.
+ * short toggles WIDE / NARROW (DMS up / down selects NARROW / WIDE), the picture key or DMS left /
+ * right toggles an infrared seeker's polarity, the slew moves the line of sight (rate ∝ field of
+ * view), China hat long (or the page's SLV) slaves it to the SPI. The gimbal stops the line of
+ * sight MAVERICK.gimbalLimit from the missile's axis.
  *
  * Lock (`track.ts`): a vehicle in the tracking gate (MAVERICK.gateFraction of the field of view;
  * realism.largeGate × 2.5; realism.snapLock: anywhere in the picture), at least
@@ -50,6 +51,7 @@ import {
   storeAxisBody,
   vehicleCentre,
 } from './geometry';
+import { firstMount } from './loads';
 import { cockpitSwitches } from './tgp';
 import { checkVehicle, createTrackCheck, searchGate, type TrackRules } from './track';
 import type { MaverickSeekerState, SeekerMode, SensorsState } from './types';
@@ -103,7 +105,12 @@ function fovAngle(fov: 'WIDE' | 'NARROW'): number {
   return fov === 'WIDE' ? MAVERICK.fovWide : MAVERICK.fovNarrow;
 }
 
-function createSeeker(sensors: SensorsState, station: number, type: StoreType, aligned: boolean): MaverickSeekerState {
+function createSeeker(
+  sensors: SensorsState,
+  station: number,
+  type: StoreType,
+  aligned: boolean,
+): MaverickSeekerState {
   const band = MAVERICK_BAND[type] ?? 'IR';
   return {
     station,
@@ -131,7 +138,12 @@ function createSeeker(sensors: SensorsState, station: number, type: StoreType, a
     range: 0,
     lockFailure: '',
     head: new Vector3(),
-    internal: { aim: new Vector3(), aimValid: false, aimDir: new Vector3(0, 0, -1), checkCountdown: 0 },
+    internal: {
+      aim: new Vector3(),
+      aimValid: false,
+      aimDir: new Vector3(0, 0, -1),
+      checkCountdown: 0,
+    },
   };
 }
 
@@ -194,8 +206,11 @@ function syncSeekers(sim: Sim, first: boolean): boolean {
       }
     }
     // new missiles (a rearm, or the first set-up)
-    while (list.length < types.length) list.push(createSeeker(sensors, s, types[list.length], first));
-    for (let i = 0; i < list.length; i++) list[i].rail = i;
+    while (list.length < types.length)
+      list.push(createSeeker(sensors, s, types[list.length], first));
+    // each missile keeps the rail it was loaded on when the ones before it leave (loads.ts)
+    const mount = firstMount(sim, s);
+    for (let i = 0; i < list.length; i++) list[i].rail = mount + i;
   }
   return changed;
 }
@@ -208,7 +223,8 @@ function chooseSelected(sim: Sim): MaverickSeekerState | null {
   const want = sw.selectedStation;
   if (typeof want === 'number' && want > 0 && want < byStation.length && byStation[want].length > 0)
     return byStation[want][0];
-  const cur = sim.sensors.selectedMaverick >= 0 ? sim.sensors.mavericks[sim.sensors.selectedMaverick] : null;
+  const cur =
+    sim.sensors.selectedMaverick >= 0 ? sim.sensors.mavericks[sim.sensors.selectedMaverick] : null;
   if (cur && byStation[cur.station]?.[0] === cur) return cur;
   // after a launch: the same type on another station first, then any
   const type = internal.lastSelectedType;
@@ -315,10 +331,14 @@ export function maverickBreak(sim: Sim): void {
   } else s.mode = 'BORESIGHT';
 }
 
-/** Slave the selected seeker to the SPI (it follows the SPI until a lock, a slew or a cage). */
+/**
+ * Slave the selected seeker to the SPI (it follows the SPI until a lock, a slew or a cage). A no-op
+ * when its own lock is the SPI: slaving it to itself must not break the lock.
+ */
 export function slaveMaverickToSpi(sim: Sim): void {
   const s = selectedSeeker(sim);
-  if (!s || !sim.avionics.spi.valid) return;
+  const spi = sim.avionics.spi;
+  if (!s || !spi.valid || (spi.source === 'MAV' && s.locked)) return;
   unlock(sim, s, 'SLAVE');
 }
 
@@ -357,6 +377,12 @@ function handleRequests(sim: Sim): void {
         break;
       case 'chinaHat':
         if (q.dir === 'fwd' && !q.long) setMaverickFov(sim, 'toggle');
+        break;
+      case 'dms':
+        // the seeker's optics have two steps: DMS up / down = NARROW / WIDE; left / right = polarity
+        if (q.dir === 'up' || q.dir === 'down')
+          setMaverickFov(sim, q.dir === 'up' ? 'NARROW' : 'WIDE');
+        else if (q.dir === 'left' || q.dir === 'right') toggleMaverickPicture(sim);
         break;
       case 'zoom':
         if (q.value !== 0) setMaverickFov(sim, q.value > 0 ? 'NARROW' : 'WIDE');
@@ -473,7 +499,13 @@ function updateTrack(sim: Sim, s: MaverickSeekerState, v: Vehicle | null, check:
  * its target (PLAN §6.4: "an infrared seeker can be captured by a burning wreck beside the live
  * tank"). The gate is the tracking gate, or 1.5 × the target's angular radius if that is larger.
  */
-function capture(sim: Sim, s: MaverickSeekerState, target: Vehicle, targetK: number, range: number): void {
+function capture(
+  sim: Sim,
+  s: MaverickSeekerState,
+  target: Vehicle,
+  targetK: number,
+  range: number,
+): void {
   const list = sim.targets.vehicles;
   const radius = 0.5 * angularSize(target, _v, range);
   const gate = Math.max(gateOf(sim, s), MAVERICK.trackGateTargetFactor * radius);

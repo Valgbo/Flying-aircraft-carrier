@@ -13,7 +13,7 @@ import { quaternionFromAttitude } from '../frames';
 import { createSim, realismFlags } from '../sim';
 import { createVehicle, markTargetsMoved } from '../targets';
 import type { Vehicle, VehicleKind } from '../targets/types';
-import type { RealismPreset, Sim } from '../types';
+import type { RealismPreset, ScenarioKind, Sim } from '../types';
 import { createFlatTerrain, terrainFromHeightFunction } from '../world';
 import type { SurfaceKind, Terrain } from '../world/types';
 import { stepSensors } from './index';
@@ -23,6 +23,8 @@ export interface SensorTestbedOptions {
   seed?: number;
   /** Loadout preset (default 'tankHunter': pod on station 10, D on 3, H on 9). */
   loadoutId?: string;
+  /** Vehicles the targets module places (default 'empty': the test adds its own). */
+  scenario?: ScenarioKind;
   realism?: RealismPreset;
   /** Aircraft position (m) and altitude above sea level (m). */
   x?: number;
@@ -57,7 +59,7 @@ export function createSensorTestbed(opts: SensorTestbedOptions = {}): Sim {
   const sim = createSim({
     terrain,
     seed: opts.seed ?? 1,
-    scenario: 'empty',
+    scenario: opts.scenario ?? 'empty',
     realism: realismFlags(opts.realism ?? 'authentic'),
     loadoutId: opts.loadoutId ?? 'tankHunter',
     start: { x, z, agl: 1000, heading: opts.heading ?? 0, speed: 150 },
@@ -119,6 +121,16 @@ export function queueRequest(
  * the queued requests become this step's sensor requests, and the sensors step.
  */
 export function stepSensorTestbed(sim: Sim, dt = SIM_DT): void {
+  prepareTestbedStep(sim, dt);
+  stepSensors(sim, dt);
+  finishTestbedStep(sim, dt);
+}
+
+/**
+ * The part of a test-bed step before the sensors (a timing test calls `stepSensors` between this
+ * and `finishTestbedStep`): the aircraft moves, the queued requests are posted.
+ */
+export function prepareTestbedStep(sim: Sim, dt = SIM_DT): void {
   const ac = sim.aircraft;
   const p = aircraftPose(sim);
   ac.prevPosition.copy(ac.position);
@@ -140,7 +152,10 @@ export function stepSensorTestbed(sim: Sim, dt = SIM_DT): void {
     for (const r of list) reqs.push(r);
     list.length = 0;
   }
-  stepSensors(sim, dt);
+}
+
+/** The part of a test-bed step after the sensors: the clock advances. */
+export function finishTestbedStep(sim: Sim, dt = SIM_DT): void {
   sim.time += dt;
   sim.stepCount++;
 }
@@ -217,7 +232,12 @@ export function aimPodAt(sim: Sim, point: Vector3): void {
  * z = `z`, a Gaussian profile of half-width `width` m (exact ray queries: the world module's
  * analytic-terrain helper).
  */
-export function ridgeTerrain(opts: { z: number; height: number; width: number; base?: number }): Terrain {
+export function ridgeTerrain(opts: {
+  z: number;
+  height: number;
+  width: number;
+  base?: number;
+}): Terrain {
   const base = opts.base ?? 0;
   const { z: z0, height, width } = opts;
   const data = { seed: 0, size: 64000, resolution: 0, heights: new Float32Array(0), extra: {} };
@@ -241,7 +261,8 @@ export function withForest(
   const inside = (x: number, z: number) =>
     x >= strip.x0 && x <= strip.x1 && z >= strip.z0 && z <= strip.z1;
   const canopyAt = (x: number, z: number) => (inside(x, z) ? strip.height : 0);
-  const surfaceAt = (x: number, z: number): SurfaceKind => (inside(x, z) ? 'forest' : base.surfaceAt(x, z));
+  const surfaceAt = (x: number, z: number): SurfaceKind =>
+    inside(x, z) ? 'forest' : base.surfaceAt(x, z);
   function lineOfSight(a: Vector3, b: Vector3, includeTrees = false): boolean {
     if (!base.lineOfSight(a, b, false)) return false;
     if (!includeTrees) return true;

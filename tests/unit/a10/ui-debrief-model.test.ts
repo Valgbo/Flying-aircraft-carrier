@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { SIM_DT } from '../../../src/a10/core/constants';
 import { createDebriefTestbed } from '../../../src/a10/core/debrief/testbed';
 import { createVehicle } from '../../../src/a10/core/targets';
-import { buildDebriefModel, passPlot, rangeView } from '../../../src/a10/ui/debriefModel';
+import {
+  buildDebriefModel,
+  passPlot,
+  rangeConditions,
+  rangeView,
+} from '../../../src/a10/ui/debriefModel';
+import { applyRangeOptions, rangeWind } from '../../../src/a10/ui/rangeOptions';
 
 const DEG = Math.PI / 180;
 const AREA = { x: 0, z: -6000 };
@@ -101,7 +107,12 @@ describe('debrief screen model: passes', () => {
     expect(p.target).toBe(`T-72 #${tank.id}`);
     expect(p.result).toBe(`T-72 #${tank.id} destroyed`);
     expect(p.kills).toEqual([
-      { time: expect.any(Number), name: `T-72 #${tank.id}`, weapon: '30 mm API', catastrophic: true },
+      {
+        time: expect.any(Number),
+        name: `T-72 #${tank.id}`,
+        weapon: '30 mm API',
+        catastrophic: true,
+      },
     ]);
     expect(p.vehicles[0]).toMatchObject({ condition: 'destroyed', strikes: '1 round' });
     expect(p.vehicles[0].rows[0]).toMatchObject({ plate: 'Top hull', outcome: 'penetrated' });
@@ -167,7 +178,11 @@ describe('debrief screen model: range scores', () => {
     s.step(1);
     s.trigger(1);
     s.step(0.3);
-    s.hit(panels[0], s.firstRound() + 1, { vehicleKind: 'panel', weapon: 'TP', outcome: 'passedThrough' });
+    s.hit(panels[0], s.firstRound() + 1, {
+      vehicleKind: 'panel',
+      weapon: 'TP',
+      outcome: 'passedThrough',
+    });
     s.release(470);
     s.fly({ gamma: 6 });
     s.step(2);
@@ -178,15 +193,46 @@ describe('debrief screen model: range scores', () => {
       /^Foul line 610\sm \(2,000\sft\) short of the panels · minimum altitude 100\sft/,
     );
     expect(view.strafe!.rows).toEqual([
-      expect.objectContaining({ pass: 1, panel: 'Panel 1', hits: 1, scored: 0, fouls: 'Foul line' }),
+      expect.objectContaining({
+        pass: 1,
+        panel: 'Panel 1',
+        hits: 1,
+        scored: 0,
+        fouls: 'Foul line',
+      }),
     ]);
     expect(m.passes[0].fouls[0]).toMatch(/^Fired inside the foul line: 450 m short of the panels/);
     expect(m.passes[0].result).toMatch(/FOUL: scores 0$/);
+
+    // the range card states the weather the way the range calls it
+    expect(view.conditions).toBe('Calm wind · light turbulence');
 
     const free = createDebriefTestbed('freeHunt');
     free.step(SIM_DT);
     expect(rangeView(free.sim)).toBeNull();
     expect(buildDebriefModel(free.sim).passes).toEqual([]);
+  });
+
+  it('the range weather: the wind’s clock direction from the run-in, the turbulence setting', () => {
+    const run = 0.7; // a run-in heading of about 40°
+    const at = (kt: number, clock: number, turbulence: number) => {
+      const w = rangeWind(kt, clock, run);
+      return rangeConditions({ surfaceWind: w, turbulence }, run);
+    };
+    expect(at(15, 3, 0.5)).toBe("Wind 15 kn from 3 o'clock · moderate turbulence");
+    expect(at(10, 12, 0)).toBe("Wind 10 kn from 12 o'clock · calm turbulence");
+    expect(at(20, 8, 1)).toBe("Wind 20 kn from 8 o'clock · strong turbulence");
+    expect(at(0, 5, 0.15)).toBe('Calm wind · light turbulence');
+    // a range flight with the options applied states them on its card
+    const s = createDebriefTestbed('bombCircle');
+    applyRangeOptions(s.sim, {
+      windKt: 15,
+      windClock: 9,
+      turbulence: 'moderate',
+      columnKmh: 15,
+    });
+    s.step(SIM_DT);
+    expect(rangeView(s.sim)!.conditions).toBe("Wind 15 kn from 9 o'clock · moderate turbulence");
   });
 
   it('a pass without a target is centred on its aim point, then on its impacts', () => {

@@ -4,7 +4,8 @@
  * nose, wings, engines, tail), the ejection seat, the cockpit lighting and shadows, the glass,
  * the A-10C front panel built onto the A-10A one — the two MFCDs with their OSBs and display
  * surfaces (mfcd.ts, displays.ts), the armament HUD control panel (ahcp.ts) and the up-front
- * controller (ufc.ts) — the autopilot box (hotspots.ts) and the pick highlight.
+ * controller (ufc.ts) — the LASTE panel's autopilot button and mode lever on the left console
+ * (laste.ts), and the pick highlight.
  *
  * The A-10A instruments the A-10C panel covers (the television monitor's frame and screen, the
  * standby ADI, AoA gauge, clock, UHF read-out, HUD control panel and master-caution lamp under
@@ -62,7 +63,7 @@ import {
   ufcKeyOf,
   type ClickId,
 } from './clickables';
-import { HotspotBox } from './hotspots';
+import { LastePanel } from './laste';
 import { MfcdPanels, mfcdScreenCorners } from './mfcd';
 import { Ufc } from './ufc';
 import { createInstrumentDriver, PROP, resetGMeter, type InstrumentDriver } from './instruments';
@@ -128,7 +129,8 @@ export class CockpitModel {
   readonly seat: Object3D | null;
   readonly driver: InstrumentDriver;
   readonly lights: CockpitLights;
-  readonly box: HotspotBox;
+  /** The LASTE panel's autopilot ENGAGE/DISENGAGE button and mode lever (the model's own). */
+  readonly laste: LastePanel;
   /** The A-10C's two MFCD bezels with their OSBs. */
   readonly mfcds: MfcdPanels;
   /** The A-10C armament HUD control panel. */
@@ -281,9 +283,8 @@ export class CockpitModel {
     scene.add(this.altimeter.group);
     for (const m of this.altimeter.materials) this.glow.push(m);
 
-    this.box = new HotspotBox();
-    scene.add(this.box.group);
-    this.box.group.updateMatrixWorld(true);
+    // the autopilot's controls: the LASTE panel's button and lever, moved in the static mesh
+    this.laste = new LastePanel(root, this.ownGeometries);
 
     // click targets: the switches, then every OSB, UFC key and AHCP switch not among them
     for (const c of COCKPIT_CONTROLS) {
@@ -304,15 +305,15 @@ export class CockpitModel {
         const box = boundsInFrame(frame, new Box3());
         if (t.kind === 'meshTop') box.min.y = Math.max(box.min.y, box.max.y - t.height);
         if (!box.isEmpty()) this.targets.push({ id: c.id, label: c.label, frame, box });
-      } else if (t.kind === 'hotspot') {
-        const h = this.box.targets.find((x) => x.id === c.id);
-        if (h)
-          this.targets.push({
-            id: c.id,
-            label: c.label,
-            frame: this.box.group,
-            box: new Box3(h.min.clone(), h.max.clone()),
-          });
+      } else if (t.kind === 'laste' && (c.id === 'autopilot' || c.id === 'autopilotMode')) {
+        // BODY boxes in the cockpit root's frame; the two controls are 3 cm apart
+        this.targets.push({
+          id: c.id,
+          label: c.label,
+          frame: root,
+          box: this.laste.controlBox(c.id, new Box3()),
+          pad: 0.003,
+        });
       }
     }
     const min = new Vector3();
@@ -395,7 +396,7 @@ export class CockpitModel {
     for (const t of this.airframe.toggles) t.obj.visible = false;
     for (const o of this.airframeHidden) o.visible = false;
 
-    this.box.update(this.switchState, night);
+    this.laste.update(this.switchState, f.realDt);
     this.mfcds.update(f.realDt, night);
     this.ahcp.update(this.switchState, night);
     this.ufc.update(f.realDt, this.driver.lamps.masterCaution, night);
@@ -441,8 +442,8 @@ export class CockpitModel {
   }
 
   /**
-   * What a click does in the cockpit itself: the pressed OSB or UFC key moves, a decorative AHCP
-   * switch flips, the g-meter resets. Returns true when the click is the cockpit's only (no
+   * What a click does in the cockpit itself: the pressed OSB, UFC key or autopilot button moves, a
+   * decorative AHCP switch flips, the g-meter resets. Returns true when the click is the cockpit's only (no
    * simulation command).
    */
   localAction(id: ClickId, sim: Sim, button = 0): boolean {
@@ -450,6 +451,7 @@ export class CockpitModel {
     if (osb) this.mfcds.pressOsb(osb.display, osb.button);
     const key = ufcKeyOf(id);
     if (key) this.ufc.press(key);
+    if (id === 'autopilot') this.laste.press();
     if (id === 'gMeterReset') {
       resetGMeter(this.driver.memory, sim.aircraft.gLoad);
       return true;
@@ -471,7 +473,6 @@ export class CockpitModel {
     this.seat?.removeFromParent();
     disposeAircraftInstance(this.airframe);
     this.lights.dispose();
-    this.box.dispose();
     this.mfcds.dispose();
     this.ahcp.dispose();
     this.ufc.dispose();

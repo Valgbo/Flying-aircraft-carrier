@@ -34,6 +34,7 @@ const HEAD_Q = new Quaternion(); // looking straight ahead
 const ground = () => 0;
 const input = (dt = 1 / 144): OutsideInput => ({
   dt,
+  simDt: dt,
   lookDX: 0,
   lookDY: 0,
   lookRateX: 0,

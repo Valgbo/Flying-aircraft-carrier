@@ -5,20 +5,20 @@
  * (MSG). Pure functions of a PageContext onto a MfdPainter: no rendering, no allocation, so they
  * run in unit tests. The sensor pages are in sensorPages.ts, the map in tad.ts.
  */
-import { OSB_TABLE, PAGE_SELECT_OSB, SOI_PAGES } from '../../core/avionics';
-import type { DsmsProfileView, DsmsStationView, MfdPage } from '../../core/avionics/types';
+import { OSB_TABLE, PAGE_SELECT_OSB, SOI_PAGES, type OsbBinding } from '../../core/avionics';
+import type { DsmsStationView, MfdPage, ProfileMode } from '../../core/avionics/types';
 import type { Sim } from '../../core/types';
-import { mToFt } from '../../core/units';
 import type { AmmoLoad, StoreType } from '../../core/weapons/types';
-import { ALIGN_CENTER, ALIGN_LEFT, ALIGN_RIGHT } from '../hud/strokeFont';
 import {
-  pageSettings,
-  createPageSettings,
-  type DsmsProfileExtras,
-  type DsmsStationExtras,
-  type MfdDisplay,
-  type PageContext,
-} from './context';
+  ALIGN_CENTER,
+  ALIGN_LEFT,
+  ALIGN_RIGHT,
+  GLYPH_ADVANCE,
+  GLYPH_H,
+  GLYPH_W,
+  textWidth,
+} from '../hud/strokeFont';
+import type { MfdDisplay, PageContext } from './context';
 import {
   MFD_COLOR as C,
   MFD_TEXT as T,
@@ -30,10 +30,9 @@ import {
 import type { MfdPainter } from './painter';
 
 const KG_TO_LB = 1 / 0.45359237;
-const settings = createPageSettings();
 
 /**
- * Label / value rows (STAT, the DSMS profile settings): `label` writes a grey label at the left,
+ * Label / value rows (STAT): `label` writes a grey label at the left,
  * then the caller fills `p.buf` and `value` writes it at the right and moves down a row.
  */
 const rows = {
@@ -64,55 +63,42 @@ const rows = {
 // Frame: OSB labels, page select, SOI
 // ---------------------------------------------------------------------------------------------
 
-/**
- * An OSB's binding as the avionics' OSB table gives it (core/avionics/mfd.ts `OsbBinding`): the
- * label (the function), optionally a live value printed under it and an "active" flag (drawn
- * boxed). Read defensively, so a label may also be a function and the extras may be missing.
- */
-interface OsbView {
-  label: unknown;
-  value?: unknown;
-  active?: unknown;
-}
-
-type OsbFn<T> = (sim: Sim, display: MfdDisplay) => T;
-
-function ownBinding(page: MfdPage, button: number): OsbView | undefined {
-  return OSB_TABLE[page]?.[button] as OsbView | undefined;
-}
-
-function textOf(v: unknown, sim: Sim, display: MfdDisplay): string {
-  if (typeof v === 'string') return v;
-  if (typeof v === 'function') {
-    const r = (v as OsbFn<unknown>)(sim, display);
-    return typeof r === 'string' ? r : '';
-  }
-  return '';
+/** The page's own binding of a button (the avionics' OSB table), or undefined. */
+function ownBinding(page: MfdPage, button: number): OsbBinding | undefined {
+  return OSB_TABLE[page]?.[button];
 }
 
 /**
  * The label of an OSB on a page: the page's own button (the avionics' OSB_TABLE), else the
  * page-select row. '' when the button does nothing on this page.
  */
-export function osbLabel(sim: Sim, page: MfdPage, button: number, display: MfdDisplay): string {
+export function osbLabel(_sim: Sim, page: MfdPage, button: number, _display: MfdDisplay): string {
   const own = ownBinding(page, button);
-  if (own) return textOf(own.label, sim, display);
+  if (own) return own.label;
   return PAGE_SELECT_OSB[button] ?? '';
 }
 
 /** The live value printed under an OSB's label ('' when none). */
 export function osbValue(sim: Sim, page: MfdPage, button: number, display: MfdDisplay): string {
-  const own = ownBinding(page, button);
-  return own && own.value !== undefined ? textOf(own.value, sim, display) : '';
+  return ownBinding(page, button)?.value?.(sim, display) ?? '';
 }
 
 /** The OSB's option is on (its label is boxed); on the page-select row: the page shown. */
 export function osbActive(sim: Sim, page: MfdPage, button: number, display: MfdDisplay): boolean {
   const own = ownBinding(page, button);
-  if (own) {
-    return typeof own.active === 'function' ? (own.active as OsbFn<unknown>)(sim, display) === true : false;
-  }
+  if (own) return own.active?.(sim, display) === true;
   return PAGE_SELECT_OSB[button] === page;
+}
+
+/**
+ * The laser-code digit the INC button changes, underlined in the CODE value: the DSMS's (OSB 3,
+ * the selected profile's code) and the TGP's (OSB 9, the pod's code). −1 for other buttons.
+ */
+export function codeCursor(sim: Sim, page: MfdPage, button: number): number {
+  const pages = sim.avionics.pages;
+  if (page === 'DSMS' && button === 3) return pages.dsmsCodeDigit;
+  if (page === 'TGP' && button === 9) return pages.tgpCodeDigit;
+  return -1;
 }
 
 /** The OSB that selects `page` from the page-select row, or 0. */
@@ -125,7 +111,14 @@ export function pageSelectButton(page: MfdPage): number {
  * One label at its anchor (split on a space into two lines when long), boxed when `boxed`, and
  * its live value on the next line toward the screen centre.
  */
-function drawLabel(p: MfdPainter, label: string, value: string, a: OsbAnchor, boxed: boolean): void {
+function drawLabel(
+  p: MfdPainter,
+  label: string,
+  value: string,
+  a: OsbAnchor,
+  boxed: boolean,
+  cursor: number,
+): void {
   const size = T.label;
   const gap = size * 1.35;
   const split = label.length > 5 ? label.indexOf(' ') : -1;
@@ -145,6 +138,13 @@ function drawLabel(p: MfdPainter, label: string, value: string, a: OsbAnchor, bo
     const c = p.currentColor;
     p.color(C.green);
     p.str(value, a.x, y, T.small, a.align);
+    if (cursor >= 0 && cursor < value.length) {
+      // Underline the character `cursor` of the value.
+      const k = T.small / GLYPH_H;
+      const x0 = a.x - a.align * textWidth(value.length, T.small) + cursor * GLYPH_ADVANCE * k;
+      const yu = y - T.small * 0.75;
+      p.seg(x0, yu, x0 + GLYPH_W * k, yu, 1.4);
+    }
     p.color(c);
   }
 }
@@ -156,7 +156,8 @@ export function drawChrome(ctx: PageContext, p: MfdPainter): void {
     if (!label) continue;
     const active = osbActive(ctx.sim, ctx.page, n, ctx.display);
     p.color(active ? C.green : C.white);
-    drawLabel(p, label, osbValue(ctx.sim, ctx.page, n, ctx.display), OSB_ANCHORS[n], active);
+    const value = osbValue(ctx.sim, ctx.page, n, ctx.display);
+    drawLabel(p, label, value, OSB_ANCHORS[n], active, codeCursor(ctx.sim, ctx.page, n));
   }
   if (ctx.soi) {
     p.color(C.green);
@@ -178,12 +179,7 @@ const AMMO: Record<AmmoLoad, string> = {
   targetPractice: 'TP',
 };
 
-const RELEASE: Record<DsmsProfileView['release'], string> = {
-  SGL: 'SGL',
-  PRS: 'PRS',
-  RIP_SGL: 'RIP SGL',
-  RIP_PRS: 'RIP PRS',
-};
+const MODE_TEXT: Record<ProfileMode, string> = { CCIP: 'CCIP', CCRP: 'CCRP', NONE: '' };
 
 /** Page x of station `i` (0-based) on the station row. */
 export function stationX(i: number, count: number): number {
@@ -191,17 +187,31 @@ export function stationX(i: number, count: number): number {
   return count <= 1 ? 0 : -span / 2 + (i * span) / (count - 1);
 }
 
-const ROW_Y = 0.5;
+/**
+ * The station row's line (names and counts above it, station numbers below): between the side
+ * buttons' labels at ±0.64 and ±0.32, its ends clear of their values (up to eight characters).
+ */
+const ROW_Y = 0.42;
+const GUN_Y = 0.2;
+/** Profile list: header, first row, row step; columns: name, stores left (right-aligned), mode. */
+const LIST_Y = 0.1;
+const LIST_STEP = 0.085;
+const COL_NAME = -0.62;
+const COL_QTY = 0.1;
+const COL_MODE = 0.2;
+const MAX_PROFILES = 7;
 
 /**
  * The stores page (DSMS): Master Arm; the eleven stations with what hangs there and how many
  * (the selected profile's stores highlighted, the next to go marked, a station chosen for
- * selective jettison dashed); the gun; the weapon profiles with the stores left; the selected
- * profile's settings.
+ * selective jettison dashed); the gun; the weapon profiles with the stores left and their
+ * delivery mode, the selected one boxed. The selected profile's settings (mode, release,
+ * quantity, spacing, fuze, arming, minimum altitude, drag, laser code) are the values printed
+ * beside their buttons (the avionics' OSB table).
  */
 export function drawDsms(ctx: PageContext, p: MfdPainter): void {
   const v = ctx.dsms;
-  const pages = pageSettings(ctx.sim, settings);
+  const jettison = ctx.sim.avionics.pages.jettisonStation;
   // Master Arm.
   p.color(v.masterArm === 'ARM' ? C.green : v.masterArm === 'TRAIN' ? C.cyan : C.yellow);
   p.str(v.masterArm === 'TRAIN' ? 'TRAINING' : v.masterArm, 0, 0.74, T.body);
@@ -210,39 +220,33 @@ export function drawDsms(ctx: PageContext, p: MfdPainter): void {
   const n = v.stations.length;
   p.color(C.grey);
   p.seg(stationX(0, n) - 0.04, ROW_Y, stationX(n - 1, n) + 0.04, ROW_Y);
-  for (let i = 0; i < n; i++) drawStation(p, v.stations[i], stationX(i, n), pages.jettisonStation);
+  for (let i = 0; i < n; i++) drawStation(p, v.stations[i], stationX(i, n), jettison);
 
   // Gun.
   p.color(C.white);
   p.buf.clear().str('GUN ').int(v.gunRounds).ch(47 /* / */).int(v.gunLoaded).ch(32);
   p.buf.str(AMMO[v.gunLoad] ?? '');
-  p.text(-0.62, 0.3, T.body, ALIGN_LEFT);
+  p.text(COL_NAME, GUN_Y, T.body, ALIGN_LEFT);
 
   // Profiles.
   p.color(C.grey);
-  p.str('PROFILE', -0.62, 0.18, T.small, ALIGN_LEFT);
-  p.str('QTY', -0.1, 0.18, T.small, ALIGN_RIGHT);
-  let selected: DsmsProfileView | null = null;
-  const shown = Math.min(v.profiles.length, 7);
+  p.str('PROFILE', COL_NAME, LIST_Y, T.small, ALIGN_LEFT);
+  p.str('QTY', COL_QTY, LIST_Y, T.small, ALIGN_RIGHT);
+  p.str('MODE', COL_MODE, LIST_Y, T.small, ALIGN_LEFT);
+  const shown = Math.min(v.profiles.length, MAX_PROFILES);
   for (let k = 0; k < shown; k++) {
     const pr = v.profiles[k];
-    const y = 0.09 - k * 0.085;
-    if (pr.selected) selected = pr;
+    const y = LIST_Y - (k + 1) * LIST_STEP;
     p.color(pr.selected ? C.green : pr.remaining > 0 ? C.white : C.grey);
-    p.str(pr.name, -0.62, y, T.body, ALIGN_LEFT);
+    p.str(pr.name, COL_NAME, y, T.body, ALIGN_LEFT);
     p.buf.clear().int(pr.remaining);
-    p.text(-0.1, y, T.body, ALIGN_RIGHT);
-    if (pr.selected) p.box(-0.65, y - 0.04, -0.06, y + 0.04);
+    p.text(COL_QTY, y, T.body, ALIGN_RIGHT);
+    p.str(MODE_TEXT[pr.mode] ?? '', COL_MODE, y, T.body, ALIGN_LEFT);
+    if (pr.selected) p.box(COL_NAME - 0.03, y - 0.04, COL_MODE + 0.25, y + 0.04);
   }
-  for (let k = 0; !selected && k < v.profiles.length; k++)
-    if (v.profiles[k].selected) selected = v.profiles[k];
-
-  // The selected profile's settings.
-  if (selected) drawProfile(p, selected, pages.dsmsCodeDigit);
 }
 
 function drawStation(p: MfdPainter, s: DsmsStationView, x: number, jettison: number): void {
-  const ext = s as DsmsStationView & DsmsStationExtras;
   p.color(C.white);
   p.buf.clear().int(s.station);
   p.text(x, ROW_Y - 0.07, T.small);
@@ -250,77 +254,24 @@ function drawStation(p: MfdPainter, s: DsmsStationView, x: number, jettison: num
   p.seg(x, ROW_Y, x, ROW_Y + 0.03);
   const store = s.store ?? s.rack;
   if (store) {
+    // The selected profile's stores in green (no box: eleven names leave no room for one).
     const name = STORE_SHORT[store as StoreType] ?? '?';
     p.color(s.store ? (s.selected ? C.green : C.white) : C.grey);
-    p.str(name, x, ROW_Y + 0.09, T.small);
-    if (s.selected) p.boxText(x, ROW_Y + 0.09, T.small, 0.5);
+    p.str(name, x, ROW_Y + 0.075, T.tiny);
     if (s.store) {
-      const count = typeof ext.rockets === 'number' && ext.rockets >= 0 ? ext.rockets : s.count;
-      p.buf.clear().int(count);
-      p.text(x, ROW_Y + 0.17, T.small);
+      p.buf.clear().int(s.rockets >= 0 ? s.rockets : s.count);
+      p.text(x, ROW_Y + 0.145, T.tiny);
     }
   }
-  if (ext.next) {
+  if (s.next) {
     // The next release leaves from here: a caret under the station number.
     p.color(C.green);
     p.seg(x - 0.025, ROW_Y - 0.15, x, ROW_Y - 0.12, 1.4);
     p.seg(x, ROW_Y - 0.12, x + 0.025, ROW_Y - 0.15, 1.4);
   }
-  if (ext.jettisonSelected || (jettison > 0 && jettison === s.station)) {
+  if (s.jettisonSelected || (jettison > 0 && jettison === s.station)) {
     p.color(C.yellow);
-    p.box(x - 0.055, ROW_Y - 0.11, x + 0.055, ROW_Y + 0.22, 1, 3);
-  }
-}
-
-function drawProfile(p: MfdPainter, pr: DsmsProfileView, codeDigit: number): void {
-  const ext = pr as DsmsProfileView & DsmsProfileExtras;
-  const b = p.buf;
-  rows.start(p, 0.06, 0.62, 0.09);
-  rows.label('MODE');
-  b.clear().str(pr.mode === 'NONE' ? 'MAV' : pr.mode);
-  rows.value();
-  rows.label('REL');
-  b.clear().str(RELEASE[pr.release] ?? pr.release);
-  rows.value();
-  if (pr.release === 'RIP_SGL' || pr.release === 'RIP_PRS') {
-    rows.label('QTY');
-    b.clear().int(pr.rippleQty);
-    rows.value();
-    rows.label('SPC');
-    b.clear()
-      .int(Math.round(mToFt(pr.rippleSpacing)))
-      .str('FT');
-    rows.value();
-  }
-  rows.label('FUZE');
-  b.clear().str(pr.fuze);
-  rows.value();
-  rows.label('ARM');
-  b.clear().fixed(pr.armingTime, 1).str('S');
-  rows.value();
-  rows.label('MIN ALT');
-  b.clear()
-    .int(Math.round(mToFt(pr.minAltitude) / 10) * 10)
-    .str('FT');
-  rows.value();
-  if (ext.drag) {
-    rows.label('DRAG');
-    b.clear().str(ext.drag);
-    rows.value();
-  }
-  if (typeof ext.laserCode === 'number' && ext.laserCode > 0) {
-    rows.label('CODE');
-    b.clear().int(ext.laserCode, 4);
-    const yCode = rows.y;
-    const w = p.width(T.body);
-    rows.value();
-    if (codeDigit >= 0 && codeDigit < 4) {
-      // The digit the INC button changes: underlined.
-      const cw = w / 4;
-      const xd = rows.x1 - w + codeDigit * cw;
-      p.color(C.green);
-      p.seg(xd, yCode - T.body * 0.75, xd + cw * 0.75, yCode - T.body * 0.75, 1.4);
-    }
+    p.box(x - 0.058, ROW_Y - 0.11, x + 0.058, ROW_Y + 0.19, 1, 3);
   }
 }
 
@@ -416,7 +367,7 @@ const MSG_CHARS = 30;
 /** The messages page: the flight's cockpit messages, newest first, with their times. */
 export function drawMsg(ctx: PageContext, p: MfdPainter): void {
   const log = ctx.messages;
-  const clear = pageSettings(ctx.sim, settings).msgClearTime;
+  const clear = ctx.sim.avionics.pages.msgClearTime;
   p.color(C.green);
   p.str('MESSAGES', 0, 0.74, T.body);
   let shown = 0;

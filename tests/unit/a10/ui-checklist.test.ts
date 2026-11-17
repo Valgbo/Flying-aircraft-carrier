@@ -29,10 +29,15 @@ function state(patch: Partial<ChecklistState> = {}): ChecklistState {
     releaseBelowGlass: false,
     releaseBelowMinimum: false,
     spiValid: false,
+    spiSource: 'STPT',
+    soi: 'HUD',
+    tgpPageShown: false,
+    mavPageShown: false,
     tgpPowered: false,
     tgpReady: false,
     tgpTracking: false,
     lasing: false,
+    maverickPowered: true,
     maverickAligned: false,
     maverickLocked: false,
     maverickInZone: false,
@@ -109,27 +114,43 @@ describe('checklist strip: stores', () => {
     expect(nextChecklistStep(s, keys)?.tone).toBe('warn');
   });
 
-  it('CCRP needs the SPI first', () => {
+  it('CCRP needs the SPI first (the master mode is not available without one)', () => {
     const s = state({
       weapon: 'MK-82',
       profileMode: 'CCRP',
-      masterMode: 'CCRP',
+      masterMode: 'NAV',
       masterArm: 'ARM',
       storesLeft: 1,
     });
     expect(nextChecklistStep(s, keys)?.id).toBe('bomb.spi');
     s.spiValid = true;
-    expect(nextChecklistStep(s, keys)?.id).toBe('bomb.release');
+    expect(nextChecklistStep(s, keys)?.text).toBe('Master mode → CCRP [M]');
+    s.masterMode = 'CCRP';
+    // the steerpoint is the SPI until a sensor makes one: CCRP onto it is said so
+    expect(nextChecklistStep(s, keys)?.text).toBe(
+      'CCRP onto the steerpoint: steer onto the azimuth line, hold release [Enter]',
+    );
+    s.spiSource = 'TGP';
+    expect(nextChecklistStep(s, keys)?.text).toBe(
+      'Steer onto the azimuth line and hold release [Enter] through the cue',
+    );
   });
 
-  it('GBU-12: laser arm, pod power, warm-up, track, CCRP, then release and lase', () => {
-    const s = state({ weapon: 'GBU-12', masterArm: 'ARM', masterMode: 'CCRP', storesLeft: 2 });
+  it('GBU-12: laser arm, pod power, warm-up, TGP page as SOI, track, SPI, CCRP, release and lase', () => {
+    const s = state({ weapon: 'GBU-12', masterArm: 'ARM', masterMode: 'NAV', storesLeft: 2 });
     const ids: string[] = [];
     const advance: (() => void)[] = [
       () => (s.laserArm = 'ARM'),
       () => (s.tgpPowered = true),
       () => (s.tgpReady = true),
+      () => (s.tgpPageShown = true),
+      () => (s.soi = 'TGP'),
       () => (s.tgpTracking = true),
+      () => {
+        s.spiSource = 'TGP';
+        s.spiValid = true;
+      },
+      () => (s.masterMode = 'CCRP'),
     ];
     for (const next of advance) {
       ids.push(nextChecklistStep(s, keys)!.id);
@@ -140,22 +161,40 @@ describe('checklist strip: stores', () => {
       'laserBomb.laserArm',
       'laserBomb.tgpPower',
       'laserBomb.tgpWarmup',
+      'laserBomb.tgpPage',
+      'laserBomb.tgpSoi',
       'laserBomb.track',
+      'laserBomb.spi',
+      'laserBomb.masterMode',
       'laserBomb.release',
     ]);
+    // back to the HUD as SOI while the pod keeps its track: still ready to release
+    s.soi = 'HUD';
+    expect(nextChecklistStep(s, keys)?.id).toBe('laserBomb.release');
     s.lasing = true;
     expect(nextChecklistStep(s, keys)?.tone).toBe('active');
   });
 
-  it('Maverick: alignment, lock, zone, launch', () => {
-    const s = state({ weapon: 'AGM-65D', masterArm: 'ARM', masterMode: 'CCRP', storesLeft: 2 });
+  it('Maverick: power, alignment, MAV page as SOI, lock, zone, launch', () => {
+    const s = state({ weapon: 'AGM-65D', masterArm: 'ARM', masterMode: 'NAV', storesLeft: 2 });
+    s.maverickPowered = false;
+    expect(nextChecklistStep(s, keys)?.id).toBe('maverick.power');
+    s.maverickPowered = true;
     expect(nextChecklistStep(s, keys)?.id).toBe('maverick.align');
     s.maverickAligned = true;
+    expect(nextChecklistStep(s, keys)?.id).toBe('maverick.mavPage');
+    s.mavPageShown = true;
+    expect(nextChecklistStep(s, keys)?.text).toBe('MAV page as sensor of interest [, / .]');
+    s.soi = 'MAV';
     expect(nextChecklistStep(s, keys)?.text).toBe(
       'Slew the seeker onto the target [W A S D], lock [T]',
     );
     s.maverickLocked = true;
+    expect(nextChecklistStep(s, keys)?.id).toBe('maverick.zone');
     s.maverickInZone = true;
+    expect(nextChecklistStep(s, keys)?.id).toBe('maverick.release');
+    // the lock holds when the HUD becomes the SOI again
+    s.soi = 'HUD';
     expect(nextChecklistStep(s, keys)?.id).toBe('maverick.release');
   });
 
@@ -267,6 +306,26 @@ describe('checklist keys from the controls reference', () => {
       expect(label.length).toBeGreaterThan(0);
       expect(label).not.toBe('—');
     }
+    // the two display keys of the SOI row (HUD, left display, right display)
+    expect(k.soiDisplay).toBe('comma / full stop');
+  });
+
+  it('a display step names the two display keys of the SOI row', () => {
+    const soi: ControlsReferenceRow = {
+      id: 'soi',
+      group: 'HUD and displays',
+      action: 'Sensor of interest: HUD, left display, right display',
+      keyboard: 'H, J, K',
+      gamepad: '',
+    };
+    expect(findKeyLabel([soi], 'soiDisplay')).toBe('J / K');
+    expect(findKeyLabel([{ ...soi, keyboard: 'H / comma / full stop' }], 'soiDisplay')).toBe(
+      'comma / full stop',
+    );
+    expect(findKeyLabel([{ ...soi, keyboard: 'H' }], 'soiDisplay')).toBe(
+      DEFAULT_CHECKLIST_KEYS.soiDisplay,
+    );
+    expect(findKeyLabel([], 'soiDisplay')).toBe(DEFAULT_CHECKLIST_KEYS.soiDisplay);
   });
 
   it('renders templates into text and key caps', () => {
@@ -294,5 +353,38 @@ describe('checklist strip on a real simulation', () => {
     sim.avionics.masterMode = 'CCIP';
     sim.avionics.selectedProfile = '';
     expect(checklistStateFromSim(sim).weapon).toBe('');
+  });
+
+  it('a Maverick profile is the weapon in NAV too (it launches in any master mode), not in GUNS', async () => {
+    const { createSim } = await import('../../../src/a10/core/sim');
+    const { createFlatTerrain } = await import('../../../src/a10/core/world');
+    const { checklistStateFromSim } = await import('../../../src/a10/ui/checklist');
+    const sim = createSim({ terrain: createFlatTerrain(), loadoutId: 'tankHunter' });
+    const av = sim.avionics;
+    const mav = av.profiles.find((p) => p.store === 'AGM-65D')!;
+    const bomb = av.profiles.find((p) => p.store === 'MK-82')!;
+    expect(mav).toBeDefined();
+    av.selectedProfile = mav.id;
+    av.masterMode = 'NAV';
+    let s = checklistStateFromSim(sim);
+    expect(s.weapon).toBe('AGM-65D');
+    expect(s.storesLeft).toBe(2);
+    expect(s.maverickPowered).toBe(sim.sensors.mavPower);
+    // the air start: the SPI at the steerpoint, the HUD as SOI, TAD and DSMS on the displays
+    expect(s.spiSource).toBe(av.spi.source);
+    expect(s.soi).toBe('HUD');
+    expect(s.mavPageShown).toBe(av.mfd.left === 'MAV' || av.mfd.right === 'MAV');
+    av.masterMode = 'GUNS';
+    expect(checklistStateFromSim(sim).weapon).toBe('GUN');
+    // a bomb profile in NAV: the gun (the bomb needs CCIP or CCRP, the gun fires in any mode)
+    av.selectedProfile = bomb.id;
+    av.masterMode = 'NAV';
+    expect(checklistStateFromSim(sim).weapon).toBe('GUN');
+    // the SOI follows the display the avionics names
+    av.mfd.right = 'MAV';
+    av.soi = 'RMFD';
+    s = checklistStateFromSim(sim);
+    expect(s.soi).toBe('MAV');
+    expect(s.mavPageShown).toBe(true);
   });
 });

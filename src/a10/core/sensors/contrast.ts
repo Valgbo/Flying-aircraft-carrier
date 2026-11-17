@@ -56,7 +56,14 @@ export interface SunState {
 }
 
 export function createSunState(): SunState {
-  return { dir: new Vector3(0, 1, 0), sinElevation: 1, daylight: 1, solar: 1, ambient: 0.5, tvLight: 1 };
+  return {
+    dir: new Vector3(0, 1, 0),
+    sinElevation: 1,
+    daylight: 1,
+    solar: 1,
+    ambient: 0.5,
+    tvLight: 1,
+  };
 }
 
 function smoothstep(e0: number, e1: number, x: number): number {
@@ -111,7 +118,11 @@ export function hazeFactor(density: number, distance: number): number {
  * slope (`sunExposure` = max(n·sun, 0) in sunlight) and by the time of day — the terrain shader's
  * formula, so the background the seeker compares a vehicle with is the one the picture shows.
  */
-export function groundThermalLevel(surface: SurfaceKind, sunExposure: number, sun: SunState): number {
+export function groundThermalLevel(
+  surface: SurfaceKind,
+  sunExposure: number,
+  sun: SunState,
+): number {
   const g = GROUND_THERMAL[surface];
   return (
     g.level +
@@ -184,7 +195,8 @@ export function irContrast(apparentK: number): number {
 /** Linear luminance (albedo) of a vehicle as seen in daylight. */
 export function vehicleLuminance(v: Vehicle): number {
   if (v.kind === 'panel') return CONTRAST.panelLuminance;
-  if (v.condition === 'destroyed' || v.condition === 'catastrophic') return CONTRAST.charredLuminance;
+  if (v.condition === 'destroyed' || v.condition === 'catastrophic')
+    return CONTRAST.charredLuminance;
   return CONTRAST.paintLuminance;
 }
 
@@ -204,7 +216,8 @@ export function tvApparentContrast(
     Math.abs(targetLuminance - groundLuminance) / Math.max(1e-4, groundLuminance) +
     fire * CONTRAST.fireTvContrast;
   const t = 1 - haze;
-  return ((c0 * t) / (t + CONTRAST.skyGroundRatio * haze + 1e-9)) * sun.tvLight;
+  // t + K·f = 1 + (K − 1)·f ≥ 1 for a haze factor in 0..1: the guard only catches bad input
+  return ((c0 * t) / Math.max(1e-9, t + CONTRAST.skyGroundRatio * haze)) * sun.tvLight;
 }
 
 /** 0..1 contrast of an apparent TV (Weber) contrast. */

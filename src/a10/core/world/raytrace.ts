@@ -45,16 +45,12 @@ const CANOPY_STEP = 3;
 /** Sphere-tracing iteration cap per search (a ray tangent to the ground within EPS). */
 const MAX_ITER = 3000;
 
-/** Ray state of the current query (module scratch, no allocation per query). */
-let ox = 0;
-let oy = 0;
-let oz = 0;
-let dx = 0;
-let dy = 0;
-let dz = 0;
-let hx = 0;
+/**
+ * Ray state of the current query (module scratch, no allocation per query). The numbers are fields
+ * of one object: a number stored in a module variable would be boxed on every store (review RT-1).
+ */
+const R = { ox: 0.5, oy: 0.5, oz: 0.5, dx: 0.5, dy: 0.5, dz: 0.5, hx: 0.5, half: 0.5 };
 let field: RayField;
-let half = 0;
 let withTrees = false;
 
 /** Result of the last search: ray parameter of the hit, or -1. */
@@ -83,14 +79,14 @@ export function traceRay(
   startS = 0,
 ): TraceResult {
   field = f;
-  ox = px;
-  oy = py;
-  oz = pz;
-  dx = ux;
-  dy = uy;
-  dz = uz;
-  hx = Math.sqrt(ux * ux + uz * uz);
-  half = f.size / 2;
+  R.ox = px;
+  R.oy = py;
+  R.oz = pz;
+  R.dx = ux;
+  R.dy = uy;
+  R.dz = uz;
+  R.hx = Math.sqrt(ux * ux + uz * uz);
+  R.half = f.size / 2;
   withTrees = trees;
   _res.s = -1;
   _res.canopy = false;
@@ -100,32 +96,32 @@ export function traceRay(
 
   // Whole query above everything: done.
   const top = trees ? f.maxHeight + f.maxCanopy : f.maxHeight;
-  if (oy + dy * s0 > top && oy + dy * s1 > top) return _res;
+  if (R.oy + R.dy * s0 > top && R.oy + R.dy * s1 > top) return _res;
 
   // The part of the ray inside the map square.
   const a = s0;
   const b = s1;
   let ta = -Infinity;
   let tb = Infinity;
-  if (Math.abs(dx) < 1e-12) {
-    if (ox < -half || ox > half) {
+  if (Math.abs(R.dx) < 1e-12) {
+    if (R.ox < -R.half || R.ox > R.half) {
       ta = Infinity;
       tb = -Infinity;
     }
   } else {
-    const t1 = (-half - ox) / dx;
-    const t2 = (half - ox) / dx;
+    const t1 = (-R.half - R.ox) / R.dx;
+    const t2 = (R.half - R.ox) / R.dx;
     ta = Math.max(ta, Math.min(t1, t2));
     tb = Math.min(tb, Math.max(t1, t2));
   }
-  if (Math.abs(dz) < 1e-12) {
-    if (oz < -half || oz > half) {
+  if (Math.abs(R.dz) < 1e-12) {
+    if (R.oz < -R.half || R.oz > R.half) {
       ta = Infinity;
       tb = -Infinity;
     }
   } else {
-    const t1 = (-half - oz) / dz;
-    const t2 = (half - oz) / dz;
+    const t1 = (-R.half - R.oz) / R.dz;
+    const t2 = (R.half - R.oz) / R.dz;
     ta = Math.max(ta, Math.min(t1, t2));
     tb = Math.min(tb, Math.max(t1, t2));
   }
@@ -164,25 +160,25 @@ export function traceRay(
 function traceNode(level: number, ix: number, iz: number, sa: number, sb: number): number {
   const n = field.cells >> level;
   const k = iz * n + ix;
-  const ya = oy + dy * sa;
-  const yb = oy + dy * sb;
+  const ya = R.oy + R.dy * sa;
+  const yb = R.oy + R.dy * sb;
   const ymin = ya < yb ? ya : yb;
   const bound = withTrees ? field.upperCanopy[level][k] : field.upper[level][k];
   if (ymin > bound) return -1;
   if (level === 0) return cellSearch(k, sa, sb, ya, bound);
 
   const nodeSize = field.spacing * (1 << level);
-  const xm = -half + (ix + 0.5) * nodeSize;
-  const zm = -half + (iz + 0.5) * nodeSize;
+  const xm = -R.half + (ix + 0.5) * nodeSize;
+  const zm = -R.half + (iz + 0.5) * nodeSize;
   // Parameters where the ray crosses the node's mid lines, if inside (sa, sb).
   let c1 = Infinity;
   let c2 = Infinity;
-  if (dx !== 0) {
-    const t = (xm - ox) / dx;
+  if (R.dx !== 0) {
+    const t = (xm - R.ox) / R.dx;
     if (t > sa && t < sb) c1 = t;
   }
-  if (dz !== 0) {
-    const t = (zm - oz) / dz;
+  if (R.dz !== 0) {
+    const t = (zm - R.oz) / R.dz;
     if (t > sa && t < sb) {
       if (t < c1) {
         c2 = c1;
@@ -197,8 +193,8 @@ function traceNode(level: number, ix: number, iz: number, sa: number, sb: number
     const b = part === cuts ? sb : part === 0 ? c1 : c2;
     if (b > a || sa === sb) {
       const m = 0.5 * (a + b);
-      const cx = ox + dx * m >= xm ? 1 : 0;
-      const cz = oz + dz * m >= zm ? 1 : 0;
+      const cx = R.ox + R.dx * m >= xm ? 1 : 0;
+      const cz = R.oz + R.dz * m >= zm ? 1 : 0;
       const r = traceNode(level - 1, 2 * ix + cx, 2 * iz + cz, a, b);
       if (r >= 0) return r;
     }
@@ -214,11 +210,11 @@ function cellSearch(k: number, sa: number, sb: number, ya: number, bound: number
   // Trim to where the ray is below the ground bound.
   let a = sa;
   let b = sb;
-  if (dy < 0) {
-    if (ya > groundBound) a = (groundBound - oy) / dy;
-  } else if (dy > 0) {
-    const yb = oy + dy * sb;
-    if (yb > groundBound) b = (groundBound - oy) / dy;
+  if (R.dy < 0) {
+    if (ya > groundBound) a = (groundBound - R.oy) / R.dy;
+  } else if (R.dy > 0) {
+    const yb = R.oy + R.dy * sb;
+    if (yb > groundBound) b = (groundBound - R.oy) / R.dy;
   }
   if (b >= a) {
     const s = lipschitzSearch(a, b, G);
@@ -236,7 +232,7 @@ function cellSearch(k: number, sa: number, sb: number, ya: number, bound: number
 
 /** f(s) = ray height − ground height. */
 function gap(s: number): number {
-  return oy + dy * s - field.heightAt(ox + dx * s, oz + dz * s);
+  return R.oy + R.dy * s - field.heightAt(R.ox + R.dx * s, R.oz + R.dz * s);
 }
 
 /**
@@ -244,8 +240,8 @@ function gap(s: number): number {
  * Lipschitz acceptance test. Returns s or −1.
  */
 function lipschitzSearch(sa: number, sb: number, G: number): number {
-  const rDec = G * hx - dy;
-  const rInc = G * hx + dy;
+  const rDec = G * R.hx - R.dy;
+  const rInc = G * R.hx + R.dy;
   let s = sa;
   let f = gap(s);
   if (f <= EPS) return s;
@@ -280,12 +276,12 @@ function lipschitzSearch(sa: number, sb: number, G: number): number {
  * CANOPY_STEP inside the band (ground … ground + canopyMax), Lipschitz skips above it.
  */
 function canopySearch(sa: number, sb: number, G: number, cmax: number): number {
-  const rDec = G * hx - dy;
+  const rDec = G * R.hx - R.dy;
   let s = sa;
   for (let iter = 0; iter < 100000 && s <= sb; iter++) {
-    const x = ox + dx * s;
-    const z = oz + dz * s;
-    const g = oy + dy * s - field.heightAt(x, z);
+    const x = R.ox + R.dx * s;
+    const z = R.oz + R.dz * s;
+    const g = R.oy + R.dy * s - field.heightAt(x, z);
     if (g < cmax) {
       const c = field.canopyAt(x, z);
       if (c > 0 && g < c) return s;
@@ -304,11 +300,11 @@ function outsideSearch(sa: number, sb: number): number {
   const top = field.maxHeight + (withTrees ? field.maxCanopy : 0);
   let a = sa;
   let b = sb;
-  const ya = oy + dy * sa;
-  const yb = oy + dy * sb;
+  const ya = R.oy + R.dy * sa;
+  const yb = R.oy + R.dy * sb;
   if (ya > top && yb > top) return -1;
-  if (dy < 0 && ya > top) a = (top - oy) / dy;
-  if (dy > 0 && yb > top) b = (top - oy) / dy;
+  if (R.dy < 0 && ya > top) a = (top - R.oy) / R.dy;
+  if (R.dy > 0 && yb > top) b = (top - R.oy) / R.dy;
   if (b < a) return -1;
   const s = lipschitzSearch(a, b, field.maxGrad);
   if (s >= 0) return s;

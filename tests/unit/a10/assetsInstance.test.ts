@@ -76,7 +76,13 @@ describe('drawn aircraft pose (FC-4)', () => {
  * A store body as the weapons module makes one on a release: the contract's fields (§12.2), all
  * the views read; the weapons module's own additions are left out.
  */
-function body(sim: Sim, station: number, type: StoreType, kind: StoreBodyKind, t: number): StoreBody {
+function body(
+  sim: Sim,
+  station: number,
+  type: StoreType,
+  kind: StoreBodyKind,
+  t: number,
+): StoreBody {
   const fields = {
     id: sim.projectiles.nextBodyId++,
     type,

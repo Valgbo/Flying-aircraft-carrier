@@ -17,7 +17,8 @@
  *   weapon  follows the newest store in flight (sim.projectiles.bodies: bomb, rocket, Maverick,
  *           GBU-12) from behind, along its flight path; when it is gone (its `detonation`, by
  *           bodyId, gives the exact impact point) the camera eases back to a vantage point above
- *           the impact and watches it for a few seconds, then falls back to chase
+ *           the impact and watches it for a few simulated seconds (a pause keeps it there), then
+ *           falls back to chase
  *   target  a fixed camera near the vehicle under the SPI or the vehicle last attacked —
  *           whichever happened more recently — looking at the aircraft: from here the impacts
  *           are heard before the gun (the audio module listens at the world camera)
@@ -39,8 +40,13 @@ export interface CameraPose {
 }
 
 export interface OutsideInput {
-  /** Real seconds since the last frame. */
+  /** Real seconds since the last frame (the cameras' easing and lags). */
   dt: number;
+  /**
+   * Simulated seconds this frame (0 while paused): the weapon camera's hold on an impact counts
+   * them, so a paused impact stays in view.
+   */
+  simDt: number;
   /** Mouse look, pixels (+ right, + down); look rates −1..1 (+ right, + up); zoom steps (+ in). */
   lookDX: number;
   lookDY: number;
@@ -63,8 +69,9 @@ export const OUTSIDE = {
   },
   /**
    * Weapon camera: `back`/`up` behind the store while it flies, looking `aimAhead` along its
-   * path; after the impact it eases (time constant `holdTau`, s) to `holdBack` m back along the
-   * last flight path and `holdUp` m up, looking at the impact point, for `hold` seconds.
+   * path; after the impact it eases (time constant `holdTau`, real s) to `holdBack` m back along
+   * the last flight path and `holdUp` m up, looking at the impact point, for `hold` simulated
+   * seconds.
    */
   weapon: {
     back: 9,
@@ -254,7 +261,7 @@ export class OutsideCameras {
         this.orbit(inp, out);
         break;
       case 'weapon':
-        if (!this.weapon(sim, inp.dt, entering, out)) shown = 'chase';
+        if (!this.weapon(sim, inp.dt, inp.simDt, entering, out)) shown = 'chase';
         break;
       case 'target':
         if (!this.target(sim, groundAt, entering, out)) shown = 'chase';
@@ -351,7 +358,7 @@ export class OutsideCameras {
     out.fov = o.fov;
   }
 
-  private weapon(sim: Sim, dt: number, entering: boolean, out: CameraPose): boolean {
+  private weapon(sim: Sim, dt: number, simDt: number, entering: boolean, out: CameraPose): boolean {
     const w = OUTSIDE.weapon;
     const b = newestBody(sim);
     if (b) {
@@ -373,9 +380,10 @@ export class OutsideCameras {
       return true;
     }
     if (this.weaponId >= 0 && this.weaponHold > 0 && !entering) {
-      // the store is gone: back off to a vantage point above its impact and watch it
+      // the store is gone: back off to a vantage point above its impact and watch it (the hold
+      // runs on simulated time, the easing on real time)
       const t = Math.max(0, dt);
-      this.weaponHold -= t;
+      this.weaponHold -= Math.max(0, simDt);
       const impact = this.weaponImpactValid ? this.weaponImpact : this.weaponLast;
       _a.copy(impact)
         .addScaledVector(this.weaponDir, -w.holdBack)

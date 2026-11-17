@@ -157,7 +157,14 @@ function squeezeAfterCorrection(o: {
     }
     if (tt > 6) break;
   }
-  return { qSqueeze, speedKt, lateErr, qPeakToPeak: qMax - qMin, burst, crashed: sim.aircraft.crashed };
+  return {
+    qSqueeze,
+    speedKt,
+    lateErr,
+    qPeakToPeak: qMax - qMin,
+    burst,
+    crashed: sim.aircraft.crashed,
+  };
 }
 
 /** PAC-1 held from the start; a stick, pedal or roll pulse at 0.5 s; hands off afterwards. */
@@ -276,7 +283,14 @@ describe('PAC after a transient (whole sim, real fire control)', () => {
     'a hands-off squeeze after a throttle chop in the default tank-hunter load settles (Authentic, Standard)',
     () => {
       for (const preset of ['authentic', 'standard'] as const) {
-        const sim = dive({ agl: 1300, kias: 330, diveDeg: 30, pac: true, preset, loadoutId: 'tankHunter' });
+        const sim = dive({
+          agl: 1300,
+          kias: 330,
+          diveDeg: 30,
+          pac: true,
+          preset,
+          loadoutId: 'tankHunter',
+        });
         sim.input.throttle[0] = 0;
         sim.input.throttle[1] = 0;
         let late = 0;

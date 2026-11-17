@@ -7,7 +7,9 @@
  *   terrain `uPixelAngle`  one EFFECTIVE pixel of the sensor (thin roads stay ≈1.5 px wide in
  *                          the picture, not in the outside view's pixels);
  *   terrain `uDepthBias`   the ribbons' depth bias for the sensor camera's near plane;
- *   terrain `uDetailDistance`  the close-range ground detail follows the sensor's magnification;
+ *   terrain `uDetailDistance`  the close-range ground detail distance the renderer chooses
+ *                          (television: the outside view's times the sensor's magnification;
+ *                          infrared: none — SensorRenderer.ts INFRARED_DETAIL_DISTANCE);
  *   shadow map             not re-rendered for the sensor camera (the sun's shadows only cover
  *                          the aircraft's surroundings; the world pass updates them).
  * Television (CCD)

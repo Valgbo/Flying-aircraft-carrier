@@ -28,6 +28,9 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
+  Frustum,
+  type InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
@@ -45,6 +48,7 @@ import type { Vehicle, VehicleKind } from '../../core/targets/types';
 import type { Sim } from '../../core/types';
 import type { Terrain } from '../../core/world/types';
 import { MAVERICK, TGP } from '../../data/sensors';
+import { THERMAL } from '../../data/vehicles';
 import { getTerrain, onTerrain, prepareWorld } from '../../state/runtime';
 import { useA10Store, type QualityLevel } from '../../state/store';
 import EffectsView from '../../view/effects/EffectsView';
@@ -55,7 +59,11 @@ import { frameInfo, notifySimFrame } from '../../view/frame';
 import { registerRenderPass } from '../../view/pipeline';
 import RenderPipeline from '../../view/RenderPipeline';
 import { getSensorPicture, type SensorName } from '../../view/sensors/pictures';
-import { sensorViewOverrides, sensorViewStats, setSensorViewSim } from '../../view/sensors/SensorRenderer';
+import {
+  sensorViewOverrides,
+  sensorViewStats,
+  setSensorViewSim,
+} from '../../view/sensors/SensorRenderer';
 import SensorsView from '../../view/sensors/SensorsView';
 import { createSensorCameraPose, tgpCameraPose } from '../../view/sensors/sensorPose';
 import { terrainStreaming } from '../../view/terrain/terrainStats';
@@ -101,12 +109,32 @@ interface Setup {
   aim: Vector3;
 }
 
-/** A vehicle's heat: running (warmed up, idling), or stopped long ago (sun on the hull). */
-function setRunning(v: Vehicle, on: boolean): void {
+/**
+ * A vehicle's heat as the targets module's heat model settles it (core/targets behaviour.ts
+ * stepHeat, constants data/vehicles.ts THERMAL) at the sandbox's time of day: running (idling,
+ * or driving: engine at load, warm running gear) or stopped long ago (the sun on the hull).
+ */
+function setRunning(v: Vehicle, on: boolean, moving = false): void {
   v.engineOn = on;
-  v.heat = on
-    ? { engine: 38, exhaust: 80, running: 9, hull: 7 }
-    : { engine: 2, exhaust: 1, running: 0.5, hull: 5 };
+  const sun = Math.max(0, Math.sin((Math.PI * (ctl.time - 6)) / 12));
+  const engine = on ? (moving ? THERMAL.engineLoad : THERMAL.engineIdle) : 0;
+  v.heat = {
+    engine: on ? engine : 2,
+    exhaust: on ? (moving ? THERMAL.exhaustLoad : THERMAL.exhaustIdle) : 1,
+    running: moving ? Math.min(THERMAL.runningMax, THERMAL.runningPerSpeed * 8) : 0,
+    hull: THERMAL.hullSun * (0.3 + 0.7 * sun) + THERMAL.hullEngineShare * engine,
+  };
+}
+
+/** A burnt-out wreck still burning at `fire` (0..1), as the heat model settles it. */
+function setBurning(v: Vehicle, fire: number): void {
+  v.condition = 'destroyed';
+  v.engineOn = false;
+  v.fire = fire;
+  v.mobilityKill = true;
+  v.firepowerKill = true;
+  const hull = THERMAL.fireHull * fire;
+  v.heat = { engine: hull * 0.6, exhaust: hull * 0.5, running: 0, hull };
 }
 
 /** An open spot near (x, z): not forest, water or road, and fairly flat. */
@@ -127,22 +155,68 @@ function openSpot(t: Terrain, x: number, z: number): [number, number] {
   return [x, z];
 }
 
-/** A point on a road about `range` m from (x, z), and the road's heading there. */
-function roadPoint(t: Terrain, x: number, z: number): { x: number; z: number; heading: number } {
-  let best = { x, z, heading: 0, d: Infinity };
+interface RoadSpot {
+  x: number;
+  z: number;
+  /** Heading of travel along the road (0 = north, + toward east), rad. */
+  heading: number;
+}
+
+/**
+ * A column of `count` vehicles `spacing` m apart on the paved road nearest to (x, z): the first
+ * at the point of the road closest to (x, z), the others behind it ALONG the centre line (roads
+ * curve), all facing along the road.
+ */
+function roadColumn(t: Terrain, x: number, z: number, count: number, spacing: number): RoadSpot[] {
+  let road: Float64Array | null = null;
+  let seg = 0;
+  let u = 0;
+  let best = Infinity;
   for (const r of t.roads) {
     if (r.kind === 'track') continue;
     const p = r.points;
-    for (let i = 2; i + 3 < p.length; i += 2) {
-      const d = Math.hypot(p[i] - x, p[i + 1] - z);
-      const seg = Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]);
-      if (d < best.d && seg > 30) {
-        const heading = Math.atan2(p[i + 2] - p[i], -(p[i + 3] - p[i + 1]));
-        best = { x: p[i], z: p[i + 1], heading, d };
+    for (let i = 0; i + 3 < p.length; i += 2) {
+      const dx = p[i + 2] - p[i];
+      const dz = p[i + 3] - p[i + 1];
+      const l2 = dx * dx + dz * dz;
+      if (l2 < 1e-6) continue;
+      const f = Math.min(1, Math.max(0, ((x - p[i]) * dx + (z - p[i + 1]) * dz) / l2));
+      const d = Math.hypot(p[i] + f * dx - x, p[i + 1] + f * dz - z);
+      if (d < best) {
+        best = d;
+        road = p;
+        seg = i;
+        u = f;
       }
     }
   }
-  return best;
+  const out: RoadSpot[] = [];
+  if (!road) {
+    for (let k = 0; k < count; k++) out.push({ x, z: z + k * spacing, heading: 0 });
+    return out;
+  }
+  const p = road;
+  // walk back along the polyline from (seg, u), one spot every `spacing` metres
+  let i = seg;
+  let back = u * Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]); // metres from vertex i
+  for (let k = 0; k < count; k++) {
+    let need = k === 0 ? 0 : spacing;
+    while (need > back && i > 0) {
+      need -= back;
+      i -= 2;
+      back = Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]);
+    }
+    back = Math.max(0, back - need);
+    const dx = p[i + 2] - p[i];
+    const dz = p[i + 3] - p[i + 1];
+    const l = Math.hypot(dx, dz) || 1;
+    out.push({
+      x: p[i] + (dx / l) * back,
+      z: p[i + 1] + (dz / l) * back,
+      heading: Math.atan2(dx, -dz),
+    });
+  }
+  return out;
 }
 
 function vehicleAt(sim: Sim, kind: VehicleKind, x: number, z: number, heading: number): Vehicle {
@@ -161,15 +235,13 @@ function buildSetup(terrain: Terrain, preset: Preset): Setup {
   let target: Vehicle;
   let range = 5000;
   let agl = 2400;
-  let aim = new Vector3();
+  const aim = new Vector3();
   if (preset === 'column') {
-    const r = roadPoint(terrain, ax, az);
-    const fx = Math.sin(r.heading);
-    const fz = -Math.cos(r.heading);
     const kinds: VehicleKind[] = ['mbt', 'ifv', 'truckCargo', 'truckFuel', 'apc'];
+    const spots = roadColumn(terrain, ax, az, kinds.length, 25);
     kinds.forEach((k, i) => {
-      const v = vehicleAt(sim, k, r.x - fx * i * 25, r.z - fz * i * 25, r.heading);
-      setRunning(v, true);
+      const v = vehicleAt(sim, k, spots[i].x, spots[i].z, spots[i].heading);
+      setRunning(v, true, true);
       vehicles.push(v);
     });
     target = vehicles[2];
@@ -187,13 +259,8 @@ function buildSetup(terrain: Terrain, preset: Preset): Setup {
       vehicles.push(other);
     } else if (preset === 'wreck') {
       const wreck = vehicleAt(sim, 'mbt', tx - 30, tz + 12, 200 * DEG);
-      wreck.condition = 'destroyed';
       wreck.conditionTime = -120;
-      wreck.engineOn = false;
-      wreck.fire = 0.75;
-      wreck.mobilityKill = true;
-      wreck.firepowerKill = true;
-      wreck.heat = { engine: 60, exhaust: 30, running: 40, hull: 120 };
+      setBurning(wreck, 0.75);
       vehicles.push(wreck);
     }
     if (preset === 'mav') {
@@ -300,9 +367,14 @@ function Driver({ setup }: { setup: Setup }) {
 /** The outside view: from the cockpit toward the aim point. */
 function WorldCamera({ setup }: { setup: Setup }) {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
+  const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    worldScene.current = scene;
+  }, [scene]);
   useFrame(() => {
     const ac = setup.sim.aircraft;
-    camera.position.copy(ac.position).add(new Vector3(0, 1.2, 0));
+    camera.position.copy(ac.position);
+    camera.position.y += 1.2;
     camera.lookAt(setup.aim);
     camera.fov = 40;
     camera.near = 1;
@@ -369,6 +441,91 @@ function PictureOverlay({ size }: { size: number }) {
   return null;
 }
 
+/** The world scene (for the frustum breakdown). */
+const worldScene: { current: Scene | null } = { current: null };
+
+/**
+ * Development: what the pod camera's frustum lets through of the world scene, by object — the
+ * draw calls and triangles a picture costs (the scene as drawn in the visible band; the infrared
+ * render hides a few overlays more).
+ */
+function frustumBreakdown(setup: Setup): { name: string; triangles: number; instances: number }[] {
+  const scene = worldScene.current;
+  if (!scene) return [];
+  const pose = createSensorCameraPose();
+  tgpCameraPose(setup.sim, pose);
+  const cam = new PerspectiveCamera(pose.fov / DEG, 1, pose.near, pose.far);
+  cam.position.copy(pose.position);
+  cam.quaternion.copy(pose.quaternion);
+  cam.updateMatrixWorld();
+  const frustum = new Frustum().setFromProjectionMatrix(
+    new Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse),
+  );
+  const rows: { name: string; triangles: number; instances: number }[] = [];
+  scene.traverseVisible((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh || !m.geometry) return;
+    if (m.frustumCulled && !frustum.intersectsObject(m)) return;
+    const g = m.geometry;
+    const tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
+    const inst = (m as InstancedMesh).isInstancedMesh ? (m as InstancedMesh).count : 1;
+    rows.push({
+      name: m.name || m.parent?.name || (m.material as { name?: string }).name || m.type,
+      triangles: tris * inst,
+      instances: inst,
+    });
+  });
+  return rows.sort((a, b) => b.triangles - a.triangles);
+}
+
+/** bench=1: the world pass's time measured like the sensor passes' (GPU drained around it), ms. */
+const worldBench = { ms: 0, avg: 0, frames: 0, calls: 0, triangles: 0 };
+
+/**
+ * bench=1 only: time the world pass (order 100) the way SensorRenderer times its pictures — a
+ * one-pixel synchronous read before and after drains the GPU — so the sensor passes' cost can be
+ * read against it (software WebGL in CI is far slower than a GPU; the ratio carries over).
+ */
+function WorldBench() {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const px = new Uint8Array(4);
+    let t0 = 0;
+    const drain = () => {
+      const raw = gl.getContext();
+      gl.setRenderTarget(null);
+      raw.readPixels(0, 0, 1, 1, raw.RGBA, raw.UNSIGNED_BYTE, px);
+    };
+    const offA = registerRenderPass({
+      id: 'sensors-sandbox-bench-a',
+      order: 99,
+      render() {
+        drain();
+        t0 = performance.now();
+      },
+    });
+    const offB = registerRenderPass({
+      id: 'sensors-sandbox-bench-b',
+      order: 101,
+      render() {
+        drain();
+        worldBench.ms = performance.now() - t0;
+        // the world pass's last render call (R3F resets the counters per call)
+        worldBench.calls = gl.info.render.calls;
+        worldBench.triangles = gl.info.render.triangles;
+        worldBench.frames++;
+        worldBench.avg =
+          worldBench.frames <= 1 ? worldBench.ms : worldBench.avg * 0.9 + worldBench.ms * 0.1;
+      },
+    });
+    return () => {
+      offA();
+      offB();
+    };
+  }, [gl]);
+  return null;
+}
+
 interface Measured {
   id: number;
   kind: string;
@@ -416,8 +573,9 @@ async function measure(setup: Setup): Promise<Measured[]> {
   const sim = setup.sim;
   const pose = createSensorCameraPose();
   tgpCameraPose(sim, pose);
-  const hook = (window as unknown as { __A10_SENSORS__?: { snapshot(s: SensorName): string | null } })
-    .__A10_SENSORS__;
+  const hook = (
+    window as unknown as { __A10_SENSORS__?: { snapshot(s: SensorName): string | null } }
+  ).__A10_SENSORS__;
   const url = hook?.snapshot('TGP') ?? null;
   let data: Uint8ClampedArray | null = null;
   let size = 0;
@@ -446,7 +604,15 @@ async function measure(setup: Setup): Promise<Measured[]> {
         const cx = ((p.x + 1) / 2) * size;
         const cy = ((1 - p.y) / 2) * size;
         const px = (3.2 / pod.distanceTo(centre) / pose.fov) * size;
-        const [veh, ground] = discAndRing(data, size, cx, cy, Math.max(1.2, px * 0.7), px * 2.2, px * 3.5 + 3);
+        const [veh, ground] = discAndRing(
+          data,
+          size,
+          cx,
+          cy,
+          Math.max(1.2, px * 0.7),
+          px * 2.2,
+          px * 3.5 + 3,
+        );
         picture = veh - ground;
       }
     }
@@ -583,8 +749,18 @@ function Panel({ setup, onPreset }: { setup: Setup; onPreset: (p: Preset) => voi
       />
       <hr />
       <b>Targeting pod</b>
-      <Select label="picture" value={ctl.mode} options={['CCD', 'WHOT', 'BHOT'] as const} onChange={(v) => set('mode', v)} />
-      <Select label="field" value={ctl.fov} options={['WIDE', 'NARROW'] as const} onChange={(v) => set('fov', v)} />
+      <Select
+        label="picture"
+        value={ctl.mode}
+        options={['CCD', 'WHOT', 'BHOT'] as const}
+        onChange={(v) => set('mode', v)}
+      />
+      <Select
+        label="field"
+        value={ctl.fov}
+        options={['WIDE', 'NARROW'] as const}
+        onChange={(v) => set('fov', v)}
+      />
       <Select
         label="zoom"
         value={String(ctl.zoom) as '1' | '2' | '4' | '8'}
@@ -592,26 +768,60 @@ function Panel({ setup, onPreset }: { setup: Setup; onPreset: (p: Preset) => voi
         onChange={(v) => set('zoom', Number(v))}
       />
       <label>
-        <input type="checkbox" checked={ctl.mask} onChange={(e) => set('mask', e.target.checked)} /> masked
+        <input type="checkbox" checked={ctl.mask} onChange={(e) => set('mask', e.target.checked)} />{' '}
+        masked
       </label>{' '}
       <label>
-        <input type="checkbox" checked={ctl.warmup > 0} onChange={(e) => set('warmup', e.target.checked ? 60 : 0)} />{' '}
+        <input
+          type="checkbox"
+          checked={ctl.warmup > 0}
+          onChange={(e) => set('warmup', e.target.checked ? 60 : 0)}
+        />{' '}
         warming up
       </label>
       <hr />
       <b>Maverick</b>
-      <Select label="missile" value={ctl.mav} options={['D', 'H'] as const} onChange={(v) => set('mav', v)} />
-      <Select label="field" value={ctl.mavFov} options={['WIDE', 'NARROW'] as const} onChange={(v) => set('mavFov', v)} />
+      <Select
+        label="missile"
+        value={ctl.mav}
+        options={['D', 'H'] as const}
+        onChange={(v) => set('mav', v)}
+      />
+      <Select
+        label="field"
+        value={ctl.mavFov}
+        options={['WIDE', 'NARROW'] as const}
+        onChange={(v) => set('mavFov', v)}
+      />
       <label>
-        <input type="checkbox" checked={ctl.lock} onChange={(e) => set('lock', e.target.checked)} /> locked
+        <input type="checkbox" checked={ctl.lock} onChange={(e) => set('lock', e.target.checked)} />{' '}
+        locked
       </label>{' '}
       <label>
-        <input type="checkbox" checked={ctl.align > 0} onChange={(e) => set('align', e.target.checked ? 90 : 0)} />{' '}
+        <input
+          type="checkbox"
+          checked={ctl.align > 0}
+          onChange={(e) => set('align', e.target.checked ? 90 : 0)}
+        />{' '}
         aligning
       </label>
       <hr />
-      <Range label="time" value={ctl.time} min={4} max={22} step={0.5} onChange={(v) => set('time', v)} />
-      <Range label="visibility km" value={ctl.vis} min={2} max={60} step={1} onChange={(v) => set('vis', v)} />
+      <Range
+        label="time"
+        value={ctl.time}
+        min={4}
+        max={22}
+        step={0.5}
+        onChange={(v) => set('time', v)}
+      />
+      <Range
+        label="visibility km"
+        value={ctl.vis}
+        min={2}
+        max={60}
+        step={1}
+        onChange={(v) => set('vis', v)}
+      />
       <label>
         <input
           type="checkbox"
@@ -626,13 +836,19 @@ function Panel({ setup, onPreset }: { setup: Setup; onPreset: (p: Preset) => voi
       <hr />
       {(['TGP', 'MAV'] as SensorName[]).map((n) => (
         <div key={n}>
-          <b>{n}</b> {pic(n)?.status ?? '—'} {pic(n)?.picture} valid {String(pic(n)?.valid ?? false)}
+          <b>{n}</b> {pic(n)?.status ?? '—'} {pic(n)?.picture} valid{' '}
+          {String(pic(n)?.valid ?? false)}
           <br />
-          {st(n).size}px (detector {st(n).effectivePixels}) · fov {fmt(((pic(n)?.fov ?? 0) * 180) / Math.PI, 3)}°
+          {st(n).size}px (detector {st(n).effectivePixels}) · fov{' '}
+          {fmt(((pic(n)?.fov ?? 0) * 180) / Math.PI, 3)}°
           <br />
-          calls {st(n).calls} ({st(n).sceneCalls} scene) · tris {st(n).triangles} · {fmt(st(n).cpuMsAvg)} ms
+          calls {st(n).calls} ({st(n).sceneCalls} scene) · tris {st(n).triangles} ·{' '}
+          {fmt(st(n).cpuMsAvg)} ms
           <br />
-          AGC {st(n).band === 'IR' ? `${fmt(st(n).agcLo, 1)}…${fmt(st(n).agcHi, 1)} K` : `×${fmt(st(n).exposure, 1)} black ${fmt(st(n).black)}`}{' '}
+          AGC{' '}
+          {st(n).band === 'IR'
+            ? `${fmt(st(n).agcLo, 1)}…${fmt(st(n).agcHi, 1)} K`
+            : `×${fmt(st(n).exposure, 1)} black ${fmt(st(n).black)}`}{' '}
           {pic(n)?.agcSettled ? 'settled' : 'settling'} · frame {pic(n)?.frame ?? 0}
         </div>
       ))}
@@ -712,6 +928,7 @@ export default function SensorsSandbox() {
   useEffect(() => {
     useA10Store.getState().updateSettings({ quality });
     sensorViewOverrides.finish = params.get('bench') === '1';
+    if (params.get('detail')) sensorViewOverrides.detailScaleMax = num('detail', 6);
     void prepareWorld(num('seed', useA10Store.getState().settings.worldSeed));
     return onTerrain(setTerrain);
   }, [quality]);
@@ -750,6 +967,8 @@ export default function SensorsSandbox() {
         );
       },
       stats: sensorViewStats,
+      world: worldBench,
+      breakdown: () => frustumBreakdown(setup),
       measure: () => measure(setup),
     };
     return () => {
@@ -775,6 +994,7 @@ export default function SensorsSandbox() {
         {setup && <Driver setup={setup} />}
         {setup && <WorldCamera setup={setup} />}
         <PictureOverlay size={size} />
+        {params.get('bench') === '1' && <WorldBench />}
         <RenderPipeline />
       </Canvas>
       {setup && ui && <Panel setup={setup} onPreset={setPreset} />}

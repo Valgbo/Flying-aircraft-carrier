@@ -16,11 +16,13 @@ import {
 } from '../../../src/a10/core/avionics';
 import { SIM_DT } from '../../../src/a10/core/constants';
 import { updateMassProperties } from '../../../src/a10/core/flight';
+import { createSim, runSim, stepSim } from '../../../src/a10/core/sim';
 import type { Sim, SimEvent } from '../../../src/a10/core/types';
 import { DEG, FT, KT } from '../../../src/a10/core/units';
 import {
   fragmentEnvelope,
   integrateStore,
+  interpolatePose,
   jettisonStores,
   missClock,
   REGISTERED_STORE_KEYS,
@@ -30,6 +32,7 @@ import {
 } from '../../../src/a10/core/weapons';
 import {
   createGunTestbed,
+  makeRelease,
   predictStoreRelease,
   queueRelease,
   runKinematic,
@@ -39,7 +42,7 @@ import {
 import { createFlatTerrain } from '../../../src/a10/core/world';
 import { A10_GEOMETRY } from '../../../src/a10/data/geometry';
 import { BLAST } from '../../../src/a10/data/vehicles';
-import { STORE_BODY, STORES } from '../../../src/a10/data/munitions';
+import { STORE_BODY, STORES, WARHEADS } from '../../../src/a10/data/munitions';
 
 type Released = Extract<SimEvent, { type: 'storeReleased' }>;
 type Detonation = Extract<SimEvent, { type: 'detonation' }>;
@@ -170,6 +173,67 @@ describe('the release queue (ARCHITECTURE §12.1)', () => {
     expect(b.flight!.key).toBe('MK-82');
     runKinematic(sim, 4.1);
     expect(b.armed).toBe(true);
+  });
+});
+
+describe('guided stores leave through the same release (ARCHITECTURE §12.1, §12.3)', () => {
+  /** The tank-hunter load: Mavericks on a LAU-88 (station 3), a GBU-12 on station 4. */
+  function hunter(): Sim {
+    return createGunTestbed({
+      terrain: createFlatTerrain(0),
+      altitude: 1500,
+      speed: 300 * KT,
+      pathAngle: -30 * DEG,
+      loadoutId: 'tankHunter',
+    });
+  }
+
+  it('a Maverick leaves its rail without ejection, its motor ignites, the guided module gets the lock', () => {
+    const sim = hunter();
+    queueRelease(sim, 3, 'AGM-65D', {
+      delivery: 'MAV',
+      lockVehicle: 7,
+      aim: new Vector3(0, 0, -3000),
+      aimValid: true,
+    });
+    stepKinematic(sim);
+    const b = sim.projectiles.bodies[0];
+    expect(b.kind).toBe('missile');
+    expect(b.delivery).toBe('MAV');
+    expect(b.guidance.vehicleId).toBe(7);
+    const ignitions = sim.events.filter((e) => e.type === 'motorIgnition');
+    expect(ignitions).toHaveLength(1);
+    expect(ignitions[0]).toMatchObject({ bodyId: b.id });
+    // A rail launch: nothing pushes it off sideways (an ejector would give ≈4–6 m/s); its motor,
+    // if any, pushes along the path.
+    expect(storeModel('AGM-65D')!.ejection).toEqual({ x: 0, y: 0, z: 0 });
+    const path = sim.aircraft.velocity.clone().normalize();
+    const separation = b.velocity.clone().sub(sim.aircraft.velocity).projectOnPlane(path);
+    expect(separation.length()).toBeLessThan(0.2);
+    // The other Maverick and the launcher stay; the record names the delivery.
+    expect(sim.stores.stations[2].rack).toBe('LAU-88');
+    expect(sim.stores.stations[2].stores).toEqual(['AGM-65D']);
+    expect(sim.debrief.weapons[0].delivery).toBe('MAV');
+  });
+
+  it('a GBU-12 is ejected like a bomb, carries its laser code and, unlased, falls on its model', () => {
+    const sim = hunter();
+    const pred = createImpactPrediction();
+    expect(predictStoreRelease(sim, 4, 'GBU-12', pred)).toBe(true);
+    queueRelease(sim, 4, 'GBU-12', { delivery: 'CCRP', laserCode: 1511, armingTime: 4 });
+    stepKinematic(sim);
+    const b = sim.projectiles.bodies[0];
+    expect(b.kind).toBe('laserBomb');
+    expect(b.laserCode).toBe(1511);
+    expect(sim.events.some((e) => e.type === 'motorIgnition')).toBe(false);
+    runUntilLanded(sim);
+    const det = sim.events.find((e): e is Detonation => e.type === 'detonation')!;
+    expect(det.kind).toBe('bomb');
+    expect(det.charge).toBe(WARHEADS['GBU-12']!.charge);
+    // Nobody lases, so its seeker sees no spot: it falls ballistic, where its registered model
+    // (the CCRP computer's) puts it.
+    const r = sim.debrief.weapons[0];
+    expect(Math.hypot(r.impact.x - pred.point.x, r.impact.z - pred.point.z)).toBeLessThan(1);
   });
 });
 
@@ -384,6 +448,52 @@ describe('the fire-control computer flies the same models (PLAN §6.1 rule 2)', 
       // …and in metres on the ground: the slant ranges are at most ≈3.5 km.
       expect(err * 3500, key).toBeLessThan(0.5);
     }
+  });
+});
+
+describe('inside the full simulation step (core/sim.ts stepSim, the flight model flying)', () => {
+  it('a queued release leaves from the flown pose at its time, lightens the aircraft and lands', () => {
+    const sim = createSim({
+      terrain: createFlatTerrain(0),
+      seed: 3,
+      scenario: 'empty',
+      loadoutId: 'tankHunter',
+      start: { x: 0, z: 0, agl: 1500, heading: 0, speed: 150 },
+    });
+    runSim(sim, 0.5);
+    const ac = sim.aircraft;
+    const mass = ac.mass;
+    const tRelease = sim.time + 0.4 * SIM_DT;
+    sim.stores.releaseQueue.push(makeRelease(sim, 5, 'MK-82', { time: tRelease, armingTime: 4 }));
+    stepSim(sim);
+    expect(sim.projectiles.bodies).toHaveLength(1);
+    const b = sim.projectiles.bodies[0];
+    expect(b.releaseTime).toBeCloseTo(tRelease, 12);
+    // The station point 0.4 of the way through the flight step just flown: where the station
+    // was at the step's start and end, and in between.
+    const s = A10_GEOMETRY.stations[5]!;
+    const r = new Vector3(s.x, s.y, s.z);
+    const atStart = r.clone().applyQuaternion(ac.prevOrientation).add(ac.prevPosition);
+    const atEnd = r.clone().applyQuaternion(ac.orientation).add(ac.position);
+    expect(b.prevPosition.distanceTo(atStart)).toBeCloseTo(0.4 * atStart.distanceTo(atEnd), 2);
+    expect(b.prevPosition.distanceTo(atEnd)).toBeCloseTo(0.6 * atStart.distanceTo(atEnd), 2);
+    const pos = new Vector3();
+    const vel = new Vector3();
+    const q = new Quaternion();
+    interpolatePose(ac, 0.4, SIM_DT, pos, vel, q);
+    expect(b.prevPosition.distanceTo(r.clone().applyQuaternion(q).add(pos))).toBeLessThan(1e-9);
+    // The flight model weighs the aircraft without it from the next step (and burns a little
+    // fuel meanwhile).
+    stepSim(sim);
+    expect(mass - ac.mass).toBeCloseTo(STORES['MK-82'].mass, 1);
+    // It falls ≈1,500 m and bursts on the ground; the record is complete.
+    runSim(sim, 30);
+    const det = sim.events.find((e): e is Detonation => e.type === 'detonation');
+    expect(det?.kind).toBe('bomb');
+    const rec = sim.debrief.weapons[0];
+    expect(rec.impactTime - rec.release.time).toBeGreaterThan(15);
+    expect(rec.impact.y).toBeCloseTo(0, 6);
+    expect(rec.dud).toBe(false);
   });
 });
 

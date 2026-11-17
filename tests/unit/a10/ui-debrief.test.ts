@@ -222,59 +222,66 @@ describe('debrief: every hit is plotted on its vehicle (DB-2)', () => {
     expect(checked).toBe(true);
   });
 
-  it('a recorded strafing pass: every vehicle with a hit has its hits plotted (integration)', {
-    timeout: 120_000,
-  }, () => {
-    /** A trimmed 45° dive at 300 kn, a one-second burst at two T-72s 20 m apart. */
-    const pass = (seed: number, tanks: { x: number; z: number }[]): Sim => {
-      const sim = createSim({
-        seed,
-        terrain: createFlatTerrain(100),
-        scenario: 'empty',
-        start: { x: 0, z: 0, agl: 700, heading: 0, speed: 300 * 0.514444, gamma: -45 * DEG },
-      });
-      for (const t of tanks) createVehicle(sim, 'mbt', t.x, t.z, 0, 1);
-      sim.avionics.masterArm = 'ARM';
-      sim.avionics.gunPac = 'ARM';
-      for (let i = 0; i < 120 * 4; i++) {
-        sim.input.trigger = i >= 60 && i < 180 ? 2 : 0;
-        stepSim(sim);
+  it(
+    'a recorded strafing pass: every vehicle with a hit has its hits plotted (integration)',
+    {
+      timeout: 120_000,
+    },
+    () => {
+      /** A trimmed 45° dive at 300 kn, a one-second burst at two T-72s 20 m apart. */
+      const pass = (seed: number, tanks: { x: number; z: number }[]): Sim => {
+        const sim = createSim({
+          seed,
+          terrain: createFlatTerrain(100),
+          scenario: 'empty',
+          start: { x: 0, z: 0, agl: 700, heading: 0, speed: 300 * 0.514444, gamma: -45 * DEG },
+        });
+        for (const t of tanks) createVehicle(sim, 'mbt', t.x, t.z, 0, 1);
+        sim.avionics.masterArm = 'ARM';
+        sim.avionics.gunPac = 'ARM';
+        for (let i = 0; i < 120 * 4; i++) {
+          sim.input.trigger = i >= 60 && i < 180 ? 2 : 0;
+          stepSim(sim);
+        }
+        return sim;
+      };
+      const dry = pass(17, []);
+      let x = 0;
+      let z = 0;
+      for (const imp of dry.debrief.impacts) {
+        x += imp.x;
+        z += imp.z;
       }
-      return sim;
-    };
-    const dry = pass(17, []);
-    let x = 0;
-    let z = 0;
-    for (const imp of dry.debrief.impacts) {
-      x += imp.x;
-      z += imp.z;
-    }
-    x /= dry.debrief.impacts.length;
-    z /= dry.debrief.impacts.length;
-    let fragmentOnly = 0;
-    for (const seed of [17, 18, 19, 20]) {
-      const sim = pass(seed, [
-        { x: x + 3, z },
-        { x: x + 23, z },
-      ]);
-      const d = sim.debrief;
-      expect(d.passes).toHaveLength(1);
-      expect(d.hitLinks).toHaveLength(d.hits.length);
-      for (const link of d.hitLinks) expect(link.impact).toBeGreaterThanOrEqual(0);
-      for (const g of hitsByVehicle(d.hits)) {
-        expect(vehicleMarks(d, g.vehicleId).length, `seed ${seed} vehicle ${g.vehicleId}`).toBeGreaterThan(0);
-        if (g.rounds === 0 && g.indirect > 0) fragmentOnly++;
+      x /= dry.debrief.impacts.length;
+      z /= dry.debrief.impacts.length;
+      let fragmentOnly = 0;
+      for (const seed of [17, 18, 19, 20]) {
+        const sim = pass(seed, [
+          { x: x + 3, z },
+          { x: x + 23, z },
+        ]);
+        const d = sim.debrief;
+        expect(d.passes).toHaveLength(1);
+        expect(d.hitLinks).toHaveLength(d.hits.length);
+        for (const link of d.hitLinks) expect(link.impact).toBeGreaterThanOrEqual(0);
+        for (const g of hitsByVehicle(d.hits)) {
+          expect(
+            vehicleMarks(d, g.vehicleId).length,
+            `seed ${seed} vehicle ${g.vehicleId}`,
+          ).toBeGreaterThan(0);
+          if (g.rounds === 0 && g.indirect > 0) fragmentOnly++;
+        }
+        // DB-1 on the same pass: rounds that struck, never more than the rounds fired
+        const s = summarize(d, sim.gun, 2);
+        expect(s.gunHits).toBe(d.bursts.reduce((n, b) => n + b.hits, 0));
+        expect(s.gunHits).toBeLessThanOrEqual(s.roundsFired);
+        expect(s.gunHits).toBeLessThanOrEqual(d.hits.length);
+        expect(d.passes[0].hits).toHaveLength(d.hits.length);
       }
-      // DB-1 on the same pass: rounds that struck, never more than the rounds fired
-      const s = summarize(d, sim.gun, 2);
-      expect(s.gunHits).toBe(d.bursts.reduce((n, b) => n + b.hits, 0));
-      expect(s.gunHits).toBeLessThanOrEqual(s.roundsFired);
-      expect(s.gunHits).toBeLessThanOrEqual(d.hits.length);
-      expect(d.passes[0].hits).toHaveLength(d.hits.length);
-    }
-    // the case of the review: a vehicle hit only by the fragments of bursts nearby
-    expect(fragmentOnly).toBeGreaterThan(0);
-  });
+      // the case of the review: a vehicle hit only by the fragments of bursts nearby
+      expect(fragmentOnly).toBeGreaterThan(0);
+    },
+  );
 });
 
 describe('debrief: plots and names', () => {

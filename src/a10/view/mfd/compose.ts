@@ -8,7 +8,7 @@
 import { OSB_TABLE } from '../../core/avionics';
 import type { MfdPage } from '../../core/avionics/types';
 import type { Sim } from '../../core/types';
-import { pageSettings, createPageSettings, type PageContext } from './context';
+import type { PageContext } from './context';
 import { drawChrome, drawDsms, drawMsg, drawStat, osbActive, osbLabel, osbValue } from './pages';
 import { MFD_RATES } from './mfdLayout';
 import type { MfdPainter } from './painter';
@@ -81,8 +81,6 @@ function mixStr(h: number, s: string): number {
   return mix(h, 0x2f);
 }
 
-const settings = createPageSettings();
-
 /**
  * A hash of everything a text page shows (and of the OSB labels): equal hashes mean the page
  * would draw the same. Continuous pages (TGP, MAV, TAD) do not use it.
@@ -106,12 +104,10 @@ export function pageSignature(ctx: PageContext): number {
     case 'STAT':
       h = statSignature(sim, h);
       break;
-    case 'MSG': {
-      const ps = pageSettings(sim, settings);
+    case 'MSG':
       h = mix(h, ctx.messages.version);
-      h = mix(h, Math.round(ps.msgClearTime * 10));
+      h = mix(h, Math.round(av.pages.msgClearTime * 10));
       break;
-    }
     default:
       // Continuous pages change with time.
       h = mix(h, Math.round(ctx.time * 1000));
@@ -121,11 +117,11 @@ export function pageSignature(ctx: PageContext): number {
 
 function dsmsSignature(sim: Sim, h: number): number {
   const av = sim.avionics;
-  const ps = pageSettings(sim, settings);
+  const ps = av.pages;
   h = mixStr(h, av.selectedProfile);
   h = mix(h, ps.jettisonStation);
   h = mix(h, ps.dsmsCodeDigit);
-  h = mix(h, (av as unknown as { selectedStation?: number }).selectedStation ?? 0);
+  h = mix(h, av.selectedStation);
   h = mix(h, sim.gun.rounds);
   h = mixStr(h, sim.gun.load);
   const st = sim.stores.stations;

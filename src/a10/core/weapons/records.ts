@@ -110,9 +110,7 @@ export function openRecord(sim: Sim, r: ReleaseInfo): number {
     store: r.store,
     station: r.station,
     delivery: r.delivery,
-    aim: r.aimValid
-      ? { x: r.aim.x, y: r.aim.y, z: r.aim.z }
-      : { x: NaN, y: NaN, z: NaN },
+    aim: r.aimValid ? { x: r.aim.x, y: r.aim.y, z: r.aim.z } : { x: NaN, y: NaN, z: NaN },
     aimValid: r.aimValid,
     impact: { x: NaN, y: NaN, z: NaN },
     simulated: false,

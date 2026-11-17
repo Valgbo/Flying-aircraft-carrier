@@ -111,7 +111,10 @@ export default function PauseMenu() {
 
         {view === 'debrief' ? (
           <>
-            <div className="a10-pause__scroll a10-debrief__body" data-testid="a10-pause-debrief-view">
+            <div
+              className="a10-pause__scroll a10-debrief__body"
+              data-testid="a10-pause-debrief-view"
+            >
               {sim ? <DebriefView sim={sim} /> : <p className="a10-note">No flight.</p>}
             </div>
             <div className="a10-pause__actions a10-pause__actions--row">

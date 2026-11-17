@@ -106,6 +106,37 @@ describe('loadout choices persistence', () => {
     expect(useA10Store.getState().ammoLoad).toBe('allHEI');
   });
 
+  it('the free choice: its stations under their own key, "custom" restored only with a legal load', async () => {
+    const load4 = { 4: ['TER-9A', 'MK-82', 'MK-82'], 10: ['AN/AAQ-28'] };
+    const storage = memoryStorage({
+      'a10-ui-v1': JSON.stringify({ loadoutId: 'custom', gunLoad: 'allAPI' }),
+      'a10-loadout-v1': JSON.stringify(load4),
+    });
+    const { useA10Store, useA10Ui, persistLoadoutChoices } = await load(storage);
+    expect(useA10Ui.getState().customStations).toEqual(load4);
+    persistLoadoutChoices();
+    expect(useA10Store.getState().loadoutId).toBe('custom');
+    // a change of the custom load is saved under its key; 'a10-ui-v1' keeps its two fields
+    useA10Ui.getState().setCustomStations({ 8: ['GBU-12'] });
+    expect(JSON.parse(storage.getItem('a10-loadout-v1')!)).toEqual({ 8: ['GBU-12'] });
+    useA10Store.getState().setAmmoLoad('allHEI');
+    expect(saved(storage)).toEqual({ loadoutId: 'custom', gunLoad: 'allHEI' });
+
+    // no legal custom load saved: 'custom' is ignored like a retired preset
+    for (const text of [null, JSON.stringify({ 5: ['AGM-65D'] }), 'not json']) {
+      const init: Record<string, string> = {
+        'a10-ui-v1': JSON.stringify({ loadoutId: 'custom', gunLoad: 'allAPI' }),
+      };
+      if (text) init['a10-loadout-v1'] = text;
+      const fresh = await load(memoryStorage(init));
+      const defaultId = fresh.useA10Store.getState().loadoutId;
+      fresh.persistLoadoutChoices();
+      expect(fresh.useA10Store.getState().loadoutId).toBe(defaultId);
+      expect(fresh.useA10Store.getState().ammoLoad).toBe('allAPI');
+      expect(fresh.useA10Ui.getState().customStations).toEqual({});
+    }
+  });
+
   it('offers the four gun loads the weapons module knows, the combat mix first', async () => {
     const { GUN_LOADS, isAmmoLoad } = await load(memoryStorage());
     expect(GUN_LOADS.map((g) => g.id)).toEqual(['combatMix', 'allHEI', 'allAPI', 'targetPractice']);

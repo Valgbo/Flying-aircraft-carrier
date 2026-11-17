@@ -205,6 +205,11 @@ export interface VehicleInternal {
   popTime: number;
   /** Small cook-off detonations left (ammunition trucks). */
   popsLeft: number;
+  /**
+   * TNT-equivalent charge of the vehicle's own explosion whose blast and fragments still have to
+   * reach its neighbours (set by explode(), applied by stepTargets in the same step), kg; 0 = none.
+   */
+  secondaryCharge: number;
   /** Weapon that last damaged the vehicle (kill attribution). */
   lastWeapon: string;
   /**

@@ -4,20 +4,27 @@
  * target, drawn underneath by the display renderer; these functions draw the symbology over it
  * from the sensors' state. Pure: no rendering, no allocation.
  *
- * TGP: crosshair, the track gate of the track mode (POINT box, AREA brackets), track mode, field
- * of view and electronic zoom, picture mode, laser arming, "T"/"L" and the range at the lower
- * left ("L" while the laser fires), laser code and latch, SPI when the pod is the SPI generator,
- * a line-of-sight cue (pod azimuth and elevation), MASK, NOT TIMED OUT while the pod warms up.
+ * The page's options and their settings — picture polarity, field of view, zoom, track mode,
+ * laser latch and code, seeker power — are printed by the OSB labels (the avionics' OSB table
+ * values), so the page itself does not repeat them.
  *
- * MAV: the variant and station, the pointing cross (where the seeker looks relative to the
- * aircraft; it flashes while the seeker tracks), the track gate (dashed searching, solid locked),
- * TRK and IN RNG, field of view, NOT TIMED OUT with the alignment time left.
+ * TGP: crosshair; the track gate of the track mode (POINT box, AREA brackets); laser arming;
+ * at the lower left the slant range in nautical miles behind the letter of its source — "L"
+ * a laser range (flashing while the laser fires), "T" the pod's track, none while the pod is
+ * slaved or in inertial rate — and a solid "M" while the line of sight is masked; SPI when the
+ * pod is the SPI generator; a line-of-sight cue (pod azimuth and elevation); MASK; NOT TIMED OUT
+ * while the pod warms up.
+ *
+ * MAV: the variant and station; the pointing cross (where the seeker looks relative to the
+ * boresight; it flashes while the seeker tracks), the gimbal-limit circle when the seeker is held
+ * at its limit, the track gate (dashed searching, solid locked), TRK and IN RNG, the seeker's
+ * slant range, the missiles left; NOT TIMED OUT with the alignment time left.
  */
 import { NM } from '../../core/units';
-import type { StoreType } from '../../core/weapons/types';
+import { MAVERICK } from '../../data/sensors';
 import { ALIGN_LEFT, ALIGN_RIGHT } from '../hud/strokeFont';
-import { avionicsExtras, type PageContext, type SeekerExtras } from './context';
-import { MAV_PAGE, MFD_COLOR as C, MFD_TEXT as T, STORE_SHORT } from './mfdLayout';
+import type { PageContext } from './context';
+import { MAV_PAGE, MFD_COLOR as C, MFD_TEXT as T, STORE_SHORT, TGP_PAGE } from './mfdLayout';
 import type { MfdPainter } from './painter';
 
 /** What the last sensor page drew (tests and the sandbox). */
@@ -29,10 +36,25 @@ export interface SensorPageInfo {
   gate: 'NONE' | 'POINT' | 'AREA' | 'SEARCH' | 'LOCK';
   /** Status shown instead of the picture's symbology ('' when the sensor delivers). */
   status: string;
+  /** TGP: the range cue's source letter ('L', 'T' or ''), masked, and the range shown (m, 0 none). */
+  rangeSource: '' | 'L' | 'T';
+  masked: boolean;
+  range: number;
+  /** MAV: the gimbal-limit circle is drawn. */
+  gimbalLimit: boolean;
 }
 
 export function createSensorPageInfo(): SensorPageInfo {
-  return { crossX: 0, crossY: 0, gate: 'NONE', status: '' };
+  return {
+    crossX: 0,
+    crossY: 0,
+    gate: 'NONE',
+    status: '',
+    rangeSource: '',
+    masked: false,
+    range: 0,
+    gimbalLimit: false,
+  };
 }
 
 const TWO_HZ = 2;
@@ -40,6 +62,17 @@ const FOUR_HZ = 4;
 
 function flash(time: number, hz: number): boolean {
   return Math.floor(time * hz * 2) % 2 === 0;
+}
+
+function resetInfo(info: SensorPageInfo): void {
+  info.crossX = 0;
+  info.crossY = 0;
+  info.gate = 'NONE';
+  info.status = '';
+  info.rangeSource = '';
+  info.masked = false;
+  info.range = 0;
+  info.gimbalLimit = false;
 }
 
 /** A centred status (sensor off, warming up…) with an optional time below it. */
@@ -61,10 +94,7 @@ export function drawTgp(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
   const sim = ctx.sim;
   const av = sim.avionics;
   const tgp = sim.sensors.tgp;
-  info.crossX = 0;
-  info.crossY = 0;
-  info.gate = 'NONE';
-  info.status = '';
+  resetInfo(info);
   if (!av.tgpPower || !tgp.powered) {
     status(p, info, 'TGP OFF');
     return;
@@ -74,17 +104,18 @@ export function drawTgp(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
     return;
   }
   const masked = tgp.masked;
+  info.masked = masked;
 
   // Crosshair with a centre gap and range ticks.
   p.color(masked ? C.grey : C.green);
-  const g = 0.06;
-  const L = 0.6;
+  const g = TGP_PAGE.crossGap;
+  const L = TGP_PAGE.crossArm;
   p.seg(-L, 0, -g, 0);
   p.seg(g, 0, L, 0);
   p.seg(0, -L, 0, -g);
   p.seg(0, g, 0, L);
   for (let k = 1; k <= 3; k++) {
-    const d = g + k * 0.15;
+    const d = g + k * TGP_PAGE.tickStep;
     p.seg(-d, -0.02, -d, 0.02);
     p.seg(d, -0.02, d, 0.02);
     p.seg(-0.02, -d, 0.02, -d);
@@ -92,57 +123,63 @@ export function drawTgp(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
   }
   // Track gate.
   if (tgp.mode === 'POINT') {
-    p.box(-0.08, -0.08, 0.08, 0.08, 1.4);
+    const h = TGP_PAGE.pointGate;
+    p.box(-h, -h, h, h, 1.4);
     info.gate = 'POINT';
   } else if (tgp.mode === 'AREA') {
-    p.brackets(0, 0, 0.1, 0.035, 1.4);
+    p.brackets(0, 0, TGP_PAGE.areaGate, 0.035, 1.4);
     info.gate = 'AREA';
   }
 
-  // Track mode (top left), field of view and zoom, picture (top right).
-  p.color(C.white);
-  p.buf.clear().str(tgp.mode);
-  if (masked) p.buf.str('-M');
-  p.text(-0.62, 0.62, T.body, ALIGN_LEFT);
-  p.str(tgp.fovSetting === 'WIDE' ? 'WIDE' : 'NARO', 0.62, 0.62, T.body, ALIGN_RIGHT);
-  if (tgp.zoom > 1.01) {
-    p.buf.clear().fixed(tgp.zoom, 1).ch(88 /* X */);
-    p.text(0.62, 0.53, T.small, ALIGN_RIGHT);
-  }
-  p.str(tgp.picture, 0.62, 0.44, T.small, ALIGN_RIGHT);
-
-  // Laser: arming, T/L with the range (lower left), code and latch (lower right).
-  const ext = avionicsExtras(sim);
-  p.buf.clear().str('LSR ').str(av.laserArm === 'TRAIN' ? 'TRN' : av.laserArm);
+  // Laser arming (the armament panel's LASER switch).
+  const x0 = TGP_PAGE.leftX;
+  p.buf
+    .clear()
+    .str('LSR ')
+    .str(av.laserArm === 'TRAIN' ? 'TRN' : av.laserArm);
   p.color(av.laserArm === 'ARM' ? C.green : C.white);
-  p.text(-0.62, -0.53, T.small, ALIGN_LEFT);
-  const lasing = tgp.lasing;
-  const range =
-    tgp.laserRange > 0
-      ? tgp.laserRange
+  p.text(x0, TGP_PAGE.lowerY + TGP_PAGE.rowStep, T.small, ALIGN_LEFT);
+
+  // Range and its source: L (laser, flashing while it fires), T (track), none (slaved / INR).
+  const lasing = tgp.lasing && tgp.laserRange > 0;
+  const tracking = tgp.mode === 'POINT' || tgp.mode === 'AREA';
+  const range = lasing
+    ? tgp.laserRange
+    : tgp.pointRange > 0
+      ? tgp.pointRange
       : tgp.pointValid
         ? sim.aircraft.position.distanceTo(tgp.point)
         : 0;
-  p.color(lasing ? C.yellow : C.white);
-  if (!lasing || flash(ctx.time, TWO_HZ)) {
-    p.buf.clear().ch(lasing ? 76 /* L */ : 84 /* T */);
-    if (range > 0) p.buf.ch(32).fixed(range / NM, 1);
-    p.text(-0.62, -0.62, T.body, ALIGN_LEFT);
+  info.rangeSource = lasing ? 'L' : tracking ? 'T' : '';
+  info.range = range;
+  const y = TGP_PAGE.lowerY;
+  const cw = T.body * 0.95;
+  if (lasing) {
+    p.color(C.yellow);
+    if (flash(ctx.time, TWO_HZ)) p.str('L', x0, y, T.body, ALIGN_LEFT);
+  } else if (tracking) {
+    p.color(C.white);
+    p.str('T', x0, y, T.body, ALIGN_LEFT);
   }
-  p.color(C.white);
-  const code = typeof ext.laserCode === 'number' ? ext.laserCode : tgp.laserCode;
-  p.buf.clear().int(code, 4);
-  p.text(0.62, -0.62, T.body, ALIGN_RIGHT);
-  if (ext.laserLatch === true || tgp.latched) p.str('LTCH', 0.62, -0.53, T.small, ALIGN_RIGHT);
+  if (masked) {
+    p.color(C.yellow);
+    p.str('M', x0 + cw, y, T.body, ALIGN_LEFT);
+  }
+  if (range > 0) {
+    p.color(C.white);
+    p.buf.clear().fixed(range / NM, 1);
+    p.text(x0 + 2.6 * cw, y, T.body, ALIGN_LEFT);
+  }
+
   if (av.spi.valid && av.spi.source === 'TGP') {
     p.color(C.green);
-    p.str('SPI', 0, -0.62, T.body);
+    p.str('SPI', 0, y, T.body);
   }
 
   // Line-of-sight cue: the pod's azimuth (±180°) and elevation (+90…−90°) in a small box.
-  const bx = 0.42;
-  const by = -0.3;
-  const h = 0.07;
+  const bx = TGP_PAGE.losX;
+  const by = TGP_PAGE.losY;
+  const h = TGP_PAGE.losHalf;
   p.color(C.grey);
   p.box(bx - h, by - h, bx + h, by + h);
   p.color(C.white);
@@ -167,10 +204,7 @@ export function drawTgp(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
 export function drawMav(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): void {
   const sim = ctx.sim;
   const sensors = sim.sensors;
-  info.crossX = 0;
-  info.crossY = 0;
-  info.gate = 'NONE';
-  info.status = '';
+  resetInfo(info);
   const i = sensors.selectedMaverick;
   const s = i >= 0 ? sensors.mavericks[i] : undefined;
   if (!s) {
@@ -178,10 +212,9 @@ export function drawMav(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
     return;
   }
   // Variant and station (top left).
-  const st = sim.stores.stations[s.station - 1];
-  const type = (s as typeof s & SeekerExtras).type ?? st?.stores[0];
+  const type = s.type ?? sim.stores.stations[s.station - 1]?.stores[0];
   p.color(C.white);
-  p.str(type ? (STORE_SHORT[type as StoreType] ?? type) : 'MAV', -0.62, 0.62, T.body, ALIGN_LEFT);
+  p.str(type ? (STORE_SHORT[type] ?? type) : 'MAV', -0.62, 0.62, T.body, ALIGN_LEFT);
   p.buf.clear().str('STA ').int(s.station);
   p.text(-0.62, 0.53, T.small, ALIGN_LEFT);
   if (!s.powered) {
@@ -192,14 +225,12 @@ export function drawMav(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
     status(p, info, 'NOT TIMED OUT', s.align);
     return;
   }
-  p.str(s.fov === 'NARROW' ? 'NARO' : 'WIDE', 0.62, 0.62, T.body, ALIGN_RIGHT);
-  const band = (s as typeof s & SeekerExtras).band;
-  if (band) p.str(band, 0.62, 0.53, T.small, ALIGN_RIGHT);
 
   // Pointing cross: where the seeker looks relative to the aircraft's axis.
-  const scale = 0.85 / MAV_PAGE.gimbalScale;
-  const x = Math.max(-0.85, Math.min(0.85, s.gimbalAz * scale));
-  const y = Math.max(-0.85, Math.min(0.85, s.gimbalEl * scale));
+  const scale = MAV_PAGE.crossRange / MAV_PAGE.gimbalScale;
+  const r = MAV_PAGE.crossRange;
+  const x = Math.max(-r, Math.min(r, s.gimbalAz * scale));
+  const y = Math.max(-r, Math.min(r, s.gimbalEl * scale));
   info.crossX = x;
   info.crossY = y;
   if (!s.locked || flash(ctx.time, FOUR_HZ)) {
@@ -210,6 +241,12 @@ export function drawMav(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
     p.seg(x + gap, y, x + a, y, 1.4);
     p.seg(x, y - a, x, y - gap, 1.4);
     p.seg(x, y + gap, x, y + a, 1.4);
+  }
+  // Gimbal cue: held at the limit, the limit shows as a dashed circle the cross rides on.
+  if (s.atLimit) {
+    p.color(C.yellow);
+    p.circle(0, 0, MAVERICK.gimbalLimit * scale, true);
+    info.gimbalLimit = true;
   }
 
   // Track gate at the centre of the picture (the seeker tracks what is in it).
@@ -233,8 +270,13 @@ export function drawMav(ctx: PageContext, p: MfdPainter, info: SensorPageInfo): 
     p.color(C.white);
     p.seg(0.575, -0.4, 0.575, -0.4 + 0.4 * c, 3);
   }
-  // Missiles left.
+  // Slant range (nm) and the missiles left (lower right).
   p.color(C.white);
+  if (s.range > 0) {
+    info.range = s.range;
+    p.buf.clear().fixed(s.range / NM, 1);
+    p.text(0.62, -0.53, T.small, ALIGN_RIGHT);
+  }
   p.buf.clear().int(sensors.mavericks.length).str(' MSL');
   p.text(0.62, -0.62, T.body, ALIGN_RIGHT);
   if (!ctx.picture) {

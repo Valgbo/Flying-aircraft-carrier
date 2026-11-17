@@ -290,7 +290,7 @@ describe('flight model: PLAN §5 checks', () => {
   );
 
   it(
-    'dive recovery: a 4 g pull-out from a 30° dive at 300 kn matches the closed form ± 15 % and, with the g onset allowed for, the plan\'s 105 m ± 10 %',
+    "dive recovery: a 4 g pull-out from a 30° dive at 300 kn matches the closed form ± 15 % and, with the g onset allowed for, the plan's 105 m ± 10 %",
     () => {
       const v0 = 300 * KT;
       const sim = createTestbed({ altitude: 1500, tas: v0, gamma: -30 * DEG, throttle: 0 });

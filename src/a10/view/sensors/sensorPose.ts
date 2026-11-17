@@ -162,6 +162,24 @@ export function pictureEffectivePixels(
 }
 
 /**
+ * Width of the picture's point-spread function, as a Gaussian σ in picture pixels of
+ * `fov / pixels` rad: the optics' Airy core (0.42 λ / D), further blur `blurRad` (jitter,
+ * turbulence) and the detector pixel's own area (a box of one pixel: σ = 1/√12), added in
+ * quadrature. Content much finer than this is gone from the picture, as from a real one.
+ */
+export function picturePsfPixels(
+  fov: number,
+  pixels: number,
+  wavelengthUm: number,
+  apertureM: number,
+  blurRad: number,
+): number {
+  const pixel = fov / Math.max(1, pixels);
+  const airy = (SENSOR_OPTICS.airyGaussian * wavelengthUm * 1e-6) / apertureM;
+  return Math.sqrt((airy * airy + blurRad * blurRad) / (pixel * pixel) + 1 / 12);
+}
+
+/**
  * Orient `out.quaternion` to look along `out.direction` with `upRef` as the picture's up (it need
  * not be perpendicular; `fallback` serves when it is parallel to the direction).
  */
@@ -194,7 +212,8 @@ export function tgpCameraPose(sim: Sim, out: SensorCameraPose): boolean {
   if (station < 0) return false;
   const tgp = sim.sensors.tgp as TgpExtra;
   if (trustedHead(sim, tgp.head)) out.position.copy(tgp.head);
-  else if (mountBody(station, SENSOR_MOUNTS.podHead, _offset)) bodyToWorld(sim, _offset, out.position);
+  else if (mountBody(station, SENSOR_MOUNTS.podHead, _offset))
+    bodyToWorld(sim, _offset, out.position);
   else return false;
   const d = out.direction;
   if (tgp.pointValid) d.subVectors(tgp.point, out.position);
@@ -205,7 +224,10 @@ export function tgpCameraPose(sim: Sim, out: SensorCameraPose): boolean {
   _fwd.set(0, 0, -1).applyQuaternion(sim.aircraft.orientation);
   _fwd.y = 0;
   if (_fwd.lengthSq() > 1e-12) _fwd.normalize();
-  const t = Math.min(1, Math.max(0, (-d.y - NADIR_BLEND_START) / (NADIR_BLEND_END - NADIR_BLEND_START)));
+  const t = Math.min(
+    1,
+    Math.max(0, (-d.y - NADIR_BLEND_START) / (NADIR_BLEND_END - NADIR_BLEND_START)),
+  );
   _ref.copy(WORLD_UP).addScaledVector(_fwd, t * t * (3 - 2 * t));
   orient(out, _ref, _fwd);
   finishPose(sim, out, tgp.fov);

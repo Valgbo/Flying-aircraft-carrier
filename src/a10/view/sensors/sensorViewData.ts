@@ -57,12 +57,25 @@ export const SENSOR_OPTICS = {
   ccdWavelengthUm: 0.7,
   /** Long-wave band centre, µm (the AGM-65D/G imaging-infrared seeker, 8–12 µm). */
   maverickIrWavelengthUm: 10,
-  /** Clear aperture of the pod's optics, m (no public figure; a 10 cm class window). */
-  podApertureM: 0.1,
+  /**
+   * Clear aperture of the pod's optics, m. No public figure: chosen so the narrow field is
+   * matched to its detector (diffraction 1.22 λ / D ≈ 1.2 detector pixels of the 1° field at
+   * 4 µm), as imaging pods are designed — the electronic zoom beyond ×2 then only enlarges.
+   */
+  podApertureM: 0.15,
   /** Clear aperture of a Maverick seeker, m (inside the 0.30 m body). */
   maverickApertureM: 0.12,
   /** Rayleigh criterion: one resolvable angle = 1.22 λ / D. */
   rayleigh: 1.22,
+  /** The Airy disc's core as a Gaussian: σ ≈ 0.42 λ / D. */
+  airyGaussian: 0.42,
+  /**
+   * Further blur of the picture, rad rms: the line of sight's residual jitter (the stabilized
+   * gimbal) and the turbulence of a slant path through the boundary layer. Pod: a stabilized
+   * gimbal; Maverick: a seeker vibrating on its rail under the wing.
+   */
+  podBlurRad: 12e-6,
+  maverickBlurRad: 30e-6,
 } as const;
 
 export const SENSOR_OPTICS_NOTES: Record<keyof typeof SENSOR_OPTICS, SourceNote> = {
@@ -77,9 +90,28 @@ export const SENSOR_OPTICS_NOTES: Record<keyof typeof SENSOR_OPTICS, SourceNote>
     confidence: 'approximate',
     note: 'Hughes tri-service imaging-infrared seeker, long-wave',
   },
-  podApertureM: { source: 'plan', confidence: 'estimate' },
+  podApertureM: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'no public figure; matched to a 640-pixel 1° mid-wave field (D ≥ 1.22 λ / IFOV ≈ 0.18 m)',
+  },
   maverickApertureM: { source: 'wikiAgm65', confidence: 'estimate', note: '0.30 m body' },
-  rayleigh: { source: 'plan', confidence: 'confirmed', note: 'diffraction limit of a circular aperture' },
+  rayleigh: {
+    source: 'plan',
+    confidence: 'confirmed',
+    note: 'diffraction limit of a circular aperture',
+  },
+  airyGaussian: {
+    source: 'plan',
+    confidence: 'confirmed',
+    note: 'best Gaussian fit to the Airy intensity pattern: σ ≈ 0.42 λ N in the image plane',
+  },
+  podBlurRad: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'stabilized pod LOS jitter ~5–10 µrad plus MWIR slant-path turbulence',
+  },
+  maverickBlurRad: { source: 'plan', confidence: 'estimate' },
 };
 
 /**
@@ -101,7 +133,11 @@ export const RADIOMETRY = {
 } as const;
 
 export const RADIOMETRY_NOTES: Record<keyof typeof RADIOMETRY, SourceNote> = {
-  skyZenithClear: { source: 'plan', confidence: 'estimate', note: 'window-band sky, clear and dry' },
+  skyZenithClear: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'window-band sky, clear and dry',
+  },
   skyZenithHazy: { source: 'plan', confidence: 'estimate' },
   skyZenithEmissivity: {
     source: 'plan',
@@ -109,15 +145,22 @@ export const RADIOMETRY_NOTES: Record<keyof typeof RADIOMETRY, SourceNote> = {
     note: 'Bliss (1961): ε(θ) = 1 − (1 − ε_z)^(1/cos θ)',
   },
   airCp: { source: 'usStandardAtmosphere1976', confidence: 'confirmed' },
-  recoveryFactor: { source: 'plan', confidence: 'approximate', note: 'turbulent flow, r ≈ Pr^(1/3)' },
+  recoveryFactor: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'turbulent flow, r ≈ Pr^(1/3)',
+  },
 };
 
 /** Detector, sensor and video noise. */
 export const SENSOR_NOISE = {
   /** Pod FLIR temporal noise (noise-equivalent temperature difference), K rms: cooled array. */
   podNetd: 0.05,
-  /** Pod FLIR residual fixed-pattern (column) non-uniformity after correction, K rms. */
-  podFpn: 0.03,
+  /**
+   * Pod FLIR residual fixed-pattern (column) non-uniformity after correction, K rms: well under
+   * the temporal noise (a two-point corrected staring array).
+   */
+  podFpn: 0.02,
   /** Maverick IIR temporal noise, K rms (an older scanned seeker). */
   maverickIrNetd: 0.15,
   /** Maverick IIR line-to-line non-uniformity (scanned detector: streaks along the rows), K rms. */
@@ -135,7 +178,7 @@ export const SENSOR_NOISE = {
 
 export const SENSOR_NOISE_NOTES: Record<keyof typeof SENSOR_NOISE, SourceNote> = {
   podNetd: { source: 'plan', confidence: 'estimate', note: 'cooled mid-wave arrays: 20–50 mK' },
-  podFpn: { source: 'plan', confidence: 'estimate' },
+  podFpn: { source: 'plan', confidence: 'estimate', note: 'residual NUC error ~1/3 of NETD' },
   maverickIrNetd: { source: 'plan', confidence: 'estimate' },
   maverickIrFpn: { source: 'plan', confidence: 'estimate' },
   podCcdElectrons: { source: 'plan', confidence: 'estimate' },
@@ -159,11 +202,23 @@ export const SENSOR_AGC = {
   irLowQuantile: 0.002,
   irHighQuantile: 0.998,
   /**
-   * Infrared range limits, K: maximum gain (a uniform scene shows its noise; at least ten times
-   * the detector's total noise) and minimum gain.
+   * Infrared range limits, K: maximum gain (the narrowest range: a uniform scene shows its noise)
+   * and minimum gain (the widest range).
    */
   irMinSpan: 1.5,
   irMaxSpan: 150,
+  /**
+   * The narrowest range is also at least this many times the detector's total noise (rms), so
+   * at the maximum gain a uniform scene's noise is 1/20 of the display range: visible grain, not
+   * snow.
+   */
+  irNoiseSpan: 20,
+  /**
+   * Level control: the range is widened on one side until the picture's median is at least this
+   * share of the range above the low end as below the high end (1 = the median mid-range): the
+   * bulk of the scene sits in the mid-greys, as a thermal imager's mean output level does.
+   */
+  irLevelBalance: 1,
   /** Plateau of the histogram equalization, in mean bin counts. */
   irPlateau: 2.5,
   /** Share of the equalized curve in the transfer curve (the rest is a straight line). */
@@ -174,8 +229,15 @@ export const SENSOR_AGC = {
   /** Television: quantiles for the black level and the highlights. */
   tvLowQuantile: 0.02,
   tvHighQuantile: 0.98,
+  /**
+   * Television: the picture's median at this share of full scale (linear light): mid-grey on the
+   * display, as an average-metering auto-exposure sets it.
+   */
+  tvMidLevel: 0.3,
   /** Share of the darkest level the black-level control removes (haze penetration). */
-  tvBlackStretch: 0.85,
+  tvBlackStretch: 0.5,
+  /** Most of full scale the black level may take (a stretch of at most 1 / (1 − this)). */
+  tvMaxBlack: 0.6,
   /** Exposure range relative to daylit ground: brightest scene and the gain limit (low light). */
   tvMinScene: 16,
   tvMaxGain: 64,
@@ -192,6 +254,12 @@ export const SENSOR_AGC_NOTES: Record<keyof typeof SENSOR_AGC, SourceNote> = {
   irHighQuantile: { source: 'plan', confidence: 'estimate' },
   irMinSpan: { source: 'plan', confidence: 'estimate' },
   irMaxSpan: { source: 'plan', confidence: 'estimate' },
+  irNoiseSpan: { source: 'plan', confidence: 'estimate' },
+  irLevelBalance: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'the mean-output-level (ITT mean) control of plateau-equalizing thermal cores',
+  },
   irPlateau: {
     source: 'plan',
     confidence: 'estimate',
@@ -202,7 +270,17 @@ export const SENSOR_AGC_NOTES: Record<keyof typeof SENSOR_AGC, SourceNote> = {
   displayHigh: { source: 'plan', confidence: 'estimate' },
   tvLowQuantile: { source: 'plan', confidence: 'estimate' },
   tvHighQuantile: { source: 'plan', confidence: 'estimate' },
-  tvBlackStretch: { source: 'plan', confidence: 'estimate' },
+  tvMidLevel: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'average metering: a median near 18–30 % linear reads mid-grey',
+  },
+  tvBlackStretch: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'dark-object subtraction (remote-sensing haze correction), partial',
+  },
+  tvMaxBlack: { source: 'plan', confidence: 'estimate' },
   tvMinScene: { source: 'plan', confidence: 'estimate' },
   tvMaxGain: { source: 'plan', confidence: 'estimate' },
   tvGamma: { source: 'plan', confidence: 'confirmed', note: 'ITU-R BT.709 camera transfer (0.45)' },
@@ -219,6 +297,14 @@ export const SENSOR_RENDER = {
   far: 90000,
   /** The Maverick picture's size relative to the quality's sensor resolution. */
   maverickScale: 0.75,
+  /**
+   * Scene samples per detector pixel along each axis, per graphics preset. A detector integrates
+   * the light over its pixel's area; one point sample per pixel instead aliases what is finer
+   * than a pixel (jagged silhouettes and wires, crawling edges). 2 × 2 samples weighted by the
+   * point-spread function integrate the area; Low keeps one sample per pixel (the scene pass's
+   * fill cost is ×4 with 2 × 2: about 28 → 76 ms per pod picture in software WebGL).
+   */
+  supersample: { low: 1, medium: 2, high: 2 },
   /** Statistics grid of the AGC (samples per side). */
   statsSize: 64,
 } as const;

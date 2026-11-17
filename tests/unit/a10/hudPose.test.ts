@@ -72,10 +72,7 @@ function rotatingDive(p: number, q: number, pitchDeg = -30): Sim {
   omegaFromRates(p, q, 0, ac.angularVelocity);
   // One step back: q_prev = q_cur ⊗ exp(−ω dt), position and velocity back along the motion.
   const w = ac.angularVelocity;
-  const back = new Quaternion().setFromAxisAngle(
-    w.clone().normalize(),
-    -w.length() * SIM_DT,
-  );
+  const back = new Quaternion().setFromAxisAngle(w.clone().normalize(), -w.length() * SIM_DT);
   ac.prevOrientation.copy(ac.orientation).multiply(back);
   ac.prevVelocity.copy(ac.velocity).add(new Vector3(0, 9.81 * SIM_DT, 0));
   ac.prevPosition.copy(ac.position).addScaledVector(ac.velocity, -SIM_DT);

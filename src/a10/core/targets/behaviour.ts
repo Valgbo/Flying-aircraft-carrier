@@ -15,6 +15,8 @@ import {
   KILL_RULES,
   MOBILITY,
   SCENARIO,
+  SECONDARY_EFFECTS,
+  SECONDARY_FRAGMENTS,
   THERMAL,
   VEHICLE_SHAPES,
 } from '../../data/vehicles';
@@ -22,6 +24,7 @@ import { G0 } from '../constants';
 import { headingOf, wrapPi } from '../frames';
 import type { Sim } from '../types';
 import { createRoadPoint } from '../world/roads';
+import { applySecondaryBlast } from './blast';
 import { forEachNear } from './grid';
 import { extendRoute, legAt, routeEnd, routePoint } from './route';
 import { groundOk, spawnHuntGroup, updateGroupBounds } from './scenario';
@@ -49,15 +52,15 @@ const powered = (v: Vehicle) => v.kind !== 'hulk' && v.kind !== 'panel';
 
 // ---- Alerts ------------------------------------------------------------------------------------
 
-let alertX = 0;
-let alertZ = 0;
+/** The point of the current alert scan (an object: numbers in module variables are boxed). */
+const alertAt = { x: 0.5, z: 0.5 };
 let alertSim: Sim | null = null;
 
 function visitAlert(i: number): boolean {
   const sim = alertSim as Sim;
   const v = sim.targets.vehicles[i];
-  const dx = v.position.x - alertX;
-  const dz = v.position.z - alertZ;
+  const dx = v.position.x - alertAt.x;
+  const dz = v.position.z - alertAt.z;
   if (dx * dx + dz * dz <= MOBILITY.alertRadius * MOBILITY.alertRadius) {
     const g = groupById(sim, v.groupId);
     if (g && g.reacts && g.alertTime < 0) g.alertTime = sim.time;
@@ -83,8 +86,8 @@ function groupById(sim: Sim, id: number): VehicleGroup | null {
 /** Alert every group with a vehicle within the alert radius of (x, z). */
 function alertNear(sim: Sim, x: number, z: number): void {
   alertSim = sim;
-  alertX = x;
-  alertZ = z;
+  alertAt.x = x;
+  alertAt.z = z;
   const r = MOBILITY.alertRadius;
   forEachNear(sim.targets, x - r, z - r, x + r, z + r, visitAlert);
   alertSim = null;
@@ -323,7 +326,7 @@ function stepGoal(sim: Sim, v: Vehicle, dt: number): boolean {
   }
   const dx = rt.goalX - v.position.x;
   const dz = rt.goalZ - v.position.z;
-  const d = Math.hypot(dx, dz);
+  const d = Math.sqrt(dx * dx + dz * dz);
   if (d < 4) {
     rt.hasGoal = false;
     approachSpeed(v, 0, dt);
@@ -463,23 +466,31 @@ function stepFire(sim: Sim, v: Vehicle, dt: number): void {
       scheduleExplosion(sim, v, sim.rng.damage.range(fx.cookOffDelay[0], fx.cookOffDelay[1]));
   }
   if (rt.explodeTime >= 0 && sim.time >= rt.explodeTime) explode(sim, v, rt.lastWeapon);
+  // the blast and fragments of its explosion reach the neighbours (review TE-1)
+  if (rt.secondaryCharge > 0) {
+    const charge = rt.secondaryCharge;
+    rt.secondaryCharge = 0;
+    const p = v.position;
+    applySecondaryBlast(sim, v, p.x, p.y + 1.2, p.z, charge, SECONDARY_FRAGMENTS[v.kind]);
+  }
   if (rt.popsLeft > 0 && sim.time >= rt.popTime && fx) {
     const r = sim.rng.damage;
     rt.popsLeft--;
     rt.popTime = sim.time + r.range(1.5, Math.max(2, (fx.popSpan[1] - fx.popSpan[0]) / 4));
+    const x = v.position.x + r.range(-2, 2);
+    const y = v.position.y + r.range(0.5, 2);
+    const z = v.position.z + r.range(-2, 2);
+    const charge = r.range(fx.popCharge[0], fx.popCharge[1]);
     sim.events.push({
       type: 'detonation',
       t: sim.time,
-      position: {
-        x: v.position.x + r.range(-2, 2),
-        y: v.position.y + r.range(0.5, 2),
-        z: v.position.z + r.range(-2, 2),
-      },
-      charge: r.range(fx.popCharge[0], fx.popCharge[1]),
+      position: { x, y, z },
+      charge,
       kind: 'secondary',
       vehicleId: v.id,
       surface: sim.world.terrain.surfaceAt(v.position.x, v.position.z),
     });
+    applySecondaryBlast(sim, v, x, y, z, charge, charge * SECONDARY_EFFECTS.popCaseRatio);
   }
 }
 
@@ -542,7 +553,9 @@ function cleanupWrecks(sim: Sim): void {
   for (let i = 0; i < t.vehicles.length; i++) {
     const v = t.vehicles[i];
     if (isAlive(v) || sim.time - v.conditionTime < SCENARIO.wreckAge) continue;
-    if (Math.hypot(v.position.x - a.x, v.position.z - a.z) < SCENARIO.wreckDistance) continue;
+    const dx = v.position.x - a.x;
+    const dz = v.position.z - a.z;
+    if (dx * dx + dz * dz < SCENARIO.wreckDistance * SCENARIO.wreckDistance) continue;
     if (oldest < 0 || v.conditionTime < t.vehicles[oldest].conditionTime) oldest = i;
   }
   if (oldest < 0) return;

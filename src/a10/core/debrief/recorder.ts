@@ -174,7 +174,12 @@ function nearestVehicle(
 }
 
 /** Give a pass its aim point and target (once; a later event fills what the first lacked). */
-function aimPass(sim: Sim, p: PassRecord, aim: { x: number; y: number; z: number } | null, lock: number): void {
+function aimPass(
+  sim: Sim,
+  p: PassRecord,
+  aim: { x: number; y: number; z: number } | null,
+  lock: number,
+): void {
   if (!p.aimValid && aim && Number.isFinite(aim.x) && Number.isFinite(aim.z)) {
     p.aim.x = aim.x;
     p.aim.y = aim.y;
@@ -187,7 +192,8 @@ function aimPass(sim: Sim, p: PassRecord, aim: { x: number; y: number; z: number
   if (layout?.event === 'bombCircle' && layout.centreId >= 0) v = findVehicle(sim, layout.centreId);
   if (!v && lock >= 0) v = findVehicle(sim, lock);
   if (!v && p.aimValid) {
-    const panels = layout?.event === 'strafePit' && layout.panels.length ? layout.panels : undefined;
+    const panels =
+      layout?.event === 'strafePit' && layout.panels.length ? layout.panels : undefined;
     v = nearestVehicle(sim, p.aim.x, p.aim.z, DEBRIEF_LIMITS.targetRadius, panels);
     if (!v && panels) v = nearestVehicle(sim, p.aim.x, p.aim.z, DEBRIEF_LIMITS.targetRadius);
   }

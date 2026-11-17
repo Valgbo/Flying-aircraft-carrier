@@ -17,7 +17,10 @@ const DEG = Math.PI / 180;
 export type DebriefTestbed = ReturnType<typeof createDebriefTestbed>;
 
 /** A sim whose aircraft and gun the test drives by hand; each step runs stepDebrief only. */
-export function createDebriefTestbed(scenario: ScenarioKind = 'empty', terrain: Terrain = createFlatTerrain(0)) {
+export function createDebriefTestbed(
+  scenario: ScenarioKind = 'empty',
+  terrain: Terrain = createFlatTerrain(0),
+) {
   const sim = createSim({ terrain, scenario, seed: 3 });
   sim.events.length = 0;
   const ac = sim.aircraft;
@@ -185,4 +188,3 @@ export function createDebriefTestbed(scenario: ScenarioKind = 'empty', terrain: 
   };
   return h;
 }
-

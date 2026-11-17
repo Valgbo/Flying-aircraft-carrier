@@ -584,13 +584,7 @@ export type DetonationKind =
  * - `secondary`: a vehicle's ammunition or fuel going up (or one of its cook-off pops).
  */
 export type DetonationRecipe =
-  | 'none'
-  | 'bombBurst'
-  | 'smallBurst'
-  | 'missileHit'
-  | 'whitePhosphorus'
-  | 'dud'
-  | 'secondary';
+  'none' | 'bombBurst' | 'smallBurst' | 'missileHit' | 'whitePhosphorus' | 'dud' | 'secondary';
 
 /** Bursts at or above this charge (kg TNT) raise a dust and smoke cloud that lingers. */
 export const LINGERING_CLOUD_CHARGE = 20;
@@ -679,7 +673,8 @@ export function explosion(
       _dir.x * v,
       _dir.y * v + (fuel ? 6 : 2) * sq,
       _dir.z * v,
-      0.9 * s,
+      // big charges start big: the products of an aluminised fill keep burning as they expand
+      (0.9 + 0.15 * Math.min(s, 4)) * s,
       R.range(2.0, 2.8) * s * (fuel ? 1.8 : 1),
       (0.7 + 0.28 * s) * R.range(0.75, 1.25) * (fuel ? 2.2 : 1),
     );
@@ -849,6 +844,57 @@ export function explosion(
     } else
       ctx.decals.add(x, ground, z, o.nx, o.ny, o.nz, Math.max(0.6, 1.4 * s), DECAL.scorch, 600);
   }
+}
+
+/**
+ * The cloud of a bomb's surface burst (`bombBurst`), on top of `explosion`: the soil the blast
+ * pulverises and throws up, mixed with the soot of the explosive and lifted by the burst's hot
+ * gases. A dark dome tens of metres wide within a second or two that climbs as a buoyant thermal
+ * (PK.blastCloud) and drifts downwind — for a Mk-82 (s ≈ 4.6) about 40 m wide and 30–40 m tall
+ * after two seconds, 60–70 m tall after six. Fewer puffs at lower quality or distance are drawn
+ * larger, so the cloud keeps its size and density and only loses detail.
+ */
+export function bombCloud(
+  ctx: FxContext,
+  x: number,
+  ground: number,
+  z: number,
+  charge: number,
+  surface: SurfaceKind,
+): void {
+  const { ps } = ctx;
+  const baseDelay = ps.delay;
+  const s = Math.cbrt(Math.max(0.02, charge));
+  const sf = surfaceFx(surface);
+  const lod = lodAt(ctx, x, ground, z);
+  ps.groundY = ground;
+  const full = 18 + 5 * Math.min(s, 4);
+  const n = count(ctx, full, lod, 12);
+  const fill = Math.min(1.7, Math.sqrt(full / n));
+  for (let j = 0; j < n; j++) {
+    cone(0, 1, 0, 1.25, _dir);
+    const v = R.range(15, 38) * Math.sqrt(s / 4.6);
+    const r = R.next() * 0.5 * s;
+    // the dome billows out over a tenth of a second, not in one frame
+    ps.delay = baseDelay + R.range(0, 0.1);
+    const i = ps.spawn(
+      PK.blastCloud,
+      x + _dir.x * r,
+      ground + 0.5 * s + _dir.y * r,
+      z + _dir.z * r,
+      _dir.x * v,
+      _dir.y * v * 0.8 + R.range(2, 6),
+      _dir.z * v,
+      1.6 * s * fill * R.range(0.8, 1.2),
+      4.8 * s * fill * R.range(0.8, 1.25),
+      (18 + 2.5 * s) * R.range(0.75, 1.3),
+    );
+    // pale sunlit dust (surfaces.ts) with the soot of the charge: what is thrown up high is
+    // mostly fine dust, the low skirt of the dome darker soil and smoke
+    const c = mix3(sf.dust, SOOT, R.range(0.12, 0.3) + 0.3 * (1 - _dir.y));
+    ps.color(i, c[0], c[1], c[2], 0.9);
+  }
+  ps.delay = baseDelay;
 }
 
 /**

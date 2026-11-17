@@ -150,7 +150,11 @@ export interface MaverickSeekerState {
   type: StoreType;
   /** Imaging infrared (D, G) or television (H, K). */
   band: SensorBand;
-  /** Place on its station: 0 = the next to leave (only rail 0 can be selected). */
+  /**
+   * Launcher rail (mount, in the fill order of MAVERICK_RAILS) the missile hangs on; it keeps it
+   * when the missiles before it leave. A station's first missile (the next to leave) is the one
+   * that can be selected.
+   */
   rail: number;
   /** This is the selected missile (its seeker is the uncaged one). */
   selected: boolean;
@@ -207,6 +211,18 @@ export interface SensorsInternal {
   /** The pod's station as last synced, and whether the airframe mask must be rebuilt. */
   maskStation: number;
   maskDirty: boolean;
+  /**
+   * Per station (index = station number): the load code the mask was built with (loads.ts),
+   * compared every step so a release, a jettison or a rearm rebuilds the mask.
+   */
+  maskLoads: Int32Array;
+  /**
+   * Per station (loads.ts): stores at the last fill (the start or a rearm), stores now, and the
+   * load code (rack, first store, count) as last synced.
+   */
+  loadInitial: Int32Array;
+  loadCount: Int32Array;
+  loadCode: Int32Array;
   /** Airframe mask boxes (BODY frame, 6 numbers each: min xyz, max xyz) and how many there are. */
   maskBoxes: Float64Array;
   maskCount: number;

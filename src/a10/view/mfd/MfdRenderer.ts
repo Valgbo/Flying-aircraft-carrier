@@ -7,7 +7,10 @@
  * Colour: the render target stores 8-bit sRGB (hardware encodes on write and decodes on read),
  * holding LINEAR colours like any other texture: the cockpit's unlit, not tone-mapped screen
  * material shows them as they are. The sensor picture is taken as display-referred linear
- * values and clamped to 0..1.
+ * values and clamped to 0..1. It is shown whenever the sensor-view module publishes one: its
+ * texture shows what the sensor shows in every state (black without video, a featureless field
+ * when masked). Over a picture with video the page is drawn twice into the one batch — first
+ * every stroke as a wider dark outline, then the strokes in colour — so it reads on any picture.
  *
  * Cost: a display is drawn only when its page is due (compose.ts): sensor pages at the quality
  * preset's sensor rate, the map at 15 Hz, text pages when they change.
@@ -45,10 +48,11 @@ import {
   MFD_COLOR,
   MFD_COLORS,
   MFD_LINE_WIDTH,
+  MFD_OUTLINE,
   MFD_RATES,
   MFD_RESOLUTION,
 } from './mfdLayout';
-import { MfdPainter } from './painter';
+import { MfdPainter, type ColorSink } from './painter';
 
 const PICTURE_VERTEX = /* glsl */ `
 varying vec2 vUv;
@@ -78,12 +82,24 @@ export class MfdDisplayRenderer {
   readonly info: PageInfo = createPageInfo();
   /** Drawings made (diagnostics, tests). */
   draws = 0;
+  /** The last drawing had the outline pass (a picture with video under the page). */
+  outlined = false;
   private readonly quad: Mesh;
   private readonly pictureMaterial: ShaderMaterial;
+  /** Palette colour 0 (the style's) is the outline colour. */
   private readonly style: LineStyle = {
-    color: MFD_COLORS.green.clone(),
+    color: MFD_COLORS.outline.clone(),
     lineWidth: MFD_LINE_WIDTH,
     opacity: 1,
+  };
+  /** Writes every stroke as its outline: wider, in the outline colour (colour changes ignored). */
+  private readonly outline: ColorSink = {
+    color: MFD_COLOR.outline,
+    seg: (x0, y0, x1, y1, w = 1) => {
+      const b = this.batch;
+      b.color = MFD_COLOR.outline;
+      b.seg(x0, y0, x1, y1, w + MFD_OUTLINE.extraPx / MFD_LINE_WIDTH, 1);
+    },
   };
   readonly ctx: PageContext;
 
@@ -165,19 +181,31 @@ export class MfdDisplayRenderer {
     return true;
   }
 
-  /** Build the page's strokes and render the display. */
+  /** Build the page's strokes and render the display (the SOI flag is the last `update`'s). */
   compose(gl: WebGLRenderer, sim: Sim, page: MfdPage): void {
     const ctx = this.ctx;
+    ctx.sim = sim;
+    ctx.page = page;
+    ctx.time = sim.time;
     const picture: SensorPictureInfo | null =
       page === 'TGP' ? getSensorPicture('TGP') : page === 'MAV' ? getSensorPicture('MAV') : null;
     ctx.picture = picture;
     if (page === 'DSMS') buildDsmsView(sim, ctx.dsms);
+    const video = picture !== null && (picture.valid || picture.status === 'MASKED');
     const b = this.batch;
+    const p = this.painter;
     b.begin();
-    this.painter.reset(b);
-    drawPage(ctx, this.painter, this.info);
+    if (video) {
+      // All outlines first: a later stroke's outline must not cut into an earlier stroke.
+      p.reset(this.outline);
+      drawPage(ctx, p, this.info);
+    }
+    p.reset(b);
+    p.color(MFD_COLOR.green);
+    drawPage(ctx, p, this.info);
     b.end();
-    this.quad.visible = picture !== null && picture.valid;
+    this.outlined = video;
+    this.quad.visible = picture !== null;
     this.pictureMaterial.uniforms.tPicture.value = picture?.texture ?? null;
     b.setFrame(this.target.width, this.target.height, this.style, this.camera);
 
@@ -204,11 +232,21 @@ export class MfdDisplayRenderer {
   }
 }
 
+/** CPU time the displays take (diagnostics: the dev hook and the sandbox). */
+export interface MfdStats {
+  /** Last frame's `render` call, ms, and its running average (time constant ≈ 1 s at 60 Hz). */
+  cpuMs: number;
+  cpuMsAvg: number;
+  /** Display drawings in the last frame (0, 1 or 2). */
+  draws: number;
+}
+
 /** Both displays and the message log they share. */
 export class MfdRenderer {
   readonly messages = new MessageLog(32);
   readonly left: MfdDisplayRenderer;
   readonly right: MfdDisplayRenderer;
+  readonly stats: MfdStats = { cpuMs: 0, cpuMsAvg: 0, draws: 0 };
   /** Real seconds since the renderer started (the schedules' clock). */
   clock = 0;
   private sim: Sim | null = null;
@@ -228,9 +266,15 @@ export class MfdRenderer {
       this.right.schedule.invalidate();
     }
     this.clock += Math.max(0, dt);
+    const t0 = performance.now();
     const av = sim.avionics;
-    this.left.update(gl, sim, av.mfd.left, av.soi === 'LMFD', this.clock, sensorRate);
-    this.right.update(gl, sim, av.mfd.right, av.soi === 'RMFD', this.clock, sensorRate);
+    let n = 0;
+    if (this.left.update(gl, sim, av.mfd.left, av.soi === 'LMFD', this.clock, sensorRate)) n++;
+    if (this.right.update(gl, sim, av.mfd.right, av.soi === 'RMFD', this.clock, sensorRate)) n++;
+    const st = this.stats;
+    st.cpuMs = performance.now() - t0;
+    st.cpuMsAvg += (st.cpuMs - st.cpuMsAvg) * 0.016;
+    st.draws = n;
   }
 
   /** Redraw both displays at the next render (new surfaces). */

@@ -4,6 +4,7 @@
  */
 export * from './meta';
 export {
+  canardPivotsOf,
   createCockpitModel,
   createStoreInstance,
   getA10Meta,
@@ -13,7 +14,9 @@ export {
   loadStoreModel,
   onAircraftTemplates,
   podTubesOf,
+  prepareCanards,
   prepareRocketPod,
+  setCanardsLive,
   storeModelId,
   type AircraftTemplates,
   type PodTubes,

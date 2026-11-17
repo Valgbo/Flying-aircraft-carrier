@@ -3,9 +3,11 @@
  *
  *   scene=rockets   chase view: a ripple of seven rockets from station 2 (`&wp=1`: M156 smoke)
  *   scene=mk82      a Mk-82 released onto a vehicle group (`&dist=`: camera to the burst, 500)
- *   scene=wp        a white-phosphorus mark (`&dist=3000`; `__A10_FX__.warm(120)`: 2 min later)
+ *   scene=wp        a white-phosphorus mark (`&dist=3000`; `__A10_FX__.warm(120)`: 2 min later;
+ *                   `&n=1`: one smoke rocket instead of a ripple of seven)
  *   scene=maverick  a Maverick from station 3 onto a tank 2.5 km ahead (`&at=launch|impact`)
  *   scene=ballute   a Mk-82 AIR high-drag release, the camera beside the bomb
+ *   scene=gbu12     a GBU-12 lased onto the tank, the camera beside it (its canards at work)
  *   scene=pylons    the loaded aircraft close up (`&fired=n` rockets gone from the pod)
  *
  * The real views draw it (AircraftView with its stations, the stores in flight, the effects, the
@@ -35,8 +37,8 @@ import {
   type CameraPose,
 } from './effectsKit';
 
-type SceneId = 'rockets' | 'mk82' | 'wp' | 'maverick' | 'ballute' | 'pylons';
-const SCENES: SceneId[] = ['rockets', 'mk82', 'wp', 'maverick', 'ballute', 'pylons'];
+type SceneId = 'rockets' | 'mk82' | 'wp' | 'maverick' | 'ballute' | 'gbu12' | 'pylons';
+const SCENES: SceneId[] = ['rockets', 'mk82', 'wp', 'maverick', 'ballute', 'gbu12', 'pylons'];
 
 const SPEED = 150; // m/s, ≈290 kn
 const G = 9.81;
@@ -103,7 +105,8 @@ class StoresScene {
     this.toys.length = 0;
     sim.projectiles.bodies.length = 0;
     // tank hunter, with a Mk 82 AIR on station 7 and HE or smoke rockets as asked
-    const pod: StoreType = params.get('wp') === '1' || scene === 'wp' ? 'LAU-131-M156' : 'LAU-131-M151';
+    const pod: StoreType =
+      params.get('wp') === '1' || scene === 'wp' ? 'LAU-131-M156' : 'LAU-131-M151';
     const load: Record<number, { rack: StoreType | null; stores: StoreType[] }> = {
       2: { rack: null, stores: [pod] },
       3: { rack: 'LAU-88', stores: ['AGM-65D', 'AGM-65D'] },
@@ -126,11 +129,20 @@ class StoresScene {
     // rockets: a 15° dive from 1.8 km at the target; a Mk-82 level from 900 m, released so the
     // fall (≈13.5 s, ≈2 km forward) ends at the group; a Maverick from 2.5 km
     const dive = scene === 'rockets' || scene === 'wp' ? (15 * Math.PI) / 180 : 0;
-    this.altitude = scene === 'mk82' ? 900 : scene === 'ballute' ? 150 : dive > 0 ? 480 : 600;
+    this.altitude =
+      scene === 'mk82'
+        ? 900
+        : scene === 'ballute'
+          ? 150
+          : scene === 'gbu12'
+            ? 700
+            : dive > 0
+              ? 480
+              : 600;
     const startZ =
       scene === 'maverick'
         ? 0
-        : scene === 'mk82'
+        : scene === 'mk82' || scene === 'gbu12'
           ? this.targetZ + 1990
           : dive > 0
             ? this.targetZ + this.altitude / Math.tan(dive)
@@ -149,7 +161,13 @@ class StoresScene {
   }
 
   /** Where station `s`'s store `index` (or a rocket tube) is now, world. */
-  private mountWorld(s: number, rack: StoreType | null, stores: StoreType[], index: number, out: Vector3): void {
+  private mountWorld(
+    s: number,
+    rack: StoreType | null,
+    stores: StoreType[],
+    index: number,
+    out: Vector3,
+  ): void {
     const t = getAircraftTemplates();
     const ac = this.world.sim.aircraft;
     if (!t || !storeMount(t, s, rack, stores, index, out, _q)) {
@@ -168,13 +186,22 @@ class StoresScene {
     const rocket = st.rockets !== undefined;
     if (rocket && !(st.rockets! > 0)) return null;
     const missile = type.startsWith('AGM-65');
-    const kind: StoreBodyKind = rocket ? 'rocket' : missile ? 'missile' : 'bomb';
+    const lgb = type === 'GBU-12';
+    const kind: StoreBodyKind = rocket
+      ? 'rocket'
+      : missile
+        ? 'missile'
+        : lgb
+          ? 'laserBomb'
+          : 'bomb';
     const ac = sim.aircraft;
     const p = new Vector3();
     this.mountWorld(s, st.rack, st.stores, 0, p);
     if (rocket) {
       // from the pod's tube (the stores view blends from the exact tube)
-      p.set(A10_GEOMETRY.stations[s]!.x, -0.95, -0.2).applyQuaternion(ac.orientation).add(ac.position);
+      p.set(A10_GEOMETRY.stations[s]!.x, -0.95, -0.2)
+        .applyQuaternion(ac.orientation)
+        .add(ac.position);
       st.rockets = st.rockets! - 1;
     } else st.stores.shift();
     const v = ac.velocity.clone();
@@ -221,7 +248,9 @@ class StoresScene {
       target: opts.target ?? null,
       balluteAt: opts.highDrag ? 0.3 : -1,
     });
-    const events: SimEvent[] = [{ type: 'storeReleased', t: 0, station: s, store: type, bodyId: id }];
+    const events: SimEvent[] = [
+      { type: 'storeReleased', t: 0, station: s, store: type, bodyId: id },
+    ];
     if (rocket || missile) events.push({ type: 'motorIgnition', t: 0, bodyId: id });
     for (const e of events) this.world.schedule(0, e);
     return b;
@@ -234,8 +263,10 @@ class StoresScene {
 
   /** Every frame: the scripted actions, then fly the aircraft and the stores (1/120 s steps). */
   private step(dt: number): void {
+    // paused (screenshots): nothing moves, and the previous poses stay those of the last step
+    if (!(dt > 0)) return;
     const sim = this.world.sim;
-    for (let i = 0; i < this.timers.length; ) {
+    for (let i = 0; i < this.timers.length;) {
       if (this.timers[i].at <= sim.time + dt) {
         const t = this.timers.splice(i, 1)[0];
         t.fn();
@@ -284,12 +315,28 @@ class StoresScene {
     v.addScaledVector(_v, a * h);
     v.addScaledVector(v, -k * speed * h);
     v.y -= G * h;
-    if (toy.target && b.kind === 'missile') {
-      // pursuit: turn the velocity toward the target within 15 g
-      _p.set(toy.target.position.x, toy.target.position.y + 1.2, toy.target.position.z).sub(b.position);
+    if (toy.target && b.kind === 'laserBomb' && age > 1) {
+      // a toy Paveway: the seeker sees the spot on the target after a second, and the canards
+      // (drawn from this guidance) pull bang-bang toward it at about 2 g per axis
+      const g = b.guidance;
+      g.mode = 'LASER';
+      g.valid = true;
+      g.point.set(toy.target.position.x, toy.target.position.y + 1, toy.target.position.z);
+      // the line of sight off the flight path (the bomb flies north: x across, y up)
+      _p.copy(g.point).sub(b.position).normalize();
+      _p.sub(_v.copy(v).normalize());
+      v.x += Math.sign(_p.x) * 2 * G * h;
+      v.y += Math.sign(_p.y) * 2 * G * h;
+    }
+    if (toy.target && b.kind === 'missile' && age > 0.4) {
+      // off the rail and clear of the aircraft, pursuit: turn the velocity toward the target
+      // within 8 g
+      _p.set(toy.target.position.x, toy.target.position.y + 1.2, toy.target.position.z).sub(
+        b.position,
+      );
       const want = _p.normalize().multiplyScalar(v.length());
       const turn = want.sub(v);
-      const max = 15 * G * h;
+      const max = 8 * G * h;
       if (turn.length() > max) turn.setLength(max);
       v.add(turn);
     }
@@ -386,11 +433,14 @@ class StoresScene {
     const s = this.scene;
     if (s === 'rockets' || s === 'wp') {
       // a ripple: one rocket every 90 ms
-      for (let k = 0; k < 7; k++) this.after(0.4 + k * 0.09, () => this.release(2));
+      const n = Math.max(1, Math.min(7, Math.round(numParam('n', 7))));
+      for (let k = 0; k < n; k++) this.after(0.4 + k * 0.09, () => this.release(2));
     } else if (s === 'mk82') {
       this.after(0.3, () => this.release(5));
     } else if (s === 'ballute') {
       this.after(0.3, () => this.release(7, { highDrag: true }));
+    } else if (s === 'gbu12') {
+      this.after(0.3, () => this.release(4, { target: this.tanks[0] }));
     } else if (s === 'maverick') {
       this.after(0.5, () => this.release(3, { target: this.tanks[0] }));
     }
@@ -412,7 +462,10 @@ export default function StoresSandbox() {
     const store = useA10Store.getState();
     const before = store.view;
     store.setView('chase');
-    loadAircraftModels().then(() => setReady(true), (e: unknown) => console.error(e));
+    loadAircraftModels().then(
+      () => setReady(true),
+      (e: unknown) => console.error(e),
+    );
     return () => useA10Store.getState().setView(before);
   }, []);
 
@@ -480,13 +533,20 @@ export default function StoresSandbox() {
         return true;
       };
     }
-    if (scene === 'ballute') {
+    if (scene === 'ballute' || scene === 'gbu12') {
       return (cam: PerspectiveCamera) => {
         const b = stage.world.sim.projectiles.bodies[0];
         const ac = stage.world.sim.aircraft;
         const p = b ? b.position : ac.position;
-        cam.position.set(p.x + 12, p.y + 2, p.z + 6);
-        cam.lookAt(p.x, p.y, p.z);
+        if (scene === 'gbu12') {
+          // close beside the guidance kit: the canards (the model is drawn a step, ≈1.2 m, behind
+          // the body's latest position)
+          cam.position.set(p.x + 1.9, p.y + 0.8, p.z + 0.5);
+          cam.lookAt(p.x, p.y - 0.15, p.z - 0.3);
+        } else {
+          cam.position.set(p.x + 12, p.y + 2, p.z + 6);
+          cam.lookAt(p.x, p.y, p.z);
+        }
         return true;
       };
     }
@@ -527,4 +587,3 @@ export default function StoresSandbox() {
     </KitStage>
   );
 }
-

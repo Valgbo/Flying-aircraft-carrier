@@ -108,7 +108,11 @@ function HitTable({ rows, limit = ROW_LIMIT }: { rows: readonly HitRow[]; limit?
               <th scope="col" className="a10-num" title="Plate thickness along the line of flight">
                 Armour
               </th>
-              <th scope="col" className="a10-num" title="What the round could penetrate at that speed">
+              <th
+                scope="col"
+                className="a10-num"
+                title="What the round could penetrate at that speed"
+              >
                 Penetration
               </th>
               <th scope="col">Result</th>
@@ -129,7 +133,10 @@ function HitTable({ rows, limit = ROW_LIMIT }: { rows: readonly HitRow[]; limit?
                     {capitalize(humanize(h.outcome))}
                   </span>
                   {h.damaged.length > 0 && (
-                    <span className="a10-table__aside"> · {h.damaged.map(humanize).join(', ')}</span>
+                    <span className="a10-table__aside">
+                      {' '}
+                      · {h.damaged.map(humanize).join(', ')}
+                    </span>
                   )}
                 </td>
               </tr>
@@ -161,6 +168,11 @@ function RangeScore({ range }: { range: RangeView }) {
         Range score · {range.title}
       </h2>
       <p className="a10-note">{range.line}</p>
+      {range.conditions && (
+        <p className="a10-note a10-range-conditions" data-testid="a10-range-weather">
+          {range.conditions}
+        </p>
+      )}
       {range.strafe &&
         (range.strafe.rows.length === 0 ? (
           <p className="a10-note">No strafing pass yet.</p>
@@ -397,7 +409,10 @@ function PassDetail({ pass }: { pass: PassView }) {
         <div className="a10-pass__tables">
           <h4 className="a10-pass__sub">Release conditions</h4>
           <TableWrap>
-            <table className="a10-table a10-table--dense a10-table--nowrap" data-testid="a10-pass-events">
+            <table
+              className="a10-table a10-table--dense a10-table--nowrap"
+              data-testid="a10-pass-events"
+            >
               <thead>
                 <tr>
                   <th scope="col">Weapon</th>
@@ -482,8 +497,9 @@ function Passes({ passes }: { passes: readonly PassView[] }) {
   const index = chosen !== null && chosen < passes.length ? chosen : passes.length - 1;
   const pass = passes[index];
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
-    let next = index;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = Math.min(passes.length - 1, index + 1);
+    let next: number;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight')
+      next = Math.min(passes.length - 1, index + 1);
     else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = Math.max(0, index - 1);
     else if (e.key === 'Home') next = 0;
     else if (e.key === 'End') next = passes.length - 1;
@@ -493,7 +509,11 @@ function Passes({ passes }: { passes: readonly PassView[] }) {
     document.getElementById(`a10-pass-tab-${next}`)?.focus();
   };
   return (
-    <section className="a10-card" aria-labelledby="a10-passes-title" data-testid="a10-debrief-passes">
+    <section
+      className="a10-card"
+      aria-labelledby="a10-passes-title"
+      data-testid="a10-debrief-passes"
+    >
       <h2 className="a10-section-title" id="a10-passes-title">
         Passes
       </h2>
@@ -503,7 +523,13 @@ function Passes({ passes }: { passes: readonly PassView[] }) {
         </p>
       ) : (
         <div className="a10-passes">
-          <div className="a10-passes__list" role="tablist" aria-label="Passes" aria-orientation="vertical" onKeyDown={onKey}>
+          <div
+            className="a10-passes__list"
+            role="tablist"
+            aria-label="Passes"
+            aria-orientation="vertical"
+            onKeyDown={onKey}
+          >
             {passes.map((p) => (
               <button
                 key={p.index}
@@ -831,7 +857,11 @@ export default function DebriefView({ sim }: { sim: Sim }) {
         <Stat
           label="Passes"
           value={formatInt(summary.passes)}
-          sub={summary.weaponsReleased > 0 ? `${formatInt(summary.weaponsReleased)} stores released` : undefined}
+          sub={
+            summary.weaponsReleased > 0
+              ? `${formatInt(summary.weaponsReleased)} stores released`
+              : undefined
+          }
         />
         <Stat
           label="Rounds fired"

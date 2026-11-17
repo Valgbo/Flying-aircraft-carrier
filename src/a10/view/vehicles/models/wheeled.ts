@@ -299,7 +299,8 @@ export function buildTruck(
     const tw = W / 2 - 0.02;
     const shoulder = top - 0.32;
     const arc: number[] = [-tw, yTilt, tw, yTilt, tw, shoulder];
-    const steps = lod === 0 ? 6 : 2;
+    // the far model's tilt keeps its round shoulders (a gable roof leaves armour undrawn)
+    const steps = lod === 0 ? 6 : 4;
     for (let k = 1; k < steps; k++) {
       const a = (k / steps) * Math.PI;
       arc.push(Math.cos(a) * tw, shoulder + Math.sin(a) * (top - shoulder));
@@ -333,29 +334,31 @@ export function buildTruck(
     b.setColor(P.paint);
     for (const side of [-1, 1]) b.box(side * (W / 2 - 0.03), yBed + 0.25, zMid, 0.06, 0.4, bedLen);
     b.box(0, yBed + 0.25, L / 2 - 0.03, W, 0.4, 0.06);
-    // stacked ammunition crates
+    // stacked ammunition crates: two full layers and a top layer with every third crate left out
+    // (data/vehicles.ts builds the same stack as armour, review TE-6); the far model draws the two
+    // full layers of each stack as one block, and the top layer as the near model does
     const rows = 2;
     const cols = Math.max(2, Math.floor((bedLen - 0.2) / 1.0));
-    const layers = lod === 0 ? 3 : 1;
     const cw2 = (W - 0.25) / rows;
     const cl = (bedLen - 0.25) / cols;
     const chh = Math.min(0.5, (top - yBed - 0.3) / 3);
-    for (let ly = 0; ly < layers; ly++) {
-      for (let rI = 0; rI < rows; rI++) {
-        for (let c = 0; c < cols; c++) {
-          if (ly === 2 && (c + rI) % 3 === 0) continue;
-          const shade = 0.9 + 0.2 * (((c * 7 + rI * 3 + ly * 5) % 5) / 4);
+    for (let rI = 0; rI < rows; rI++) {
+      for (let c = 0; c < cols; c++) {
+        const x = -W / 2 + 0.125 + cw2 * (rI + 0.5);
+        const z = zBed + 0.125 + cl * (c + 0.5);
+        const topGap = (c + rI) % 3 === 0;
+        if (lod === 0) {
+          for (let ly = 0; ly < 3; ly++) {
+            if (ly === 2 && topGap) continue;
+            const shade = 0.9 + 0.2 * (((c * 7 + rI * 3 + ly * 5) % 5) / 4);
+            b.setColor(P.crate);
+            b.color.multiplyScalar(shade);
+            b.box(x, yBed + 0.06 + chh * (ly + 0.5), z, cw2 - 0.06, chh - 0.04, cl - 0.06);
+          }
+        } else {
           b.setColor(P.crate);
-          b.color.multiplyScalar(lod === 0 ? shade : 1);
-          const h = lod === 0 ? chh : chh * 2.5;
-          b.box(
-            -W / 2 + 0.125 + cw2 * (rI + 0.5),
-            yBed + 0.06 + h * (ly + 0.5),
-            zBed + 0.125 + cl * (c + 0.5),
-            cw2 - 0.06,
-            h - 0.04,
-            cl - 0.06,
-          );
+          b.box(x, yBed + 0.06 + chh, z, cw2 - 0.06, 2 * chh - 0.04, cl - 0.06);
+          if (!topGap) b.box(x, yBed + 0.06 + chh * 2.5, z, cw2 - 0.06, chh - 0.04, cl - 0.06);
         }
       }
     }

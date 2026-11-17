@@ -59,7 +59,9 @@ export function findRangeLayout(sim: Sim): RangeLayout {
       // left to right across the run-in
       const rx = Math.cos(layout.runIn);
       const rz = Math.sin(layout.runIn);
-      panels.sort((a, b) => a.position.x * rx + a.position.z * rz - (b.position.x * rx + b.position.z * rz));
+      panels.sort(
+        (a, b) => a.position.x * rx + a.position.z * rz - (b.position.x * rx + b.position.z * rz),
+      );
       for (const p of panels) layout.panels.push(p.id);
     }
   } else if (event === 'bombCircle') {

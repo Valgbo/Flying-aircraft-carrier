@@ -21,7 +21,7 @@ import {
 import { beforeEach, describe, expect, it } from 'vitest';
 import { quaternionFromAttitude } from '../../../src/a10/core/frames';
 import type { MaverickSeekerState } from '../../../src/a10/core/sensors/types';
-import { createSim } from '../../../src/a10/core/sim';
+import { createSim, runSim } from '../../../src/a10/core/sim';
 import type { Sim } from '../../../src/a10/core/types';
 import { createFlatTerrain } from '../../../src/a10/core/world';
 import { A10_GEOMETRY } from '../../../src/a10/data/geometry';
@@ -31,7 +31,10 @@ import {
   AGC_BINS,
   agcFromStats,
   createAgc,
+  equalize,
   irDisplay,
+  irMinSpanForNoise,
+  LUT_SIZE,
   stepAgc,
   STATS_IR_OFFSET,
   STATS_IR_RANGE,
@@ -74,15 +77,20 @@ import {
   mountBody,
   nearPlaneFor,
   pictureEffectivePixels,
+  picturePsfPixels,
   podStation,
   tgpCameraPose,
 } from '../../../src/a10/view/sensors/sensorPose';
-import { SENSOR_AGC, SENSOR_MOUNTS, SENSOR_OPTICS } from '../../../src/a10/view/sensors/sensorViewData';
 import {
-  maverickPictureStatus,
-  tgpPictureStatus,
-} from '../../../src/a10/view/sensors/validity';
-import { createTerrainMaterial, terrainUniforms } from '../../../src/a10/view/terrain/terrainMaterial';
+  SENSOR_AGC,
+  SENSOR_MOUNTS,
+  SENSOR_OPTICS,
+} from '../../../src/a10/view/sensors/sensorViewData';
+import { maverickPictureStatus, tgpPictureStatus } from '../../../src/a10/view/sensors/validity';
+import {
+  createTerrainMaterial,
+  terrainUniforms,
+} from '../../../src/a10/view/terrain/terrainMaterial';
 import {
   getThermalMode,
   setThermalLevelGain,
@@ -401,7 +409,10 @@ describe('scene state around a sensor render', () => {
     sky.renderOrder = -1000;
     clouds = new Mesh(plane, new ShaderMaterial({ transparent: true }));
     clouds.renderOrder = -10;
-    shadow = new Mesh(plane, new ShaderMaterial({ transparent: true, uniforms: { uColor: { value: new Color() } } }));
+    shadow = new Mesh(
+      plane,
+      new ShaderMaterial({ transparent: true, uniforms: { uColor: { value: new Color() } } }),
+    );
     bomb = new Mesh(plane, new MeshStandardMaterial());
     const vm = new MeshStandardMaterial();
     vm.onBeforeCompile = () => {};
@@ -439,7 +450,12 @@ describe('scene state around a sensor render', () => {
     expect(thermalUniforms.uThermalGain.value).toBeCloseTo(1 / CONTRAST.kelvinPerLevel, 15);
     expect(gl.shadowMap.autoUpdate).toBe(false);
     // the sky, the clouds and what has no thermal output are left out; the rest stays
-    expect([sky.visible, clouds.visible, shadow.visible, bomb.visible]).toEqual([false, false, false, false]);
+    expect([sky.visible, clouds.visible, shadow.visible, bomb.visible]).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
     expect([tile.visible, vehicle.visible]).toEqual([true, true]);
     exitSensorScene(scene, gl, saved);
     expect(snapshot()).toEqual(before);
@@ -456,7 +472,12 @@ describe('scene state around a sensor render', () => {
     expect(terrainUniforms.uHazeDensity.value).toBe(3e-5);
     expect((scene.fog as FogExp2).density).toBe(3e-5);
     expect((scene.fog as FogExp2).color.equals(a10Env.horizonColor)).toBe(true);
-    expect([sky.visible, clouds.visible, shadow.visible, bomb.visible]).toEqual([true, true, true, true]);
+    expect([sky.visible, clouds.visible, shadow.visible, bomb.visible]).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
     exitSensorScene(scene, gl, saved);
     expect(snapshot()).toEqual(before);
     expect(getThermalMode()).toBe(2);
@@ -537,38 +558,158 @@ function statsBytes(values: number[], band: 'IR' | 'TV'): Uint8Array {
 
 describe('automatic gain and level control', () => {
   const hist = new Int32Array(AGC_BINS);
+  const counts = new Float32Array(LUT_SIZE);
+  const N = 4096;
 
-  it('infrared: the window spans the 1st to 99th percentile and snaps on the first statistics', () => {
-    const agc = createAgc('IR');
-    // a scene from 0 to +20 K, plus a 0.5 % hot spot (a fire) at +60 K
+  /** A field from 0 to +20 K (uniform), plus a hot spot (a fire, 0.5 % of the picture) at +60 K. */
+  function fieldWithFire(): number[] {
     const values: number[] = [];
-    for (let i = 0; i < 4096; i++) values.push(i < 20 ? 60 : (20 * (i % 1000)) / 999);
-    agcFromStats(agc, statsBytes(values, 'IR'), values.length, hist);
+    for (let i = 0; i < N; i++) values.push(i < 20 ? 60 : (20 * (i % 1000)) / 999);
+    return values;
+  }
+
+  it('infrared: the range spans the 99.8th percentile, centred on the median, and snaps on the first statistics', () => {
+    const agc = createAgc('IR');
+    agcFromStats(agc, statsBytes(fieldWithFire(), 'IR'), N, hist, counts);
     expect(agc.hasTarget).toBe(true);
-    expect(agc.lo).toBeCloseTo(0.2, 0);
-    expect(agc.hi).toBeCloseTo(19.8, 0);
-    // the fire saturates white, the scene keeps its contrast
-    expect(irDisplay(agc, 60)).toBe(1);
-    expect(irDisplay(agc, 10)).toBeCloseTo(0.5, 1);
+    // 0.5 % of the picture is more than the top 0.2 %: the fire is inside the range
+    expect(agc.hi).toBeGreaterThan(59.8);
+    expect(agc.hi).toBeLessThan(60.1);
+    // the level control: the median (10 K) mid-range, so the low end goes down to −40 K
+    expect(agc.lo).toBeCloseTo(2 * 10 - agc.hi, 0);
+    expect(agc.lut).toEqual(agc.targetLut);
   });
 
-  it('infrared: a uniform scene gets the maximum gain; a fire-filled one the minimum', () => {
+  it('infrared: plateau equalization gives the field its grey levels, the fire stays on top', () => {
     const agc = createAgc('IR');
-    agcFromStats(agc, statsBytes(new Array(4096).fill(3), 'IR'), 4096, hist);
+    agcFromStats(agc, statsBytes(fieldWithFire(), 'IR'), N, hist, counts);
+    // white-hot is monotonic: hotter is never darker
+    let prev = -1;
+    for (let k = -45; k <= 65; k += 0.25) {
+      const g = irDisplay(agc, k);
+      expect(g).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = g;
+    }
+    // the fire at the top of the display, the field's middle in the mid-greys
+    expect(irDisplay(agc, 60)).toBeCloseTo(SENSOR_AGC.displayHigh, 2);
+    expect(Math.abs(irDisplay(agc, 10) - 0.5)).toBeLessThan(0.1);
+    // a straight line over the range would leave the 20 K field a fifth of the grey levels;
+    // equalized, it takes most of them, and equal steps of the uniform field look equal
+    const field = irDisplay(agc, 20) - irDisplay(agc, 0);
+    expect(field).toBeGreaterThan(0.6);
+    expect(field).toBeLessThan(SENSOR_AGC.displayHigh - SENSOR_AGC.displayLow);
+    const step1 = irDisplay(agc, 6) - irDisplay(agc, 2);
+    const step2 = irDisplay(agc, 16) - irDisplay(agc, 12);
+    expect(Math.abs(step1 - step2)).toBeLessThan(0.1 * step1);
+  });
+
+  it('infrared: the level control keeps the bulk mid-grey with the outliers on one side', () => {
+    // a warm field (19 K) with a hot road in a corner (3 %, 25 K) and a small cold hull (0.1 %)
+    const values: number[] = [];
+    for (let i = 0; i < N; i++) values.push(i < 4 ? 8 : i < 0.03 * N ? 25 : 18.8 + (i % 7) * 0.07);
+    const agc = createAgc('IR', 1.5);
+    agcFromStats(agc, statsBytes(values, 'IR'), N, hist, counts);
+    const field = irDisplay(agc, 19);
+    expect(field).toBeGreaterThan(0.35);
+    expect(field).toBeLessThan(0.65);
+    // the cold hull below the range is black, the road white: both stand out from the field
+    expect(irDisplay(agc, 8)).toBeLessThan(SENSOR_AGC.displayLow + 0.02);
+    expect(irDisplay(agc, 25)).toBeGreaterThan(field + 0.25);
+    // and the other way round: cold ground (1 K) with hot engines (2 %, 30 K)
+    const dawn: number[] = [];
+    for (let i = 0; i < N; i++) dawn.push(i < 0.02 * N ? 30 : 0.7 + (i % 9) * 0.07);
+    const cold = createAgc('IR', 1.5);
+    agcFromStats(cold, statsBytes(dawn, 'IR'), N, hist, counts);
+    const ground = irDisplay(cold, 1);
+    expect(ground).toBeGreaterThan(0.3);
+    expect(ground).toBeLessThan(0.65);
+    expect(irDisplay(cold, 30)).toBeGreaterThan(0.85);
+  });
+
+  it('infrared: the plateau keeps a large uniform background from taking all the levels', () => {
+    // 90 % of the picture at one temperature (a field), 10 % spread over 2…12 K (vehicles, trees)
+    const values: number[] = [];
+    for (let i = 0; i < N; i++) values.push(i < 0.9 * N ? 0 : 2 + (10 * (i % 410)) / 409);
+    const agc = createAgc('IR');
+    agcFromStats(agc, statsBytes(values, 'IR'), N, hist, counts);
+    // plain equalization would give the spread part 10 % of the levels (and the background 90 %)
+    const spread = irDisplay(agc, 12) - irDisplay(agc, 2);
+    expect(spread).toBeGreaterThan(0.5);
+    // the curve is the plateau-clipped cumulative histogram mixed with a straight line
+    const lut = new Float32Array(LUT_SIZE);
+    equalize(statsBytes(values, 'IR'), N, agc.lo, agc.hi, agc.minSpan, counts, lut);
+    expect(Array.from(lut)).toEqual(Array.from(agc.targetLut));
+    for (let i = 1; i < LUT_SIZE; i++) expect(lut[i]).toBeGreaterThanOrEqual(lut[i - 1]);
+    expect(lut[0]).toBeGreaterThan(0);
+    expect(lut[LUT_SIZE - 1]).toBeLessThan(1);
+  });
+
+  it('infrared: the curve is never steeper than the maximum gain (contrast limit)', () => {
+    // a uniform field with the detector's noise (0.16 K rms) fills the picture, a cold hull 2 %
+    const minSpan = irMinSpanForNoise(0.16);
+    expect(minSpan).toBeCloseTo(SENSOR_AGC.irNoiseSpan * 0.16, 9);
+    let r = 7;
+    const gauss = () => {
+      // a deterministic normal deviate (Box–Muller on an LCG)
+      r = (r * 1103515245 + 12345) & 0x7fffffff;
+      const u1 = Math.max(1e-9, r / 0x7fffffff);
+      r = (r * 1103515245 + 12345) & 0x7fffffff;
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos((2 * Math.PI * r) / 0x7fffffff);
+    };
+    const values: number[] = [];
+    for (let i = 0; i < N; i++) values.push(i < 0.02 * N ? 6 : 19 + 0.16 * gauss());
+    const agc = createAgc('IR', minSpan);
+    agcFromStats(agc, statsBytes(values, 'IR'), N, hist, counts);
+    const maxGain = (SENSOR_AGC.displayHigh - SENSOR_AGC.displayLow) / minSpan;
+    const span = agc.hi - agc.lo;
+    for (let k = agc.lo; k < agc.hi; k += span / 400) {
+      const slope = (irDisplay(agc, k + span / 400) - irDisplay(agc, k)) / (span / 400);
+      expect(slope).toBeLessThanOrEqual(maxGain * 1.0001);
+    }
+    // so the field's noise shows at most 1/irNoiseSpan of the display range (rms)
+    const noise = 0.16 * maxGain;
+    expect(noise).toBeLessThanOrEqual(
+      (SENSOR_AGC.displayHigh - SENSOR_AGC.displayLow) / SENSOR_AGC.irNoiseSpan + 1e-9,
+    );
+    // the cold hull still stands out against the field
+    expect(irDisplay(agc, 19) - irDisplay(agc, 6)).toBeGreaterThan(0.4);
+    // the shares still sum to the whole display range: the last entry is the centre of the last
+    // bin, whose share is at most the cap
+    const cap = span / LUT_SIZE / minSpan;
+    expect(agc.targetLut[LUT_SIZE - 1]).toBeLessThan(1);
+    expect(1 - agc.targetLut[LUT_SIZE - 1]).toBeLessThanOrEqual(0.5 * cap + 1e-6);
+  });
+
+  it('infrared: a uniform scene gets the maximum gain; a very wide one the minimum', () => {
+    const agc = createAgc('IR');
+    agcFromStats(agc, statsBytes(new Array(N).fill(3), 'IR'), N, hist, counts);
     expect(agc.hi - agc.lo).toBeCloseTo(SENSOR_AGC.irMinSpan, 2);
+    expect(agc.lo).toBeLessThan(3);
+    expect(agc.hi).toBeGreaterThan(3);
     const wide = createAgc('IR');
     const v: number[] = [];
-    for (let i = 0; i < 4096; i++) v.push(-100 + (i / 4095) * 220);
-    agcFromStats(wide, statsBytes(v, 'IR'), v.length, hist);
+    for (let i = 0; i < N; i++) v.push(-100 + (i / (N - 1)) * 220);
+    agcFromStats(wide, statsBytes(v, 'IR'), v.length, hist, counts);
     expect(wide.hi - wide.lo).toBeCloseTo(SENSOR_AGC.irMaxSpan, 2);
+    // the hot end is kept (fires and engines are what the pilot looks for)
+    expect(wide.hi).toBeGreaterThan(119);
   });
 
   it('settles with its time constant after a change', () => {
     const agc = createAgc('IR');
-    agcFromStats(agc, statsBytes(new Array(4096).fill(0).map((_, i) => (i % 100) / 10), 'IR'), 4096, hist);
+    agcFromStats(
+      agc,
+      statsBytes(
+        new Array(N).fill(0).map((_, i) => (i % 100) / 10),
+        'IR',
+      ),
+      N,
+      hist,
+      counts,
+    );
     const lo0 = agc.lo;
-    const v = new Array(4096).fill(0).map((_, i) => 20 + (i % 100) / 10);
-    agcFromStats(agc, statsBytes(v, 'IR'), 4096, hist);
+    const v = new Array(N).fill(0).map((_, i) => 20 + (i % 100) / 10);
+    agcFromStats(agc, statsBytes(v, 'IR'), N, hist, counts);
     expect(agc.lo).toBeCloseTo(lo0, 6); // no snap after the first statistics
     stepAgc(agc, SENSOR_AGC.timeConstant);
     expect((agc.lo - lo0) / (agc.targetLo - lo0)).toBeCloseTo(1 - Math.exp(-1), 6);
@@ -577,18 +718,35 @@ describe('automatic gain and level control', () => {
     expect(agc.settled).toBe(true);
   });
 
-  it('television: exposure puts the bright end at 90 % within the camera range, black level from the dark end', () => {
+  it('television: average metering puts the median mid-grey, the pedestal takes part of the dark end', () => {
     const agc = createAgc('TV');
+    // daylit ground, 0.02 … 0.10 (median 0.06)
     const v: number[] = [];
-    for (let i = 0; i < 4096; i++) v.push(0.02 + (0.08 * (i % 512)) / 511);
-    agcFromStats(agc, statsBytes(v, 'TV'), v.length, hist);
-    const hi = 0.02 + 0.08 * 0.98;
-    expect(agc.exposure * hi).toBeCloseTo(0.9, 1);
-    expect(agc.black).toBeGreaterThan(0.1);
-    expect(tvDisplay(agc, hi)).toBeGreaterThan(0.9);
-    // a dark scene meets the gain limit and stays dark
+    for (let i = 0; i < N; i++) v.push(0.02 + (0.08 * (i % 512)) / 511);
+    agcFromStats(agc, statsBytes(v, 'TV'), v.length, hist, counts);
+    expect((agc.exposure * 0.06) / SENSOR_AGC.tvMidLevel).toBeCloseTo(1, 1);
+    const lo = 0.02 + 0.08 * SENSOR_AGC.tvLowQuantile;
+    expect(agc.black / (SENSOR_AGC.tvBlackStretch * lo * agc.exposure)).toBeCloseTo(1, 1);
+    const mid = tvDisplay(agc, 0.06);
+    expect(mid).toBeGreaterThan(0.4);
+    expect(mid).toBeLessThan(0.65);
+    // darker things stay darker: a vehicle at half the ground's luminance is dark grey, not black
+    const vehicle = tvDisplay(agc, 0.03);
+    expect(vehicle).toBeLessThan(mid - 0.1);
+    expect(vehicle).toBeGreaterThan(0.1);
+  });
+
+  it('television: a bright patch (sky, concrete) limits the exposure; a dark scene meets the gain limit', () => {
+    const bright = createAgc('TV');
+    // 95 % ground at 0.06, 5 % sky at 0.6: the 98th percentile is the sky, held at full scale
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) v.push(i < 0.95 * N ? 0.06 : 0.6);
+    agcFromStats(bright, statsBytes(v, 'TV'), N, hist, counts);
+    expect(bright.exposure * 0.6).toBeCloseTo(1, 1);
+    expect(tvDisplay(bright, 0.6)).toBeGreaterThan(0.95);
+    expect(tvDisplay(bright, 0.06)).toBeLessThan(0.45);
     const dark = createAgc('TV');
-    agcFromStats(dark, statsBytes(new Array(4096).fill(1e-5), 'TV'), 4096, hist);
+    agcFromStats(dark, statsBytes(new Array(N).fill(1e-5), 'TV'), N, hist, counts);
     expect(dark.exposure).toBeCloseTo(tvExposureRange()[1], 3);
     expect(tvDisplay(dark, 1e-5)).toBeLessThan(0.2);
   });
@@ -629,7 +787,9 @@ describe('radiometry: what looks hot is what the seekers can lock', () => {
       expect(seen).toBeCloseTo(m.irApparentK(17, f), 9);
     }
     for (const h of [6, 7.5, 12, 17.2, 19, 23]) {
-      const sun = (m.createSunState as unknown as () => { sinElevation: number; tvLight: number })();
+      const sun = (
+        m.createSunState as unknown as () => { sinElevation: number; tvLight: number }
+      )();
       (m.sunStateAt as unknown as (h: number, o: unknown) => void)(h, sun);
       expect(sunElevationSine(h)).toBeCloseTo(sun.sinElevation, 12);
       expect(tvLight(sunElevationSine(h))).toBeCloseTo(sun.tvLight, 12);
@@ -653,7 +813,14 @@ describe('picture sharpness', () => {
   it('blurs at the zoom limits: detector pixels and diffraction across the picture', () => {
     const size = 256;
     const at = (fov: number, zoom: number) =>
-      pictureEffectivePixels(size, fov / zoom, zoom, TGP.imagePixels, SENSOR_OPTICS.podFlirWavelengthUm, SENSOR_OPTICS.podApertureM);
+      pictureEffectivePixels(
+        size,
+        fov / zoom,
+        zoom,
+        TGP.imagePixels,
+        SENSOR_OPTICS.podFlirWavelengthUm,
+        SENSOR_OPTICS.podApertureM,
+      );
     expect(at(TGP.fovWide, 1)).toBe(size);
     expect(at(TGP.fovNarrow, 1)).toBe(size);
     const z8 = at(TGP.fovNarrow, 8);
@@ -666,8 +833,97 @@ describe('picture sharpness', () => {
       prev = n;
     }
     // the television channel (shorter wavelength) resolves more than the infrared at max zoom
-    const tv = pictureEffectivePixels(size, TGP.fovNarrow / 8, 8, TGP.imagePixels, SENSOR_OPTICS.ccdWavelengthUm, SENSOR_OPTICS.podApertureM);
+    const tv = pictureEffectivePixels(
+      size,
+      TGP.fovNarrow / 8,
+      8,
+      TGP.imagePixels,
+      SENSOR_OPTICS.ccdWavelengthUm,
+      SENSOR_OPTICS.podApertureM,
+    );
     expect(tv).toBeGreaterThan(z8);
+  });
+});
+
+describe('picture point-spread function', () => {
+  it('is at least the pixel area, grows with diffraction and blur, and with magnification', () => {
+    // a perfect, steady lens: only the detector pixel's own area (a box: σ = 1/√12)
+    expect(picturePsfPixels(0.01, 256, 1e-9, 10, 0)).toBeCloseTo(1 / Math.sqrt(12), 6);
+    const pod = (fov: number, n = 256) =>
+      picturePsfPixels(
+        fov,
+        n,
+        SENSOR_OPTICS.podFlirWavelengthUm,
+        SENSOR_OPTICS.podApertureM,
+        SENSOR_OPTICS.podBlurRad,
+      );
+    // the narrow field: mostly the pixel; zoomed ×2: the optics and the jitter show
+    const x1 = pod(TGP.fovNarrow);
+    const x2 = pod(TGP.fovNarrow / 2);
+    expect(x1).toBeGreaterThan(0.29);
+    expect(x1).toBeLessThan(0.45);
+    expect(x2).toBeGreaterThan(x1);
+    expect(x2).toBeLessThan(0.8);
+    // the long-wave Maverick through its smaller window is softer than the pod at the same field
+    const mav = picturePsfPixels(
+      MAVERICK.fovNarrow,
+      192,
+      SENSOR_OPTICS.maverickIrWavelengthUm,
+      SENSOR_OPTICS.maverickApertureM,
+      SENSOR_OPTICS.maverickBlurRad,
+    );
+    expect(mav).toBeGreaterThan(pod(MAVERICK.fovNarrow, 192));
+  });
+});
+
+describe('the cameras on the real sensors module (integration)', () => {
+  /** A flight over flat ground, the tank hunter loadout, run long enough for the sensors' steps. */
+  function flying(): Sim {
+    const sim = createSim({
+      seed: 3,
+      terrain: createFlatTerrain(0),
+      scenario: 'empty',
+      start: { x: 0, z: 0, agl: 2400, heading: 0, speed: 130 },
+    });
+    runSim(sim, 0.5);
+    return sim;
+  }
+
+  it('pod: at the head the sensors module computes, centred on its ground point, with its fov', (ctx) => {
+    const sim = flying();
+    const tgp = sim.sensors.tgp;
+    // the foundation stand-in computes no head and no ground point: skip while it is in place
+    if (!tgp.ready || !tgp.pointValid || tgp.head.lengthSq() === 0) ctx.skip();
+    const pose = createSensorCameraPose();
+    expect(tgpCameraPose(sim, pose)).toBe(true);
+    expect(pose.position.distanceTo(tgp.head)).toBeLessThan(1e-9);
+    // the sensors module's head is where this module's own mount puts the pod's window
+    const mount = mountBody(podStation(sim), SENSOR_MOUNTS.podHead, new Vector3())!
+      .applyQuaternion(sim.aircraft.orientation)
+      .add(sim.aircraft.position);
+    expect(mount.distanceTo(tgp.head)).toBeLessThan(0.5);
+    const c = ndc(cameraOf(pose), tgp.point);
+    expect(Math.abs(c.x)).toBeLessThan(1e-6);
+    expect(Math.abs(c.y)).toBeLessThan(1e-6);
+    expect(pose.fov).toBeCloseTo(tgp.fov, 12);
+    expect(tgpPictureStatus(sim)).toBe('OK');
+  });
+
+  it('Maverick: at the selected seeker head, along its line of sight, with its fov and band', (ctx) => {
+    const sim = flying();
+    const s = sim.sensors.mavericks[sim.sensors.selectedMaverick];
+    if (!s || s.head.lengthSq() === 0 || !(s.fovAngle > 0)) ctx.skip();
+    const pose = createSensorCameraPose();
+    expect(maverickCameraPose(sim, pose)).toBe(true);
+    expect(pose.position.distanceTo(s.head)).toBeLessThan(1e-9);
+    if (!s.locked) expect(pose.direction.distanceTo(s.los)).toBeLessThan(1e-9);
+    expect(pose.fov).toBeCloseTo(s.fovAngle, 12);
+    expect(maverickPicture(sim, sim.sensors.selectedMaverick)).toBe(
+      s.band === 'TV' ? 'CCD' : s.picture,
+    );
+    expect(maverickPictureStatus(sim)).toBe(
+      s.powered && s.align <= 0 ? 'OK' : s.powered ? 'ALIGN' : 'OFF',
+    );
   });
 });
 

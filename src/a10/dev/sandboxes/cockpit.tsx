@@ -247,7 +247,7 @@ if (typeof window !== 'undefined')
       if (!m) return null;
       const rc = new Raycaster();
       rc.setFromCamera(new Vector2(x, y), cockpitCamera);
-      const roots = [m.root, m.airframe.root, m.box.group];
+      const roots = [m.root, m.airframe.root];
       if (m.seat) roots.push(m.seat as Group);
       const hit = rc.intersectObjects(roots, true).find((h) => isShown(h.object));
       if (!hit) return null;
@@ -336,7 +336,7 @@ if (typeof window !== 'undefined')
       const dir = bodyDirFromHudAngles(azDeg * DEG, elDeg * DEG, new Vector3());
       const rc = new Raycaster(new Vector3(e.x, e.y, e.z), dir, 0.05, 3);
       const hit = rc
-        .intersectObjects([m.root, m.airframe.root, m.box.group], true)
+        .intersectObjects([m.root, m.airframe.root], true)
         .find((h) => isShown(h.object));
       if (!hit) return null;
       const n = hit.face
@@ -531,7 +531,11 @@ function readBack(sim: Sim): void {
   P.flaps = sim.aircraft.flapHandle;
 }
 
-/** Commands the stand-in avionics do not handle yet (laser, TGP, ALT SCE, gear, AP, alert). */
+/**
+ * Mirror into the panel's parameters the commands whose result applyParams would otherwise
+ * overwrite (laser, TGP, ALT SCE, gear, autopilot on/off, alert). The real avionics applies every
+ * command afterwards; the autopilot's mode it steps itself (stepping it here too stepped twice).
+ */
 function applyExtraCommands(sim: Sim): void {
   for (const c of sim.commands) {
     switch (c.type) {
@@ -550,11 +554,6 @@ function applyExtraCommands(sim: Sim): void {
       case 'autopilot':
         if (c.action === 'toggle') P.autopilot = !P.autopilot;
         else if (c.action === 'disengage') P.autopilot = false;
-        else {
-          const modes = ['PATH', 'ALT_HDG', 'ALT'] as const;
-          const ap = sim.aircraft.autopilot;
-          ap.mode = modes[(modes.indexOf(ap.mode) + 1) % modes.length];
-        }
         break;
       case 'altitudeAlert':
         P.altAlertFt = Math.round(c.value / FT);

@@ -10,9 +10,13 @@
  * What the simulation supports today: STEER ▲/▼ steps the steerpoint ({ type: 'steerpoint' }),
  * ALT ALRT steps the altitude alert (left up, right down: the wave-1 altitude-alert control),
  * and the MASTER CAUTION lamp lights with the flight's master caution (it replaces the A-10A's
- * lamp, which the left MFCD covers). The digits, ENT, CLR and the other keys move when pressed
- * but queue nothing yet: there is no UFC command (the laser codes are entered on the DSMS and TGP
- * pages' OSBs); the module report asks for `{ type: 'ufc', key }` and an avionics scratchpad.
+ * lamp, which the left MFCD covers). The avionics has a UFC scratchpad for laser codes (type four
+ * digits, then press CODE on the DSMS or TGP page; CLR empties it: core/avionics ufcKey), and
+ * `ufcScratchpadKey` gives the key it takes for each of our keys — but no Command carries a key
+ * press to it yet (core/types.ts is the foundation's: the module report asks for
+ * `{ type: 'ufc'; key: string }`, as the avionics module did). Until then the digits, CLR, ENT
+ * and the other keys move when pressed and queue nothing; the codes are set on the DSMS and TGP
+ * pages' OSBs (CODE moves the cursor digit, INC steps it).
  *
  * Draw calls: the plate (stencils and every key legend on one canvas texture), the key caps (one
  * merged mesh: each cap's top samples its legend from the same texture; a press moves only that
@@ -122,6 +126,15 @@ export const UFC_KEYS: readonly UfcKeyDef[] = [
     h: 1.75,
   },
 ];
+
+/**
+ * The key the avionics' UFC scratchpad takes for one of our keys (digits and CLR; STEER goes as
+ * the `steerpoint` command), or null. Ready for a `{ type: 'ufc'; key }` command (module report).
+ */
+export function ufcScratchpadKey(id: UfcKeyId): string | null {
+  if (id.length === 1 && id >= '0' && id <= '9') return id;
+  return id === 'CLR' ? 'CLR' : null;
+}
 
 export function ufcKey(id: UfcKeyId): UfcKeyDef {
   const d = UFC_KEYS.find((k) => k.id === id);

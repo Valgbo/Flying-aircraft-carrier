@@ -633,7 +633,7 @@ export function renderLaunch(sr: number, kind: 'rocket' | 'missile', seed = 0x1a
   return normalise(out);
 }
 
-/** An airframe creak under load (aluminium working against rivets). 0.35 s. *//** An airframe creak under load (aluminium working against rivets). 0.35 s. */
+/** An airframe creak under load (aluminium working against rivets). 0.35 s. */ /** An airframe creak under load (aluminium working against rivets). 0.35 s. */
 export function renderCreak(sr: number, seed = 0xc2ea): Float32Array {
   const rng = mulberry32(seed);
   const n = Math.round(0.35 * sr);

@@ -29,8 +29,10 @@ afterEach(() => {
 });
 
 const ground = () => 0;
+/** A frame of a running simulation: simulated time advances with the real time (unless patched). */
 const input = (patch: Partial<OutsideInput> = {}): OutsideInput => ({
-  dt: 1 / 60,
+  dt: patch.dt ?? 1 / 60,
+  simDt: patch.dt ?? 1 / 60,
   lookDX: 0,
   lookDY: 0,
   lookRateX: 0,
@@ -324,6 +326,26 @@ describe('weapon camera (wave 2)', () => {
     // then back to chase
     cam.update('weapon', s, input({ dt: 0.5 }), ground, p);
     expect(cam.update('weapon', s, input({ dt: 0.1 }), ground, p)).toBe('chase');
+  });
+
+  it('keeps watching the impact while the simulation is paused, for its simulated seconds', () => {
+    const s = sim();
+    const cam = new OutsideCameras();
+    const p = pose();
+    s.projectiles.bodies.push(body(9, new Vector3(0, 300, -200), new Vector3(0, -60, -150)));
+    expect(cam.update('weapon', s, input(), ground, p)).toBe('weapon');
+    s.projectiles.bodies.length = 0; // it detonated
+    // paused: real frames go by, simulated time does not — the camera stays on the impact
+    for (let i = 0; i < 300; i++)
+      expect(cam.update('weapon', s, input({ dt: 0.1, simDt: 0 }), ground, p)).toBe('weapon');
+    // running again: `hold` simulated seconds later it is back on the aircraft
+    let t = 0;
+    while (t < OUTSIDE.weapon.hold - 0.15) {
+      expect(cam.update('weapon', s, input({ dt: 0.1, simDt: 0.1 }), ground, p)).toBe('weapon');
+      t += 0.1;
+    }
+    cam.update('weapon', s, input({ dt: 0.1, simDt: 0.2 }), ground, p);
+    expect(cam.update('weapon', s, input({ dt: 0.1, simDt: 0.1 }), ground, p)).toBe('chase');
   });
 });
 

@@ -36,8 +36,9 @@
  * The TOTAL VELOCITY VECTOR is the INERTIAL velocity (over the ground), as in the A-10C: it shows
  * where the aircraft is actually going, drift included, which the CCIP fall line needs.
  *
- * Order: texts first (they record their boxes), then the ladder (its numbers skip anything that
- * would land on a text), then the moving symbols.
+ * Order: texts first — the readouts, the blocks, the heading tape and the SPI's range — (they
+ * record their boxes), then the ladder (its numbers skip anything that would land on a text),
+ * then the moving symbols.
  */
 import { Quaternion, Vector3 } from 'three';
 import type { ReleaseSolution, WeaponProfile } from '../../core/avionics/types';
@@ -102,23 +103,8 @@ export interface HudDrawState {
   velocity: Vector3;
 }
 
-/**
- * Release-solution fields the avionics module adds in wave 2 for the HUD (ARCHITECTURE §12.7
- * lets it add what the HUD needs). Read defensively: absent fields fall back to the HUD's own
- * computation from public state.
- */
-interface ReleaseExtras {
-  /** The ground point a pickle press designates (consent release): seen through the delay cue. */
-  delayCue?: Vector3;
-  delayCueValid?: boolean;
-  /** Seconds until the last store released hits (−1 when nothing is falling). */
-  timeToImpact?: number;
-  /** The fuze would not arm before impact. */
-  fuzeNoArm?: boolean;
-}
-
-/** Optional record of every text drawn (tests and debugging; allocates). */
-export type HudTextLog = (text: string, x: number, y: number) => void;
+/** Optional record of every text drawn, with its alignment (tests and debugging; allocates). */
+export type HudTextLog = (text: string, x: number, y: number, align: number) => void;
 
 /** What the last build drew, for the renderer, the sandbox and tests (plane units). */
 export interface HudBuildInfo {
@@ -210,6 +196,8 @@ const MAX_BOXES = 40;
 const TEXT_MARGIN = 0.3 * DEG;
 /** Elevation step between the two points that define the steering line, rad. */
 const ASL_STEP = 5 * DEG;
+/** Largest elevation the solution cue is projected at (it is held at the line's end anyway). */
+const CUE_EL_MAX = 80 * DEG;
 /** Countdown kinds in the weapon block. */
 const COUNT_NONE = 0;
 const COUNT_REL = 1;
@@ -313,6 +301,11 @@ export class HudSymbology {
   private readonly d3: Vec3Like = { x: 0, y: 0, z: 0 };
   private readonly clip: Segment = { x0: 0, y0: 0, x1: 0, y1: 0 };
   private readonly aslBox: Box = { left: 0, right: 0, bottom: 0, top: 0 };
+  /** The SPI mark this frame (spiPlace, drawn by sensorMarks): where, and held at the edge. */
+  private spiShown = false;
+  private spiHeld = false;
+  private spiX = 0;
+  private spiY = 0;
   private readonly rungs = new Int16Array(48);
   private readonly marks = new Int16Array(24);
   private readonly offsets = new Float32Array(24);
@@ -369,11 +362,13 @@ export class HudSymbology {
     this.steerpointBlock(sim);
     this.spiSource(sim);
     this.modeTexts(sim);
+    // The heading tape's numbers are texts too (its marks depend only on the heading).
+    this.headingTape(sim);
+    this.spiPlace(sim);
 
     // Symbols.
     this.ladder();
     this.drawTvv(this.info.tvvX, this.info.tvvY);
-    this.headingTape(sim);
     // The sight follows avionics.sight (the gun reticle also in CCIP when the gun is the CCIP
     // weapon), not the master mode alone.
     switch (sim.avionics.sight) {
@@ -502,7 +497,7 @@ export class HudSymbology {
     const b = this.buf;
     if (b.len === 0) return;
     drawText(this.counting, b.codes, b.len, x, y, S.text, align, W.line, 1, ux, uy);
-    if (this.log) this.log(b.toString(), x, y);
+    if (this.log) this.log(b.toString(), x, y, align);
     if (uy === 0 && this.boxCount < MAX_BOXES) {
       const w = textWidth(b.len, S.text);
       const o = this.boxCount * 4;
@@ -700,12 +695,12 @@ export class HudSymbology {
     const rel = av.release;
     this.countKind = COUNT_NONE;
     // The computer's own time to impact when it keeps one, else the HUD's watch of the bomb.
-    const tti = (rel as ReleaseSolution & ReleaseExtras).timeToImpact;
-    const left = typeof tti === 'number' && tti >= 0 ? tti : this.inFlight ? this.impactAt - sim.time : -1;
+    const tti = rel.timeToImpact;
+    const left = tti >= 0 ? tti : this.inFlight ? this.impactAt - sim.time : -1;
     if (left > 0) {
       this.countKind = COUNT_TOF;
       this.countValue = left;
-    } else if (av.sight === 'CCRP' && rel.valid) {
+    } else if (av.sight === 'CCRP' && rel.valid && !rel.passed) {
       if (rel.timeToRelease > 0) {
         this.countKind = COUNT_REL;
         this.countValue = rel.timeToRelease;
@@ -777,8 +772,7 @@ export class HudSymbology {
     this.text(L.leftX, L.lineY[2], ALIGN_LEFT);
     const p = this.profile;
     const stores =
-      p !== null &&
-      (av.masterMode === 'CCRP' || (av.masterMode === 'CCIP' && av.sight !== 'GUN'));
+      p !== null && (av.masterMode === 'CCRP' || (av.masterMode === 'CCIP' && av.sight !== 'GUN'));
     if (stores && p) {
       b.clear().str(p.name ?? p.id, 8);
       this.text(L.leftX, L.lineY[1], ALIGN_LEFT);
@@ -1098,7 +1092,6 @@ export class HudSymbology {
    */
   private bombs(sim: Sim): void {
     const rel = sim.avionics.release;
-    const ext = rel as ReleaseSolution & ReleaseExtras;
     const info = this.info;
     if (info.pipper) {
       const px = info.pipperX;
@@ -1120,9 +1113,13 @@ export class HudSymbology {
         cueT = segmentLineIntersection(tx, ty, px, py, g.x0, g.y0 + m, g.x1, g.y1 + m, this.a2);
       }
       let cue = cueT >= 0;
-      if (ext.delayCueValid === true && ext.delayCue && this.projectPoint(ext.delayCue, this.a2)) {
+      if (rel.delayCueValid && this.projectPoint(rel.delayCue, this.a2)) {
         cue = true;
-        if (cueT < 0) cueT = Math.max(0, Math.min(1, ((this.a2.x - tx) * ux + (this.a2.y - ty) * uy) / (len || 1)));
+        if (cueT < 0)
+          cueT = Math.max(
+            0,
+            Math.min(1, ((this.a2.x - tx) * ux + (this.a2.y - ty) * uy) / (len || 1)),
+          );
       }
       const R = S.bombReticleRadius;
       if (len > S.tvvRadius + R) {
@@ -1143,7 +1140,7 @@ export class HudSymbology {
       // Reticle and pipper (below the glass the glass hides them; a lowered head sees them).
       this.seg(px, py, px, py, W.pipper);
       // The reticle flashes when the release would be too low (or the fuze could not arm).
-      const tooLow = rel.belowMinimum || ext.fuzeNoArm === true;
+      const tooLow = rel.belowMinimum || rel.fuzeNoArm;
       if (!tooLow || this.flash(FLASH_HZ)) this.circle(px, py, R);
       this.staple(tx, ty, px, py, ux, uy, rel);
       if (cue) {
@@ -1282,25 +1279,32 @@ export class HudSymbology {
       else this.seg(c.x0, c.y0, c.x1, c.y1);
     }
 
-    // Solution cue.
+    // Solution cue. Past the release point (`passed`) it stays where the computer puts it,
+    // below the velocity vector: no release cue and no countdown.
     const t = rel.timeToRelease;
-    const releasing = rel.releaseNow || t <= 0;
+    const passed = rel.passed;
+    const releasing = !passed && (rel.releaseNow || t <= 0);
     let cueEl = releasing ? 0 : rel.cueEl;
-    if (!releasing && !(cueEl > 0)) {
+    if (!releasing && !passed && !(cueEl > 0)) {
       // No cue angle from the avionics: wait at the top, fall to the velocity vector in the
       // last seconds to release.
       const T = HUD_STORE_SYMBOLS.cueFallTime;
       const topEl = Math.atan(this.aslBox.top) - gamma;
       cueEl = (Math.min(t, T) / T) * Math.max(0, topEl);
     }
+    // Far from the release the computer's angle grows past the field (even past the zenith):
+    // keep the direction in front of the eye; the cue waits at the end of the line.
+    cueEl = Math.max(-CUE_EL_MAX - gamma, Math.min(CUE_EL_MAX - gamma, cueEl));
     if (this.planeOfAzEl(az, gamma + cueEl, this.q)) {
       let cx = this.q.x + shift;
       let cy = this.q.y;
-      if (cy > this.aslBox.top) {
-        // Held at the top of the line.
-        const k = uy > 1e-6 ? (this.aslBox.top - ay) / uy : 0;
+      const end =
+        cy > this.aslBox.top ? this.aslBox.top : cy < this.aslBox.bottom ? this.aslBox.bottom : cy;
+      if (end !== cy) {
+        // Held at the end of the line.
+        const k = Math.abs(uy) > 1e-6 ? (end - ay) / uy : 0;
         cx = ax + ux * k;
-        cy = this.aslBox.top;
+        cy = end;
       }
       this.circle(cx, cy, S.cueRadius, 4);
       info.cue = true;
@@ -1314,7 +1318,7 @@ export class HudSymbology {
 
     // Release cue: as the store leaves (and for a moment after, so a frame shows it).
     const recent = sim.time - this.releasedAt < HUD_STORE_SYMBOLS.releaseCueHold;
-    if (rel.releaseNow || recent) {
+    if ((rel.releaseNow && !passed) || recent) {
       info.releaseCue = true;
       if (this.flash(FAST_FLASH_HZ) || rel.releaseNow) {
         const x = info.tvvX;
@@ -1353,7 +1357,12 @@ export class HudSymbology {
         info.tgpY = this.p.y;
         this.diamond(this.p.x, this.p.y, S.tgpDiamond);
         if (tgpSpi)
-          this.seg(this.p.x, this.p.y - S.tgpDiamond, this.p.x, this.p.y - S.tgpDiamond - S.tgpTail);
+          this.seg(
+            this.p.x,
+            this.p.y - S.tgpDiamond,
+            this.p.x,
+            this.p.y - S.tgpDiamond - S.tgpTail,
+          );
       }
     }
 
@@ -1372,33 +1381,23 @@ export class HudSymbology {
         this.circle(x, y, r, 3);
         for (let k = 0; k < 4; k++) {
           const a = (k * Math.PI) / 2 + Math.PI / 4;
-          this.seg(x + Math.cos(a) * r * 0.25, y + Math.sin(a) * r * 0.25, x + Math.cos(a) * r, y + Math.sin(a) * r);
+          this.seg(
+            x + Math.cos(a) * r * 0.25,
+            y + Math.sin(a) * r * 0.25,
+            x + Math.cos(a) * r,
+            y + Math.sin(a) * r,
+          );
         }
         if (mav.locked) this.square(x, y, r * 1.45);
       }
     }
 
-    if (!spi.valid) return;
-    const field = this.layout.tvvBox;
-    const inFront = this.projectPoint(spi.position, this.p);
-    let x = this.p.x;
-    let y = this.p.y;
-    const inside = inFront && inBox(x, y, field);
-    if (!inside) {
-      // Held on the edge of the field in the SPI's direction (from the field's centre).
-      const d = this.bodyDirOf(spi.position, this.tmp);
-      const cx = (field.left + field.right) / 2;
-      const cy = (field.bottom + field.top) / 2;
-      // Behind the eye the plane point does not exist: aim along the direction's x, y.
-      const far = inFront ? 1 : 1e3;
-      const tx = inFront ? x : cx + d.x * far;
-      const ty = inFront ? y : cy + d.y * far;
-      holdOnBox(cx, cy, tx, ty, field, this.q);
-      x = this.q.x;
-      y = this.q.y;
+    if (!this.spiShown) return;
+    const x = this.spiX;
+    const y = this.spiY;
+    if (this.spiHeld) {
       this.square(x, y, S.spiSquare, true);
       if (tgpSpi) this.diamond(x, y, S.tgpDiamond);
-      info.spiHeld = true;
     } else if (!tgpSpi) {
       this.diamond(x, y, S.spiDiamond);
       this.seg(x, y, x, y, W.pipper * 0.6);
@@ -1406,12 +1405,57 @@ export class HudSymbology {
     info.spi = true;
     info.spiX = x;
     info.spiY = y;
-    // Slant range, nautical miles, under the mark.
+    info.spiHeld = this.spiHeld;
+  }
+
+  /**
+   * Where the SPI mark goes (inside the field, or held on its edge in the SPI's direction), and
+   * its slant range — drawn with the texts, before the ladder, so the ladder's numbers keep
+   * clear of it, and itself clear of the texts already drawn. A mark held at the edge is only a
+   * direction cue: no range (it would sit on the side text blocks or below the glass).
+   */
+  private spiPlace(sim: Sim): void {
+    const spi = sim.avionics.spi;
+    this.spiShown = spi.valid;
+    this.spiHeld = false;
+    if (!spi.valid) return;
+    const field = this.layout.tvvBox;
+    const inFront = this.projectPoint(spi.position, this.p);
+    let x = this.p.x;
+    let y = this.p.y;
+    const inside = inFront && inBox(x, y, field);
+    if (!inside) {
+      // Held in the SPI's direction on the edge of the hold box (between the text columns).
+      const hold = this.layout.spiHoldBox;
+      const d = this.bodyDirOf(spi.position, this.tmp);
+      const cx = (hold.left + hold.right) / 2;
+      const cy = (hold.bottom + hold.top) / 2;
+      // Behind the eye the plane point does not exist: aim along the direction's x, y.
+      const far = inFront ? 1 : 1e3;
+      const tx = inFront ? x : cx + d.x * far;
+      const ty = inFront ? y : cy + d.y * far;
+      holdOnBox(cx, cy, tx, ty, hold, this.q);
+      x = this.q.x;
+      y = this.q.y;
+      this.spiHeld = true;
+    }
+    this.spiX = x;
+    this.spiY = y;
+    if (this.spiHeld) return;
+    // Slant range, nautical miles, under the mark — above it when that would sit on another
+    // text (the side blocks), left out when both would.
     const nm = this.P.distanceTo(spi.position) / NM;
     this.buf.clear();
     if (nm < 100) this.buf.fixed(nm, 1);
     else this.buf.int(nm);
-    this.text(x, y - S.spiSquare - 0.25 * DEG - S.text / 2, ALIGN_CENTER);
+    const hw = textWidth(this.buf.len, S.text) / 2;
+    const off = S.spiSquare + 0.25 * DEG + S.text / 2;
+    for (let k = 0; k < 2; k++) {
+      const ty = k === 0 ? y - off : y + off;
+      if (this.hitsText(x - hw, ty - S.text / 2, x + hw, ty + S.text / 2)) continue;
+      this.text(x, ty, ALIGN_CENTER);
+      return;
+    }
   }
 
   /** Relaxed realism (PLAN §2): a box around every live vehicle within range. */

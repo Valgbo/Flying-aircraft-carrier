@@ -1,6 +1,6 @@
 /**
  * The clickable cockpit's mapping table (src/a10/view/cockpit/switches.ts): every required
- * control exists, sits on a part of the model or on a hotspot, and queues the right Command
+ * control exists, sits on a part of the model or on a panel, and queues the right Command
  * with explicit values for left and right clicks.
  */
 import { describe, expect, it } from 'vitest';
@@ -16,7 +16,6 @@ import {
   type CockpitControlId,
   type CockpitSwitchState,
 } from '../../../src/a10/view/cockpit/switches';
-import { HOTSPOTS } from '../../../src/a10/view/cockpit/hotspots';
 
 const FT = 0.3048;
 const metaFiles = import.meta.glob('../../../public/a10/models/a10-meta.json', {
@@ -72,17 +71,9 @@ describe('cockpit controls table', () => {
     }
   });
 
-  it('gives every hotspot control a switch on the A-10C box, and the box only those', () => {
-    const hot = COCKPIT_CONTROLS.filter((c) => c.target.kind === 'hotspot').map((c) => c.id);
-    expect(HOTSPOTS.map((h) => h.id).sort()).toEqual([...hot].sort());
-    // one switch per cell of the 3 × 2 face
-    const cells = new Set(HOTSPOTS.map((h) => `${h.col},${h.row}`));
-    expect(cells.size).toBe(HOTSPOTS.length);
-    for (const h of HOTSPOTS) {
-      expect(h.col).toBeGreaterThanOrEqual(0);
-      expect(h.col).toBeLessThan(3);
-      expect(h.row === 0 || h.row === 1).toBe(true);
-    }
+  it("puts the autopilot's button and mode switch on the model's LASTE panel, nothing else", () => {
+    const laste = COCKPIT_CONTROLS.filter((c) => c.target.kind === 'laste').map((c) => c.id);
+    expect(laste.sort()).toEqual(['autopilot', 'autopilotMode']);
   });
 });
 

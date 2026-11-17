@@ -183,6 +183,11 @@ export interface HudLayout {
   /** Where the velocity vector is held when it would leave the field (plane units). */
   tvvBox: Box;
   /**
+   * Where an SPI outside the field is held (on this box's edge, in its direction): between the
+   * text columns and above the heading tape, so the mark never sits on a text.
+   */
+  spiHoldBox: Box;
+  /**
    * The pitch ladder is drawn inside a T-shaped window so a banked or dive ladder does not run
    * through the text columns or the heading tape: `ladderBox` above the columns (wide) and
    * `ladderBandBox` between them (narrow), stacked without overlap. Rung numbers may use
@@ -259,6 +264,12 @@ export function computeHudLayout(
       left: Math.tan(f.center - (f.halfWidthBottom - 0.9 * DEG)),
       right: Math.tan(f.center + (f.halfWidthBottom - 0.9 * DEG)),
       bottom: Math.tan(f.bottom + 1.0 * DEG),
+      top: Math.tan(f.top - 0.5 * DEG),
+    },
+    spiHoldBox: {
+      left: Math.tan(f.center - 2.45 * DEG),
+      right: Math.tan(f.center + 2.45 * DEG),
+      bottom: ladderBottom,
       top: Math.tan(f.top - 0.5 * DEG),
     },
     ladderBox: {

@@ -12,28 +12,37 @@
  * (Poisson), and each traced fragment gets a Mott mass, its Gurney velocity slowed by drag over
  * its range, and is ray-traced to the plate facing the burst: it penetrates when its penetration
  * exceeds the plate's effective thickness, and then hurts what lies just behind.
+ *
+ * Secondary explosions (a vehicle's ammunition or load going up, an ammunition truck's later
+ * pops) use the same blast and fragments (review TE-1): their hit records are named
+ * 'secondary', and the kills they cause are credited to the weapon that started the chain. A
+ * neighbour that such a blast would make go up does so a moment later (SECONDARY_EFFECTS), so a
+ * chain reaction ripples through a fuel or ammunition point instead of recursing.
  */
 import { Vector3 } from 'three';
 import {
+  AMMO_EFFECTS,
   BLAST,
   BLAST_THRESHOLDS,
   COMPONENT_VULNERABILITY,
   FRAGMENTS,
   ROUND_EFFECTS,
+  SECONDARY_EFFECTS,
   VEHICLE_MODELS,
 } from '../../data/vehicles';
 import type { Rng } from '../rng';
 import type { Sim } from '../types';
 import { densityAt } from '../world/atmosphere';
-import { breakTrack, damageBox, strikeNear, traceInterior } from './damage';
+import { breakTrack, damageBox, markBurst, strikeNear, traceInterior } from './damage';
 import { plateNormalWorld, rayVehicle, type PartHit } from './hit';
-import { hullToWorld, vehiclePose, worldToHull, type V3 } from './pose';
+import { hullToWorld, vehiclePose, worldToHull, type Pose, type V3 } from './pose';
 import {
   alertGroup,
   emitDamaged,
   evaluateCondition,
   explode,
   recordHit,
+  scheduleExplosion,
   setCondition,
   sortDamaged,
   updateComponentHealth,
@@ -141,20 +150,100 @@ function strikeAll(
   id: ComponentId,
   scale: number,
   external: boolean | null,
+  list: ComponentId[],
 ): void {
   const boxes = VEHICLE_MODELS[v.kind].components;
   for (let i = 0; i < boxes.length; i++) {
     const b = boxes[i];
     if (b.id !== id || (external !== null && b.external !== external)) continue;
     if (scale >= 1) {
-      damageBox(sim, v, i, 1, 'blast', 1, _list);
+      damageBox(sim, v, i, 1, 'blast', 1, list);
       continue;
     }
     const vul = COMPONENT_VULNERABILITY[id];
     const r = sim.rng.damage;
     if (r.chance(Math.min(1, vul.pHit * scale)))
-      damageBox(sim, v, i, r.range(vul.damageMin, vul.damageMax), 'blast', scale, _list);
+      damageBox(sim, v, i, r.range(vul.damageMin, vul.damageMax), 'blast', scale, list);
   }
+}
+
+const _bb: V3 = { x: 0, y: 0, z: 0 };
+
+/**
+ * The blast of W kg TNT at world `position` on vehicle `v`: the level from the class table and
+ * its effects on `v` (components struck go into `list`; the destroyed and catastrophic levels
+ * raise the condition at once). `credit` is the weapon that gets the kill. With `chain` (the
+ * blast of a secondary explosion) a vehicle that would go up catastrophically is destroyed now
+ * and goes up a moment later. Returns the level.
+ */
+export function blastOnVehicle(
+  sim: Sim,
+  v: Vehicle,
+  pose: Pose,
+  position: V3,
+  W: number,
+  credit: string,
+  chain: boolean,
+  list: ComponentId[],
+): BlastLevelName {
+  if (!(W > 0)) return 'none';
+  const w13 = Math.cbrt(W);
+  const body = BODY[v.kind];
+  worldToHull(pose, position.x, position.y, position.z, _bb);
+  // distance to the body's nearest surface (hull frame)
+  const qx = Math.max(body.min[0] - _bb.x, 0, _bb.x - body.max[0]);
+  const qy = Math.max(body.min[1] - _bb.y, 0, _bb.y - body.max[1]);
+  const qz = Math.max(body.min[2] - _bb.z, 0, _bb.z - body.max[2]);
+  const dug = v.dugIn ? BLAST.dugInFactor : 1;
+  const z = Math.max(Math.sqrt(qx * qx + qy * qy + qz * qz) * dug, BLAST.contactRadius) / w13;
+  // distance to the body centre (the impulse that loads the whole vehicle)
+  const cx = _bb.x - (body.min[0] + body.max[0]) / 2;
+  const cy = _bb.y - (body.min[1] + body.max[1]) / 2;
+  const cz = _bb.z - (body.min[2] + body.max[2]) / 2;
+  const Rc = Math.sqrt(cx * cx + cy * cy + cz * cz) * dug;
+  const level = blastLevel(v.kind, W, z, Math.max(Rc, BLAST.contactRadius) / w13);
+  if (level === 'none') return level;
+  v.internal.lastWeapon = credit;
+  const row = BLAST_THRESHOLDS[v.kind];
+  if (level === 'catastrophic' && !(chain && AMMO_EFFECTS[v.kind])) {
+    explode(sim, v, credit);
+  } else if (level === 'catastrophic' || level === 'destroyed') {
+    strikeAll(sim, v, 'crew', 1, null, list);
+    strikeAll(sim, v, 'fuel', 0.6, null, list);
+    strikeAll(sim, v, 'runningGear', 1, null, list);
+    strikeAll(sim, v, 'optics', 1, null, list);
+    updateComponentHealth(v);
+    setCondition(sim, v, 'destroyed', credit);
+    // set off by a neighbour's explosion: it goes up in its turn, a moment later
+    if (level === 'catastrophic') {
+      const d = SECONDARY_EFFECTS.chainDelay;
+      scheduleExplosion(sim, v, sim.rng.damage.range(d[0], d[1]));
+    }
+  } else if (level === 'heavy') {
+    strikeAll(sim, v, 'runningGear', 1, null, list);
+    strikeAll(sim, v, 'optics', 1, null, list);
+    strikeAll(sim, v, 'gun', 0.7, null, list);
+    strikeAll(sim, v, 'fuel', 0.6, true, list);
+    strikeAll(sim, v, 'crew', 0.25, null, list);
+    strikeAll(sim, v, 'engine', 0.3, null, list);
+  } else if (row) {
+    // light: external components near the burst, more the closer it is
+    const radius = row.light.z * w13;
+    strikeNear(
+      sim,
+      v,
+      pose,
+      position.x,
+      position.y,
+      position.z,
+      radius,
+      0,
+      0.9 * (1 - z / row.light.z),
+      'blast',
+      list,
+    );
+  }
+  return level;
 }
 
 /**
@@ -172,6 +261,43 @@ export function applyBlast(
   fragmentKg = 0,
   weapon = 'blast',
   sourceId = 0,
+): void {
+  blastAll(sim, position, chargeKg, fragmentKg, weapon, sourceId, weapon, false);
+}
+
+const _sp = new Vector3();
+
+/**
+ * The blast and fragments of vehicle `source`'s own explosion at world (x, y, z) (its ammunition
+ * or load going up, or one of an ammunition truck's pops) on every other vehicle (review TE-1).
+ * Hit records are named 'secondary' (no source id: the debrief counts them as indirect); kills go
+ * to the weapon that started the chain (the source's last weapon).
+ */
+export function applySecondaryBlast(
+  sim: Sim,
+  source: Vehicle,
+  x: number,
+  y: number,
+  z: number,
+  chargeKg: number,
+  fragmentKg: number,
+): void {
+  // its own explosion has already done its work on the source
+  markBurst(sim, source, x, y, z);
+  _sp.set(x, y, z);
+  const credit = source.internal.lastWeapon || 'secondary';
+  blastAll(sim, _sp, chargeKg, fragmentKg, 'secondary', 0, credit, true);
+}
+
+function blastAll(
+  sim: Sim,
+  position: Vector3,
+  chargeKg: number,
+  fragmentKg: number,
+  weapon: string,
+  sourceId: number,
+  credit: string,
+  chain: boolean,
 ): void {
   if (!(chargeKg > 0) && !(fragmentKg > 0)) return;
   const W = Math.max(chargeKg, 0);
@@ -198,12 +324,28 @@ export function applyBlast(
     const rt = v.internal;
     // A burst already resolved on this vehicle (HEI by resolveRoundHit, a warhead by
     // applyWarheadHit) at this point in this step
-    if (
-      rt.burstTime === sim.time &&
-      Math.hypot(rt.burstX - position.x, rt.burstY - position.y, rt.burstZ - position.z) < 0.5
-    )
-      continue;
-    applyToVehicle(sim, v, position, W, w13, fragmentKg, mu, nFrag, v0, rho, weapon, sourceId, r);
+    if (rt.burstTime === sim.time) {
+      const bx = rt.burstX - position.x;
+      const by = rt.burstY - position.y;
+      const bz = rt.burstZ - position.z;
+      if (bx * bx + by * by + bz * bz < 0.25) continue;
+    }
+    applyToVehicle(
+      sim,
+      v,
+      position,
+      W,
+      fragmentKg,
+      mu,
+      nFrag,
+      v0,
+      rho,
+      weapon,
+      sourceId,
+      credit,
+      chain,
+      r,
+    );
   }
 }
 
@@ -212,7 +354,6 @@ function applyToVehicle(
   v: Vehicle,
   position: Vector3,
   W: number,
-  w13: number,
   fragmentKg: number,
   mu: number,
   nFrag: number,
@@ -220,68 +361,22 @@ function applyToVehicle(
   rho: number,
   weapon: string,
   sourceId: number,
+  credit: string,
+  chain: boolean,
   r: Rng,
 ): void {
   const model = VEHICLE_MODELS[v.kind];
   const body = BODY[v.kind];
   const pose = vehiclePose(v, model.turretZ);
   worldToHull(pose, position.x, position.y, position.z, _b);
-  // distance to the body's nearest surface (hull frame)
-  const qx = Math.max(body.min[0] - _b.x, 0, _b.x - body.max[0]);
-  const qy = Math.max(body.min[1] - _b.y, 0, _b.y - body.max[1]);
-  const qz = Math.max(body.min[2] - _b.z, 0, _b.z - body.max[2]);
-  const R = Math.hypot(qx, qy, qz) * (v.dugIn ? BLAST.dugInFactor : 1);
-  const z = Math.max(R, BLAST.contactRadius) / w13;
-  // distance to the body centre (the impulse that loads the whole vehicle)
-  const Rc =
-    Math.hypot(
-      _b.x - (body.min[0] + body.max[0]) / 2,
-      _b.y - (body.min[1] + body.max[1]) / 2,
-      _b.z - (body.min[2] + body.max[2]) / 2,
-    ) * (v.dugIn ? BLAST.dugInFactor : 1);
-  const level = W > 0 ? blastLevel(v.kind, W, z, Math.max(Rc, BLAST.contactRadius) / w13) : 'none';
   _list.length = 0;
   const wasAlive = v.condition === 'intact' || v.condition === 'damaged';
   const lastWeapon = v.internal.lastWeapon;
-  if (level !== 'none') v.internal.lastWeapon = weapon;
+  // what the fragments set off is credited to this weapon too (restored if nothing hit)
+  v.internal.lastWeapon = credit;
 
   // ---- blast ----
-  if (level !== 'none') {
-    const row = BLAST_THRESHOLDS[v.kind];
-    if (level === 'catastrophic') {
-      explode(sim, v, weapon);
-    } else if (level === 'destroyed') {
-      strikeAll(sim, v, 'crew', 1, null);
-      strikeAll(sim, v, 'fuel', 0.6, null);
-      strikeAll(sim, v, 'runningGear', 1, null);
-      strikeAll(sim, v, 'optics', 1, null);
-      updateComponentHealth(v);
-      setCondition(sim, v, 'destroyed', weapon);
-    } else if (level === 'heavy') {
-      strikeAll(sim, v, 'runningGear', 1, null);
-      strikeAll(sim, v, 'optics', 1, null);
-      strikeAll(sim, v, 'gun', 0.7, null);
-      strikeAll(sim, v, 'fuel', 0.6, true);
-      strikeAll(sim, v, 'crew', 0.25, null);
-      strikeAll(sim, v, 'engine', 0.3, null);
-    } else if (row) {
-      // light: external components near the burst, more the closer it is
-      const radius = row.light.z * w13;
-      strikeNear(
-        sim,
-        v,
-        pose,
-        position.x,
-        position.y,
-        position.z,
-        radius,
-        0,
-        0.9 * (1 - z / row.light.z),
-        'blast',
-        _list,
-      );
-    }
-  }
+  const level = blastOnVehicle(sim, v, pose, position, W, credit, chain, _list);
 
   // ---- fragments ----
   let fragHits = 0;
@@ -301,14 +396,14 @@ function applyToVehicle(
     let ux = _b.x - bx;
     let uy = _b.y - by;
     let uz = _b.z - bz;
-    const rc = Math.hypot(ux, uy, uz);
+    const rc = Math.sqrt(ux * ux + uy * uy + uz * uz);
     if (rc > 1e-6) {
       ux /= rc;
       uy /= rc;
       uz /= rc;
     }
     const area = Math.abs(ux) * sy * sz + Math.abs(uy) * sx * sz + Math.abs(uz) * sx * sy;
-    const halfDiag = 0.5 * Math.hypot(sx, sy, sz);
+    const halfDiag = 0.5 * Math.sqrt(sx * sx + sy * sy + sz * sz);
     const rEff = Math.max(rc, halfDiag);
     const lambda = (FRAGMENTS.groundFactor * nFrag * area) / (4 * Math.PI * rEff * rEff);
     const n = poisson(r, lambda);
@@ -332,7 +427,7 @@ function applyToVehicle(
         const dx = _c.x - position.x;
         const dy = _c.y - position.y;
         const dz = _c.z - position.z;
-        const len = Math.hypot(dx, dy, dz);
+        const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len < 1e-6) continue;
         const ext = (len + 2) / len;
         if (
@@ -440,13 +535,13 @@ function applyToVehicle(
     v.internal.lastWeapon = lastWeapon;
     return;
   }
-  v.internal.lastWeapon = weapon;
+  v.internal.lastWeapon = credit;
   v.hits++;
   v.lastHitTime = sim.time;
   alertGroup(sim, v.groupId);
   if (_list.length > 0) {
     updateComponentHealth(v);
-    evaluateCondition(sim, v, weapon);
+    evaluateCondition(sim, v, credit);
     sortDamaged(_list);
     if (wasAlive || v.condition === 'catastrophic') emitDamaged(sim, v, _list[0]);
   }

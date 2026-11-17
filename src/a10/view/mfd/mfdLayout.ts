@@ -16,8 +16,12 @@ export const MFD_RESOLUTION = 512;
 /** Stroke width at MFD_RESOLUTION, pixels. */
 export const MFD_LINE_WIDTH = 1.7;
 
-/** Palette indices (the line batch's palette; 0 is reserved for its style colour). */
+/**
+ * Palette indices (the line batch's palette). 0 is the batch's style colour: black, the outline
+ * drawn under every stroke over a sensor picture (MFD_OUTLINE).
+ */
 export const MFD_COLOR = {
+  outline: 0,
   green: 1,
   white: 2,
   cyan: 3,
@@ -29,6 +33,7 @@ export const MFD_COLOR = {
 
 /** The display colours (sRGB hex; three converts them to linear). */
 export const MFD_COLORS: Readonly<Record<keyof typeof MFD_COLOR, Color>> = {
+  outline: new Color(0x000000),
   green: new Color(0x3cff58),
   white: new Color(0xe6efe6),
   cyan: new Color(0x52e4ff),
@@ -38,11 +43,20 @@ export const MFD_COLORS: Readonly<Record<keyof typeof MFD_COLOR, Color>> = {
   blue: new Color(0x3d8bff),
 };
 
+/**
+ * Over a sensor picture every stroke is drawn on a dark outline first, so the symbology reads on
+ * a white-hot or sunlit picture as well as on a dark one: `extraPx` pixels wider than the stroke
+ * (at MFD_RESOLUTION), in the outline colour.
+ */
+export const MFD_OUTLINE = { extraPx: 2.4 } as const;
+
 /** Text sizes (cap height), page units. */
 export const MFD_TEXT = {
   label: 0.052,
   body: 0.05,
   small: 0.04,
+  /** The DSMS station row: four characters in each of eleven 0.12-wide slots. */
+  tiny: 0.032,
   large: 0.085,
 } as const;
 
@@ -56,7 +70,8 @@ export interface OsbAnchor {
 }
 
 const SPACING = 0.32;
-const EDGE = 0.975;
+/** Side labels end this far out (clear of the SOI box just inside the edge). */
+const EDGE = 0.95;
 const ROW = 0.905;
 
 /** Label anchors of OSBs 1–20 (index 0 unused). */
@@ -91,10 +106,6 @@ export const MFD_RATES = {
 
 /** Moving map (TAD). */
 export const TAD = {
-  /** Map ranges, nm (from the anchor to the top of the screen); the avionics' TAD_RANGES_NM. */
-  ranges: [5, 10, 20, 40, 80, 160] as readonly number[],
-  /** Default range, nm. */
-  defaultRange: 20,
   /** Own aircraft (centred on own ship) or the SPI (centred on the SPI): page y of the anchor. */
   ownAnchorY: -0.45,
   /** The map is clipped to this square, page units. */
@@ -103,12 +114,32 @@ export const TAD = {
   decimate: 0.006,
 } as const;
 
+/** Targeting-pod page symbology (page units). */
+export const TGP_PAGE = {
+  /** Crosshair: gap at the centre, arm length, range ticks every `tickStep`. */
+  crossGap: 0.06,
+  crossArm: 0.6,
+  tickStep: 0.15,
+  /** Track gates: POINT box and AREA brackets, half-sizes. */
+  pointGate: 0.08,
+  areaGate: 0.1,
+  /** Lower-left block (laser arming above the range cue). */
+  leftX: -0.62,
+  lowerY: -0.62,
+  rowStep: 0.09,
+  /** Line-of-sight cue box: centre and half-size. */
+  losX: 0.42,
+  losY: -0.3,
+  losHalf: 0.07,
+} as const;
+
 /**
  * Maverick seeker display: the pointing cross moves ±`gimbalScale` rad of seeker look angle
- * across ±0.85 of the screen.
+ * across ±`crossRange` of the screen.
  */
 export const MAV_PAGE = {
   gimbalScale: (35 * Math.PI) / 180,
+  crossRange: 0.85,
   /** Track gate half-size, page units, wide and narrow field of view. */
   gateWide: 0.11,
   gateNarrow: 0.07,
@@ -152,12 +183,22 @@ export const MFD_NOTES: Record<string, SourceNote> = {
   tgp: {
     source: 'wikiLitening',
     confidence: 'approximate',
-    note: 'TGP page: track mode, field of view and zoom, picture mode; "T"/"L" with the range at the lower left ("L" while lasing), LTCH, laser code; M / MASK when masked; NOT TIMED OUT while warming up',
+    note: 'TGP page: slant range at the lower left behind its source letter ("L" laser, flashing while firing; "T" track; none when slaved), "M" when masked, MASK; NOT TIMED OUT while warming up; the options (picture, FOV, zoom, track, latch, code) on the OSB labels (DCS forum and wiki summaries)',
   },
   mav: {
     source: 'dcsMaverick',
     confidence: 'approximate',
     note: 'MAV page: the pointing cross shows the seeker line of sight relative to the boresight and flashes when tracking; track gate; IN RNG; NOT TIMED OUT during the ≈3 min alignment',
+  },
+  mavGimbalCue: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'the dashed gimbal-limit circle while the seeker is held at its limit is this simulator’s cue (the limit itself is data/sensors.ts MAVERICK.gimbalLimit)',
+  },
+  outline: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'dark outline under the symbology over sensor video, for legibility on bright pictures (a display choice, not a documented A-10C feature)',
   },
   mavGimbalScale: {
     source: 'plan',

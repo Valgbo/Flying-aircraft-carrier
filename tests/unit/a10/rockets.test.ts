@@ -79,10 +79,7 @@ describe('Mk 66 motor (PLAN §16): static launch', () => {
     // Average thrust ≈6.29 kN; the mass falls by the propellant burnt.
     expect(spec.motor!.totalImpulse / spec.motor!.burnTime).toBeCloseTo(MK66.averageThrust, -2);
     expect(motorThrustAt(spec.motor!, 0.5)).toBeGreaterThan(5900);
-    expect(b.mass).toBeCloseTo(
-      STORES[POD].rocketMass! - MK66.propellantMass,
-      6,
-    );
+    expect(b.mass).toBeCloseTo(STORES[POD].rocketMass! - MK66.propellantMass, 6);
   });
 });
 

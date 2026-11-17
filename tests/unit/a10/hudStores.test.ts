@@ -31,12 +31,8 @@ import {
   minimumRangeFraction,
   planeFromAngles,
 } from '../../../src/a10/view/hud/hudMath';
-import type { SegmentSink } from '../../../src/a10/view/hud/strokeFont';
-import {
-  HudSymbology,
-  storesLeft,
-  type HudDrawState,
-} from '../../../src/a10/view/hud/symbology';
+import { textWidth, type SegmentSink } from '../../../src/a10/view/hud/strokeFont';
+import { HudSymbology, storesLeft, type HudDrawState } from '../../../src/a10/view/hud/symbology';
 
 const EYE = A10_GEOMETRY.eye;
 const LAYOUT = computeHudLayout();
@@ -121,10 +117,20 @@ function drawnOf(sim: Sim): HudDrawState {
   };
 }
 
+/** A text the HUD drew: its anchor and alignment (0 left … 1 right). */
+interface Text {
+  text: string;
+  x: number;
+  y: number;
+  align: number;
+}
+
 function build(sim: Sim, drawn?: HudDrawState, hud = new HudSymbology(LAYOUT)) {
   const rec = new Recorder();
-  const texts: { text: string; x: number; y: number }[] = [];
-  const info = { ...hud.build(sim, EYE, rec, (text, x, y) => texts.push({ text, x, y }), drawn) };
+  const texts: Text[] = [];
+  const log = (text: string, x: number, y: number, align: number) =>
+    texts.push({ text, x, y, align });
+  const info = { ...hud.build(sim, EYE, rec, log, drawn) };
   return {
     info,
     rec,
@@ -418,6 +424,41 @@ describe('HUD CCRP', () => {
     expect(build(sim, undefined, hud).has('TOF 8')).toBe(true);
   });
 
+  it('holds the solution cue at the top of the line however far the release is', () => {
+    // 40 s to release: the computer's angle (≈3.5°/s here) is far past the zenith.
+    for (const cueEl of [30 * DEG, 138 * DEG, 200 * DEG]) {
+      const sim = ccrp(0, 40);
+      sim.avionics.release.cueEl = cueEl;
+      const r = build(sim, drawnOf(sim));
+      expect(r.info.cue).toBe(true);
+      expect(r.info.cueY).toBeCloseTo(LAYOUT.aslTop, 9);
+      expect(r.has('40')).toBe(true); // the time to release beside it
+      expect(r.has('REL 40')).toBe(true);
+    }
+  });
+
+  it('past the release point: the cue below the velocity vector, no countdown, no release cue', () => {
+    const sim = ccrp(0, -3);
+    const rel = sim.avionics.release;
+    rel.passed = true;
+    rel.cueEl = -6 * DEG;
+    const r = build(sim, drawnOf(sim));
+    expect(r.info.asl).toBe(true);
+    expect(r.info.cue).toBe(true);
+    expect(r.info.cueY).toBeLessThan(r.info.tvvY);
+    expect(r.info.releaseCue).toBe(false);
+    expect(r.info.timeToRelease).toBeNaN();
+    expect(r.info.timeOfFall).toBeNaN();
+    expect(r.texts.some((t) => t.text.startsWith('REL') || t.text.startsWith('TOF'))).toBe(false);
+    // Not passed, at the release: the cue on the velocity vector and the release cue.
+    rel.passed = false;
+    rel.timeToRelease = 0;
+    rel.releaseNow = true;
+    const at = build(sim, drawnOf(sim));
+    expect(at.info.releaseCue).toBe(true);
+    expect(at.info.timeOfFall).toBeCloseTo(21.5, 12);
+  });
+
   it('says CCRP INVALID without a solution or a CCRP weapon', () => {
     const sim = ccrp(0);
     expect(build(sim).has('CCRP INVALID')).toBe(false);
@@ -513,14 +554,14 @@ describe('HUD SPI and sensor marks', () => {
     }
     // Unlocked, the seeker's line of sight is a direction.
     mav.locked = false;
-    mav.los.copy(bodyDirFromHudAngles(1 * DEG, -9 * DEG, new Vector3())).applyQuaternion(
-      sim.aircraft.orientation,
-    );
+    mav.los
+      .copy(bodyDirFromHudAngles(1 * DEG, -9 * DEG, new Vector3()))
+      .applyQuaternion(sim.aircraft.orientation);
     const { info } = build(sim);
-    const a = hudAnglesFromBodyDir(
-      worldToBody(sim.aircraft.orientation, mav.los, new Vector3()),
-      { az: 0, el: 0 },
-    );
+    const a = hudAnglesFromBodyDir(worldToBody(sim.aircraft.orientation, mav.los, new Vector3()), {
+      az: 0,
+      el: 0,
+    });
     const p = planeFromAngles(a.az, a.el, { x: 0, y: 0 });
     expect(info.mavX).toBeCloseTo(p.x, 9);
     expect(info.mavY).toBeCloseTo(p.y, 9);
@@ -536,18 +577,56 @@ describe('HUD SPI and sensor marks', () => {
     const nm = sim.aircraft.position.distanceTo(av.spi.position) / 1852;
     expect(r.has(nm.toFixed(1))).toBe(true);
     expect(r.has('SPI STPT')).toBe(true);
-    // 25° right of the nose: outside the field, held on its edge toward the SPI.
+    // 25° right of the nose: outside the field, held toward the SPI on the hold box's edge
+    // (between the text columns: the mark never sits on a text).
     av.spi.position.copy(groundAt(sim, 25, -4));
     r = build(sim);
     expect(r.info.spiHeld).toBe(true);
-    const box = LAYOUT.tvvBox;
+    const box = LAYOUT.spiHoldBox;
     expect(r.info.spiX).toBeCloseTo(box.right, 9);
+    expect(box.right).toBeLessThan(LAYOUT.tvvBox.right);
     const cx = (box.left + box.right) / 2;
     const cy = (box.bottom + box.top) / 2;
     const a = hudAnglesOfPoint(sim.aircraft, av.spi.position, { az: 0, el: 0 });
     const p = planeFromAngles(a.az, a.el, { x: 0, y: 0 });
     const held = holdOnBox(cx, cy, p.x, p.y, box, { x: 0, y: 0 });
     expect(r.info.spiY).toBeCloseTo(held.y, 9);
+    // Held, the mark is a direction cue only: no range under it (it would sit on the side text
+    // blocks or below the glass).
+    expect(r.texts.some((t) => Math.abs(t.x - r.info.spiX) < 1e-9)).toBe(false);
+  });
+
+  it('keeps the SPI range clear of every other text (ladder numbers, side blocks)', () => {
+    const sim = flight({ pitch: -5 });
+    const av = sim.avionics;
+    av.spi.valid = true;
+    av.spi.source = 'STPT';
+    const h = HUD_SIZES.text;
+    const boxOf = (t: Text) => {
+      const w = textWidth(t.text.length, h);
+      return [t.x - t.align * w, t.y - h / 2, t.x + (1 - t.align) * w, t.y + h / 2];
+    };
+    let shown = 0;
+    for (let az = -8; az <= 8; az += 0.5) {
+      for (let el = -14; el <= 3; el += 0.5) {
+        av.spi.position.copy(groundAt(sim, az, el));
+        const r = build(sim);
+        if (!r.info.spi || r.info.spiHeld) continue;
+        const nm = (sim.aircraft.position.distanceTo(av.spi.position) / 1852).toFixed(1);
+        const spiText = r.texts.find((t) => t.text === nm && Math.abs(t.x - r.info.spiX) < 1e-9);
+        if (!spiText) continue; // left out: no room above or below the mark
+        shown++;
+        const a = boxOf(spiText);
+        for (const t of r.texts) {
+          if (t === spiText) continue;
+          const b = boxOf(t);
+          const overlap = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+          expect(overlap, `SPI ${nm} at ${az}°, ${el}° over "${t.text}"`).toBe(false);
+        }
+      }
+    }
+    // Most positions keep their range.
+    expect(shown).toBeGreaterThan(400);
   });
 
   it('gives the pod diamond a tail when the pod is the SPI generator', () => {

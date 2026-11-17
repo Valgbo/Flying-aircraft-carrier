@@ -152,15 +152,27 @@ export const LASER = {
 
 export const LASER_NOTES: Record<keyof typeof LASER, SourceNote> = {
   defaultCode: { source: 'plan', confidence: 'approximate', note: 'PLAN §19: 1688 by default' },
-  codeDigitMin: { source: 'plan', confidence: 'approximate', note: 'PRF codes, as data/avionics.ts' },
-  codeDigitMax: { source: 'plan', confidence: 'approximate', note: 'PRF codes, as data/avionics.ts' },
+  codeDigitMin: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'PRF codes, as data/avionics.ts',
+  },
+  codeDigitMax: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'PRF codes, as data/avionics.ts',
+  },
   maxRange: { source: 'wikiLitening', confidence: 'estimate' },
   pulseHz: {
     source: 'plan',
     confidence: 'approximate',
     note: 'NATO PRF codes correspond to roughly 8–20 pulses per second',
   },
-  canopyMax: { source: 'plan', confidence: 'estimate', note: 'core/world/params.ts canopyMax 22 m' },
+  canopyMax: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'core/world/params.ts canopyMax 22 m',
+  },
   canopyStep: { source: 'plan', confidence: 'estimate' },
 };
 
@@ -393,9 +405,17 @@ export const CONTRAST_NOTES: Record<keyof typeof CONTRAST, SourceNote> = {
     confidence: 'confirmed',
     note: 'meteorological visibility: 2 % contrast left (sky atmosphere.ts)',
   },
-  hazeAltitudeScale: { source: 'plan', confidence: 'estimate', note: 'mirrors environment haze.ts' },
+  hazeAltitudeScale: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'mirrors environment haze.ts',
+  },
   minVisibilityKm: { source: 'plan', confidence: 'estimate', note: 'mirrors environment haze.ts' },
-  skyLevel: { source: 'plan', confidence: 'estimate', note: 'mirrors terrainMaterial.ts thermalOut' },
+  skyLevel: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'mirrors terrainMaterial.ts thermalOut',
+  },
   irHazeShare: {
     source: 'plan',
     confidence: 'estimate',
@@ -574,30 +594,72 @@ export const MASK_PYLONS: readonly ({ halfWidth: number; front: number; rear: nu
   { halfWidth: 0.062, front: -0.87, rear: 1.17 },
 ];
 
+/** A box in the BODY frame about a station's suspension point (data/geometry.ts stations), m. */
+export interface MaskOffsetBox {
+  min: readonly [number, number, number];
+  max: readonly [number, number, number];
+}
+
 /**
- * Envelope of what hangs on a station, for the mask (store frame of the station: x across, y down
- * from the lugs, z from the front to the rear), m: a box around the store bodies of a loaded rack.
+ * What hangs on a station, for the mask: a box around each store BODY (fins and wings left out:
+ * thin), placed as the aircraft model draws it — a10-meta.json's placement of the rack (or store)
+ * on the station with its few degrees of nose-down pitch, the rack's mounts, each store model's
+ * body axis (a cross-section 25–35 % behind the nose) and a radius that is the larger of the
+ * model's and data/munitions.ts STORES[*].diameter / 2. The racks are not mirrored on the left
+ * wing (a rack's mount 0 is on its own left), so the boxes hold on every station.
+ *
+ * Racks and launchers: `mounts` in fill order (triple racks: left, right, centre — the order the
+ * model draws the i-th store of a fill and the weapons module releases them), and the rack's own
+ * `structure` (its silhouettes in a ray-cast of the rack model), which stays when it is empty.
  */
-export const MASK_STORES: Partial<
-  Record<StoreType, { halfWidth: number; depth: number; front: number; rear: number }>
+export const MASK_RACKS: Partial<
+  Record<StoreType, { structure: MaskOffsetBox; mounts: readonly MaskOffsetBox[] }>
 > = {
-  'LAU-88': { halfWidth: 0.63, depth: 0.66, front: -1.57, rear: 0.92 },
-  'LAU-117': { halfWidth: 0.16, depth: 0.42, front: -1.57, rear: 0.92 },
-  'TER-9A': { halfWidth: 0.3, depth: 0.6, front: -1.03, rear: 1.19 },
-  'LAU-114': { halfWidth: 0.3, depth: 0.25, front: -1.4, rear: 1.4 },
-  'MK-82': { halfWidth: 0.14, depth: 0.32, front: -1.03, rear: 1.19 },
-  'MK-82AIR': { halfWidth: 0.14, depth: 0.32, front: -1.03, rear: 1.19 },
-  'GBU-12': { halfWidth: 0.14, depth: 0.32, front: -1.9, rear: 1.4 },
-  'CBU-97': { halfWidth: 0.2, depth: 0.42, front: -1.2, rear: 1.15 },
-  'LAU-131-M151': { halfWidth: 0.2, depth: 0.42, front: -1.2, rear: 1.2 },
-  'LAU-131-M156': { halfWidth: 0.2, depth: 0.42, front: -1.2, rear: 1.2 },
-  'LAU-68-M151': { halfWidth: 0.2, depth: 0.42, front: -1.2, rear: 1.2 },
-  'LAU-68-M156': { halfWidth: 0.2, depth: 0.42, front: -1.2, rear: 1.2 },
-  'AN/ALQ-184': { halfWidth: 0.15, depth: 0.32, front: -1.98, rear: 1.98 },
+  'LAU-88': {
+    structure: { min: [-0.2, -0.54, -0.81], max: [0.2, 0.07, 0.94] },
+    mounts: [
+      { min: [-0.63, -0.56, -1.53], max: [-0.32, -0.09, 0.97] },
+      { min: [0.33, -0.56, -1.53], max: [0.64, -0.09, 0.97] },
+      { min: [-0.15, -0.93, -1.51], max: [0.16, -0.46, 1.0] },
+    ],
+  },
+  'LAU-117': {
+    structure: { min: [-0.09, -0.31, -1.2], max: [0.09, 0.05, 1.01] },
+    mounts: [{ min: [-0.16, -0.69, -1.59], max: [0.16, -0.25, 0.91] }],
+  },
+  'TER-9A': {
+    structure: { min: [-0.12, -0.32, -0.84], max: [0.12, 0.09, 0.92] },
+    mounts: [
+      { min: [-0.43, -0.5, -1.08], max: [-0.04, 0.02, 1.15] },
+      { min: [0.05, -0.5, -1.08], max: [0.43, 0.02, 1.15] },
+      { min: [-0.13, -0.73, -1.06], max: [0.14, -0.32, 1.17] },
+    ],
+  },
+  'LAU-114': {
+    structure: { min: [-0.27, -0.15, -1.34], max: [0.27, 0.11, 0.96] },
+    mounts: [
+      { min: [-0.4, -0.25, -1.42], max: [-0.27, 0.08, 1.48] },
+      { min: [0.26, -0.25, -1.42], max: [0.4, 0.08, 1.48] },
+    ],
+  },
+};
+
+/** A store hung directly on a pylon (no rack), for the mask: as MASK_RACKS. */
+export const MASK_STORES: Partial<Record<StoreType, MaskOffsetBox>> = {
+  'MK-82': { min: [-0.14, -0.35, -1.06], max: [0.13, 0.09, 1.17] },
+  'MK-82AIR': { min: [-0.14, -0.36, -1.06], max: [0.13, 0.09, 1.17] },
+  'GBU-12': { min: [-0.14, -0.43, -2.03], max: [0.13, 0.1, 1.26] },
+  'CBU-97': { min: [-0.21, -0.49, -1.1], max: [0.19, 0.05, 1.25] },
+  'LAU-131-M151': { min: [-0.16, -0.38, -0.86], max: [0.17, 0.08, 0.93] },
+  'LAU-131-M156': { min: [-0.16, -0.38, -0.86], max: [0.17, 0.08, 0.93] },
+  'LAU-68-M151': { min: [-0.16, -0.38, -0.86], max: [0.17, 0.08, 0.93] },
+  'LAU-68-M156': { min: [-0.16, -0.38, -0.86], max: [0.17, 0.08, 0.93] },
+  'AN/ALQ-184': { min: [-0.17, -0.51, -1.65], max: [0.16, 0.01, 2.32] },
+  'AN/AAQ-28': { min: [-0.21, -0.43, -0.9], max: [0.2, 0.06, 1.36] },
 };
 
 export const MASK_NOTES: SourceNote = {
   source: 'flightgearA10',
   confidence: 'approximate',
-  note: 'ray-cast of a10-exterior.glb (wing, fuselage, nacelles, tail, gear pods, pylons) and the store models in a10-meta.json; boxes are envelopes',
+  note: 'ray-cast of a10-exterior.glb (wing, fuselage, nacelles, tail, gear pods, pylons); stores: a10-meta.json placements and rack mounts, store-model body axes, STORES diameters; racks: ray-cast silhouettes of their models; boxes are envelopes',
 };

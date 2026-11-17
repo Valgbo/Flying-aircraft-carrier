@@ -5,11 +5,7 @@
  * alone, not the flight model.
  */
 import { Vector3 } from 'three';
-import {
-  predictStoreImpact,
-  type FireControlGround,
-  type ImpactPrediction,
-} from '../avionics';
+import { predictStoreImpact, type FireControlGround, type ImpactPrediction } from '../avionics';
 import { SIM_DT } from '../constants';
 import { quaternionFromAttitude } from '../frames';
 import { createSim, realismFlags } from '../sim';

@@ -73,7 +73,8 @@ export const IMPACT_CLASS_LABEL: Record<ImpactClass, string> = {
   defeated: 'Stopped or ricocheted',
   burst: 'HEI burst on the outside',
   fragments: 'Burst nearby: blast or fragments',
-  ground: 'Missed: ground nearby',
+  // not "missed": a round through a scoring panel (or a thin outer layer) lands behind it too
+  ground: 'Ground impacts nearby',
 };
 
 export interface ImpactMark extends LocalPoint {

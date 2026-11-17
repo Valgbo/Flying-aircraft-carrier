@@ -11,17 +11,26 @@
  */
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { applyCommands, RELEASE, stepFireControl } from '../../../src/a10/core/avionics';
+import {
+  applyCommands,
+  RELEASE,
+  stepFireControl,
+  type MasterMode,
+} from '../../../src/a10/core/avionics';
 import { SIM_DT } from '../../../src/a10/core/constants';
 import { createSim } from '../../../src/a10/core/sim';
 import type { MaverickSeekerState } from '../../../src/a10/core/sensors/types';
-import type { MasterMode, Sim, SimEvent } from '../../../src/a10/core/types';
+import type { Sim, SimEvent } from '../../../src/a10/core/types';
 import { updateStoresTotals } from '../../../src/a10/core/weapons';
 import type { ReleaseRequest, StoreType } from '../../../src/a10/core/weapons/types';
 import { createFlatTerrain } from '../../../src/a10/core/world';
 
 /** A seeker of a missile on a station, as the sensors module would publish it. */
-function seeker(station: number, type: StoreType, over: Partial<MaverickSeekerState> = {}): MaverickSeekerState {
+function seeker(
+  station: number,
+  type: StoreType,
+  over: Partial<MaverickSeekerState> = {},
+): MaverickSeekerState {
   return {
     station,
     type,
@@ -43,7 +52,12 @@ function seeker(station: number, type: StoreType, over: Partial<MaverickSeekerSt
 }
 
 function mavSim(): Sim {
-  const sim = createSim({ terrain: createFlatTerrain(0), scenario: 'empty', loadoutId: 'tankHunter', seed: 3 });
+  const sim = createSim({
+    terrain: createFlatTerrain(0),
+    scenario: 'empty',
+    loadoutId: 'tankHunter',
+    seed: 3,
+  });
   const av = sim.avionics;
   av.masterArm = 'ARM';
   av.selectedProfile = 'AGM65D';
@@ -74,10 +88,15 @@ function run(sim: Sim, seconds: number, held: (t: number) => boolean, out?: Step
     const t0 = sim.time;
     applyCommands(sim);
     for (const r of sim.avionics.sensorRequests) {
-      res.events.push({ type: 'switch', t: t0, name: `request:${r.sensor}:${r.action}`, value: r.dir });
+      res.events.push({
+        type: 'switch',
+        t: t0,
+        name: `request:${r.sensor}:${r.action}`,
+        value: r.dir,
+      });
     }
     const q = sim.stores.releaseQueue;
-    for (let k = 0; k < q.length; ) {
+    for (let k = 0; k < q.length;) {
       if (q[k].time < t0 + SIM_DT) {
         const req = q.splice(k, 1)[0];
         const st = sim.stores.stations[req.station - 1];
@@ -213,7 +232,9 @@ describe('Maverick launch (PLAN §6.4)', () => {
     const res = run(sim, 1.5, () => true);
     expect(res.requests).toHaveLength(1);
     // The launch left in the step after the decision; the request for the next seeker follows.
-    const slaves = res.events.filter((e) => e.type === 'switch' && e.name === 'request:MAV:slaveSpi');
+    const slaves = res.events.filter(
+      (e) => e.type === 'switch' && e.name === 'request:MAV:slaveSpi',
+    );
     expect(slaves).toHaveLength(1);
     expect(slaves[0].t).toBeGreaterThan(res.requests[0].time);
     // The DSMS's selected station is the sensors module's selected missile (rail 1 on station 3).
@@ -229,6 +250,8 @@ describe('Maverick launch (PLAN §6.4)', () => {
     other.avionics.spi.source = 'HUD';
     const r2 = run(other, 1.5, () => true);
     expect(r2.requests).toHaveLength(1);
-    expect(r2.events.some((e) => e.type === 'switch' && e.name === 'request:MAV:slaveSpi')).toBe(false);
+    expect(r2.events.some((e) => e.type === 'switch' && e.name === 'request:MAV:slaveSpi')).toBe(
+      false,
+    );
   });
 });

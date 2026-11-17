@@ -192,10 +192,7 @@ export function prepareRocketPod(template: Object3D): number {
   const index = geometry.index!;
   const position = geometry.getAttribute('position');
   template.updateMatrixWorld(true);
-  const toPod = new Matrix4()
-    .copy(template.matrixWorld)
-    .invert()
-    .multiply(found.matrixWorld);
+  const toPod = new Matrix4().copy(template.matrixWorld).invert().multiply(found.matrixWorld);
   // each object's block: its tube axis (mean x, y) and that every vertex lies within the tube
   const blocks: { n: number; start: number; tris: number; x: number; y: number }[] = [];
   let start = 0;
@@ -242,7 +239,8 @@ export function prepareRocketPod(template: Object3D): number {
     const g = new BufferGeometry();
     g.name = `${geometry.name || 'rockets'}-stage${k}`;
     g.setIndex(newIndex);
-    for (const name of Object.keys(geometry.attributes)) g.setAttribute(name, geometry.attributes[name]);
+    for (const name of Object.keys(geometry.attributes))
+      g.setAttribute(name, geometry.attributes[name]);
     g.boundingSphere = geometry.boundingSphere;
     g.boundingBox = geometry.boundingBox;
     g.setDrawRange(first * 3, (total - first) * 3);
@@ -252,6 +250,206 @@ export function prepareRocketPod(template: Object3D): number {
   }
   found.geometry = info.stages[0];
   return blocks.length;
+}
+
+// ---------------------------------------------------------------------------------------------
+// GBU-12 canards: four all-moving fins that the views turn on their hinges
+// ---------------------------------------------------------------------------------------------
+
+/** Fin planes of the GBU-12 canards about the store axis: an X (45° + k·90°). */
+const CANARD_FINS = 4;
+/** A canard vertex lies within this of its fin's mid-plane (the fins are 8 mm thick), m. */
+const CANARD_THICK = 0.012;
+/** …and at least this far out from the store axis (the guidance section's radius is 0.1 m). */
+const CANARD_ROOT = 0.07;
+
+const _cv = new Vector3();
+const _cm = new Matrix4();
+
+/** Which canard fin (0 … 3) a template-frame point (x, y relative to the axis) lies on, or -1. */
+function canardFinOf(x: number, y: number): number {
+  for (let f = 0; f < CANARD_FINS; f++) {
+    const a = Math.PI / 4 + (f * Math.PI) / 2;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    if (Math.abs(x * s - y * c) < CANARD_THICK && x * c + y * s > CANARD_ROOT) return f;
+  }
+  return -1;
+}
+
+/** The canard pivots of a store instance (index = fin), each turning about `userData.axis`. */
+export function canardPivotsOf(root: Object3D, out: Object3D[]): number {
+  out.length = 0;
+  root.traverse((o) => {
+    const k = o.userData?.canard;
+    if (typeof k === 'number') out[k] = o;
+  });
+  return out.length;
+}
+
+/** The GBU-12 kit mesh's two forms: with its canards merged (`full`), and without (`body`). */
+const canardKits = new WeakMap<BufferGeometry, { full: BufferGeometry; body: BufferGeometry }>();
+
+/**
+ * Switch a GBU-12 copy between its two forms: `live` (in flight) draws the kit without its
+ * canards and the four pivoted canards, which can then deflect; otherwise (on a pylon, or back in
+ * a pool) the kit mesh draws them merged and neutral, in one draw call instead of five.
+ */
+export function setCanardsLive(root: Object3D, live: boolean): void {
+  root.traverse((o) => {
+    const mesh = o as Mesh;
+    if (mesh.isMesh) {
+      const kit = canardKits.get(mesh.geometry as BufferGeometry);
+      if (kit) mesh.geometry = live ? kit.body : kit.full;
+    }
+    if (typeof o.userData?.canard === 'number') {
+      o.visible = live;
+      if (!live) o.quaternion.identity();
+    }
+  });
+}
+
+/**
+ * Give a GBU-12 template its four canards as separate, pivoted meshes. The converter merges the
+ * `GBU-12_Canards` object into the kit's mesh as one contiguous block of the marker's triangle
+ * count; that block is moved to the end of the index and cut from the mesh's draw range, and each
+ * fin's triangles become a mesh (sharing the buffers) under a pivot on the store axis at the fin's
+ * mid-chord, so a rotation of the pivot about its `userData.axis` (the fin's span, template frame)
+ * deflects the fin like the real all-moving canard. The neutral pose draws exactly what the merged
+ * mesh drew. The template starts in its merged form (`setCanardsLive`: pivots hidden, the kit
+ * drawing its canards). `centre` is the store axis point (meta `centre`). Anything unexpected
+ * leaves the template as it was. Returns the number of canards made (0 or 4).
+ */
+export function prepareCanards(template: Object3D, centre: readonly number[]): number {
+  let total = 0;
+  template.traverse((o) => {
+    if (o.userData?.acName === 'GBU-12_Canards') total = Number(o.userData.triangles) || 0;
+  });
+  if (total <= 0) return 0;
+  const cx = centre[0];
+  const cy = centre[1];
+  const cz = centre[2];
+  template.updateMatrixWorld(true);
+  const toTemplate = new Matrix4();
+  // a triangle of a canard: its three corners on the same fin plane, in the front half
+  const finOfTriangle = (pos: BufferAttribute, index: BufferAttribute, t: number): number => {
+    let fin = -1;
+    for (let k = 0; k < 3; k++) {
+      _cv.fromBufferAttribute(pos, index.getX(t * 3 + k)).applyMatrix4(toTemplate);
+      const f = _cv.z < cz ? canardFinOf(_cv.x - cx, _cv.y - cy) : -1;
+      if (f < 0 || (fin >= 0 && f !== fin)) return -1;
+      fin = f;
+    }
+    return fin;
+  };
+  let found: { mesh: Mesh; start: number; fins: number[] } | null = null;
+  template.traverse((o) => {
+    const mesh = o as Mesh;
+    if (found || !mesh.isMesh) return;
+    const g = mesh.geometry as BufferGeometry;
+    const index = g.index;
+    const pos = g.getAttribute('position') as BufferAttribute | undefined;
+    if (!index || !pos || index.count < total * 3) return;
+    toTemplate.copy(template.matrixWorld).invert().multiply(mesh.matrixWorld);
+    const tris = index.count / 3;
+    // the block: exactly `total` consecutive triangles, every one on a canard
+    let run = 0;
+    for (let t = 0; t <= tris; t++) {
+      if (t < tris && finOfTriangle(pos, index, t) >= 0) {
+        run++;
+        continue;
+      }
+      if (run === total) {
+        const start = t - total;
+        const fins: number[] = [];
+        for (let k = 0; k < total; k++) fins.push(finOfTriangle(pos, index, start + k));
+        found = { mesh, start, fins };
+        return;
+      }
+      run = 0;
+    }
+  });
+  const hit = found as { mesh: Mesh; start: number; fins: number[] } | null;
+  if (!hit) return 0;
+  const { mesh, start, fins } = hit;
+  const counts = [0, 0, 0, 0];
+  for (const f of fins) counts[f]++;
+  if (counts.some((c) => c === 0)) return 0;
+  const geometry = mesh.geometry as BufferGeometry;
+  const index = geometry.index!;
+  const pos = geometry.getAttribute('position') as BufferAttribute;
+  toTemplate.copy(template.matrixWorld).invert().multiply(mesh.matrixWorld);
+  // the index: everything else first, then the canards fin by fin
+  const src = index.array;
+  const out = new (src.constructor as Uint16ArrayConstructor | Uint32ArrayConstructor)(src.length);
+  let o = 0;
+  for (let i = 0; i < src.length; i++)
+    if (i < start * 3 || i >= (start + total) * 3) out[o++] = src[i];
+  const firstOf: number[] = [];
+  for (let f = 0; f < CANARD_FINS; f++) {
+    firstOf.push(o / 3);
+    for (let k = 0; k < total; k++) {
+      if (fins[k] !== f) continue;
+      const i = (start + k) * 3;
+      out[o++] = src[i];
+      out[o++] = src[i + 1];
+      out[o++] = src[i + 2];
+    }
+  }
+  const newIndex = new BufferAttribute(out, 1);
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const share = (name: string, first: number, count: number): BufferGeometry => {
+    const g = new BufferGeometry();
+    g.name = name;
+    g.setIndex(newIndex);
+    for (const a of Object.keys(geometry.attributes)) g.setAttribute(a, geometry.attributes[a]);
+    g.boundingSphere = geometry.boundingSphere;
+    g.boundingBox = geometry.boundingBox;
+    g.setDrawRange(first * 3, count * 3);
+    return g;
+  };
+  const body = share(`${geometry.name || 'gbu12'}-body`, 0, src.length / 3 - total);
+  const full = share(`${geometry.name || 'gbu12'}-full`, 0, src.length / 3);
+  const kit = { full, body };
+  canardKits.set(full, kit);
+  canardKits.set(body, kit);
+  for (let f = 0; f < CANARD_FINS; f++) {
+    // the hinge: on the axis at the fin's mid-chord; the axis of turn: the fin's span
+    let zMin = Infinity;
+    let zMax = -Infinity;
+    let rx = 0;
+    let ry = 0;
+    for (let t = firstOf[f]; t < firstOf[f] + counts[f]; t++)
+      for (let k = 0; k < 3; k++) {
+        _cv.fromBufferAttribute(pos, out[t * 3 + k]).applyMatrix4(toTemplate);
+        zMin = Math.min(zMin, _cv.z);
+        zMax = Math.max(zMax, _cv.z);
+        rx += _cv.x - cx;
+        ry += _cv.y - cy;
+      }
+    const r = Math.hypot(rx, ry);
+    const pivot = new Object3D();
+    pivot.name = `GBU-12_Canard_${f}`;
+    pivot.position.set(cx, cy, (zMin + zMax) / 2);
+    pivot.userData = { pivot: true, canard: f, axis: [rx / r, ry / r, 0] };
+    pivot.matrixAutoUpdate = true;
+    pivot.visible = false;
+    const fin = new Mesh(share(`gbu12-canard${f}`, firstOf[f], counts[f]), mesh.material);
+    fin.name = `GBU-12_Canard_${f}_fin`;
+    _cm.makeTranslation(-pivot.position.x, -pivot.position.y, -pivot.position.z);
+    fin.matrix.multiplyMatrices(_cm, toTemplate);
+    fin.matrix.decompose(fin.position, fin.quaternion, fin.scale);
+    fin.matrixAutoUpdate = false;
+    fin.castShadow = mesh.castShadow;
+    fin.receiveShadow = mesh.receiveShadow;
+    pivot.add(fin);
+    template.add(pivot);
+    pivot.updateMatrix();
+  }
+  mesh.geometry = full;
+  template.updateMatrixWorld(true);
+  return CANARD_FINS;
 }
 
 /** Merge the gear meshes of the exterior at rest into one Float32 mesh per material. */
@@ -376,6 +574,8 @@ export function loadAircraftModels(
       }
       // rocket pods: the rockets leave their tubes one by one (stations and jettisoned pods)
       prepareRocketPod(storeGroups[i]);
+      // the GBU-12's canards turn on their hinges in flight
+      prepareCanards(storeGroups[i], meta.stores[id].centre);
       stores.set(id, storeGroups[i]);
     });
     const gear = buildGearUp(exterior, meta);

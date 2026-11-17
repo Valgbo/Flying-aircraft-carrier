@@ -14,13 +14,14 @@
  * reading them every frame allocates nothing after the first time.
  *
  *   DSMS  1 SEL station for selective jettison · 2 JETT drop it (Master Arm ARM) · 3 CODE / 4 INC
- *         the selected profile's laser code (GBU-12): CODE moves the cursor digit, INC steps it ·
+ *         the selected profile's laser code (GBU-12): CODE enters a code typed on the UFC
+ *         (ufc.ts), or with an empty scratchpad moves the cursor digit, INC steps that digit ·
  *         6 PROF+ / 7 PROF- profiles · 8 MODE CCIP/CCRP · 9 REL SGL/PRS/RIP SGL/RIP PRS ·
  *         10 QTY ripple quantity · 20 SPC ripple spacing (ft) · 19 FUZE NOSE/TAIL/N/T ·
  *         18 DRAG LD/HD (Mk-82 AIR) · 17 ARM arming delay (s) · 16 MIN minimum altitude (ft).
  *   TGP   1 PIC CCD/WHOT/BHOT · 2 FOV WIDE/NARO · 3 ZM+ / 4 ZM- electronic zoom · 5 SLV slave the
  *         pod to the SPI · 6 TRK point/area track (TMS forward) · 7 INR (TMS aft) · 8 LTCH laser
- *         latch · 9 CODE / 10 INC the pod's laser code.
+ *         latch · 9 CODE / 10 INC the pod's laser code (CODE as on the DSMS).
  *   MAV   1 PWR seeker power · 2 FOV WIDE/NARO · 3 PIC polarity · 4 STEP next Maverick type ·
  *         5 SLV slave the seeker to the SPI · 6 TRK lock (TMS forward) · 7 BRK break (TMS aft).
  *   TAD   1 RNG+ / 2 RNG- map range (nm) · 3 CEN own ship / SPI · 6 STP+ / 7 STP- steerpoint.
@@ -56,6 +57,7 @@ import {
   toggleDrag,
 } from './profiles';
 import type { MfdPage, WeaponProfile } from './types';
+import { takeScratchpadCode } from './ufc';
 import { FT } from '../units';
 
 export type Display = 'L' | 'R';
@@ -217,6 +219,14 @@ const DSMS_TABLE: Partial<Record<number, OsbBinding>> = {
         notify(sim, `${p.name ?? p.id}: NO LASER CODE`, 'info');
         return;
       }
+      // A code typed on the UFC is entered; with an empty scratchpad the cursor digit moves.
+      const code = takeScratchpadCode(sim);
+      if (code > 0) {
+        p.laserCode = code;
+        switched(sim, 'profile', p.name ?? p.id);
+        return;
+      }
+      if (code < 0) return;
       const pages = sim.avionics.pages;
       pages.dsmsCodeDigit = (pages.dsmsCodeDigit + 1) % 4;
     },
@@ -357,8 +367,16 @@ const TGP_TABLE: Partial<Record<number, OsbBinding>> = {
   9: {
     label: 'CODE',
     press(sim) {
-      const pages = sim.avionics.pages;
-      pages.tgpCodeDigit = (pages.tgpCodeDigit + 1) % 4;
+      const av = sim.avionics;
+      // A code typed on the UFC is entered; with an empty scratchpad the cursor digit moves.
+      const code = takeScratchpadCode(sim);
+      if (code > 0) {
+        av.laserCode = code;
+        switched(sim, 'laserCode', intText(code));
+        return;
+      }
+      if (code < 0) return;
+      av.pages.tgpCodeDigit = (av.pages.tgpCodeDigit + 1) % 4;
     },
     value: (sim) => intText(sim.avionics.laserCode),
   },

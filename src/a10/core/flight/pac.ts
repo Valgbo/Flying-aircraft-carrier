@@ -128,7 +128,8 @@ export function stepPac(sim: Sim, dt: number): void {
     } else {
       f.pacSettleTime += dt;
     }
-    const slow = Math.hypot(f.pacRateAz, f.pacRateEl) < F.pacSettleRate;
+    const slow =
+      f.pacRateAz * f.pacRateAz + f.pacRateEl * f.pacRateEl < F.pacSettleRate * F.pacSettleRate;
     f.pacSettleDwell = slow ? f.pacSettleDwell + dt : 0;
     if (f.pacSettleTime >= F.pacSettleMaxTime || f.pacSettleDwell >= F.pacSettleDwellTime) {
       capture(sim, false);

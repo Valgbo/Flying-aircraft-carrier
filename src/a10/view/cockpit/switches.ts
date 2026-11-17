@@ -16,7 +16,8 @@
  *   Altitude alert        the UFC's ALT ALRT key (left up a step, right down)
  *   Flaps, gear           the flap lever and the landing-gear handle of the model
  *   g-meter reset         the accelerometer's push-to-set button (cockpit only, no command)
- *   Autopilot, its mode   a small add-on box at the left end of the panel (hotspots.ts)
+ *   Autopilot, its mode   the ENGAGE/DISENGAGE button and the PATH – ALT/HDG – ALT switch of the
+ *                         model's LASTE panel, front of the left console (laste.ts)
  *
  * Clicks: the left button is the primary action (toggle / next position), the right button
  * the secondary one (the other way). Commands carry explicit values computed from the current
@@ -60,8 +61,8 @@ export type ControlTarget =
    * on top of a grip.
    */
   | { kind: 'meshTop'; node: string; height: number }
-  /** One of our hotspot switches (hotspots.ts), by control id. */
-  | { kind: 'hotspot' }
+  /** The autopilot's button or mode switch on the model's LASTE panel (laste.ts), by control id. */
+  | { kind: 'laste' }
   /** A toggle switch on the A-10C armament HUD control panel (ahcp.ts), by control id. */
   | { kind: 'ahcp' }
   /** A key of the A-10C up-front controller (ufc.ts). */
@@ -97,8 +98,8 @@ export const COCKPIT_CONTROLS: readonly CockpitControlDef[] = [
   { id: 'laserArm', label: 'LASER ARM', target: { kind: 'ahcp' } },
   { id: 'tgpPower', label: 'TGP POWER', target: { kind: 'ahcp' } },
   { id: 'altSource', label: 'ALT SOURCE', target: { kind: 'ahcp' } },
-  { id: 'autopilot', label: 'AUTOPILOT', target: { kind: 'hotspot' } },
-  { id: 'autopilotMode', label: 'AUTOPILOT MODE', target: { kind: 'hotspot' } },
+  { id: 'autopilot', label: 'AUTOPILOT', target: { kind: 'laste' } },
+  { id: 'autopilotMode', label: 'AUTOPILOT MODE', target: { kind: 'laste' } },
   { id: 'altitudeAlert', label: 'ALT ALRT', target: { kind: 'ufc', key: 'ALT_ALRT' } },
   { id: 'steerNext', label: 'STEER ▲', target: { kind: 'ufc', key: 'STEER_UP' } },
   { id: 'steerPrevious', label: 'STEER ▼', target: { kind: 'ufc', key: 'STEER_DN' } },

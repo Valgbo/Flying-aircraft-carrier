@@ -16,7 +16,13 @@ import {
 } from '../../../src/a10/core/flight';
 import { createTestbed, runFlightOnly, stepFlightOnly } from '../../../src/a10/core/flight/testbed';
 import type { Sim, SimEvent } from '../../../src/a10/core/types';
-import { createFlatTerrain, gustAt, gustScales, tasFromCas, windAt } from '../../../src/a10/core/world';
+import {
+  createFlatTerrain,
+  gustAt,
+  gustScales,
+  tasFromCas,
+  windAt,
+} from '../../../src/a10/core/world';
 import { quaternionFromAttitude } from '../../../src/a10/core/frames';
 
 /** Generous timeout for flights of a minute or more (the CI machine may be loaded). */
@@ -312,7 +318,9 @@ describe('ground contact', () => {
       // Relaxed: it bounces off the canopy and flies on above it.
       const relaxed = intoTheTrees(18, 'relaxed');
       expect(relaxed.sim.aircraft.crashed).toBe(false);
-      expect(relaxed.sim.events.some((e) => e.type === 'message' && e.text === 'GROUND CONTACT')).toBe(true);
+      expect(
+        relaxed.sim.events.some((e) => e.type === 'message' && e.text === 'GROUND CONTACT'),
+      ).toBe(true);
       expect(relaxed.sim.aircraft.agl).toBeGreaterThan(18);
     },
     LONG,

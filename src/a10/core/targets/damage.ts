@@ -27,6 +27,7 @@ import {
   FIRE_SOURCES,
   FRAGMENTS,
   ROUND_EFFECTS,
+  SHAPED_CHARGE,
   VEHICLE_MODELS,
 } from '../../data/vehicles';
 import type { Sim } from '../types';
@@ -65,8 +66,8 @@ import type {
   VehicleKind,
 } from './types';
 
-/** What hurt a component: decides fire and detonation chances. */
-export type DamageCause = 'api' | 'hei' | 'fragment' | 'blast';
+/** What hurt a component: decides fire and detonation chances ('jet': a shaped charge). */
+export type DamageCause = 'api' | 'hei' | 'fragment' | 'blast' | 'jet';
 
 /** How strongly each cause sets off ammunition, relative to a DU penetrator. */
 const DETONATION_FACTOR: Record<DamageCause, number> = {
@@ -74,6 +75,7 @@ const DETONATION_FACTOR: Record<DamageCause, number> = {
   hei: 0.8,
   fragment: 0.5,
   blast: 0.8,
+  jet: SHAPED_CHARGE.detonationFactor,
 };
 
 export const WEAPON_NAME: Record<number, string> = {
@@ -217,7 +219,7 @@ function boxDistance(b: ComponentBox, x: number, y: number, z: number): number {
   const dx = Math.max(b.min[0] - x, 0, x - b.max[0]);
   const dy = Math.max(b.min[1] - y, 0, y - b.max[1]);
   const dz = Math.max(b.min[2] - z, 0, z - b.max[2]);
-  return Math.hypot(dx, dy, dz);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 /** Set the hull-frame (and turret-frame) origin and direction of a world ray. */
@@ -256,6 +258,22 @@ function walkInterior(
   list: ComponentId[],
 ): void {
   const boxes = VEHICLE_MODELS[v.kind].components;
+  const n = crossings(v, length);
+  let cap = capacityMm;
+  for (let k = 0; k < n && k < maxBoxes; k++) {
+    if (cap <= 0) break;
+    const i = crossI[k];
+    strikeBox(sim, v, i, scale, cause, list);
+    cap -= boxes[i].absorbMm;
+  }
+}
+
+/**
+ * The internal boxes crossed by the current frame ray up to `length` m, nearest first, into
+ * crossT / crossI; returns how many.
+ */
+function crossings(v: Vehicle, length: number): number {
+  const boxes = VEHICLE_MODELS[v.kind].components;
   let n = 0;
   for (let i = 0; i < boxes.length && n < MAX_BOXES; i++) {
     const b = boxes[i];
@@ -277,13 +295,7 @@ function walkInterior(
     crossI[j + 1] = i;
     n++;
   }
-  let cap = capacityMm;
-  for (let k = 0; k < n && k < maxBoxes; k++) {
-    if (cap <= 0) break;
-    const i = crossI[k];
-    strikeBox(sim, v, i, scale, cause, list);
-    cap -= boxes[i].absorbMm;
-  }
+  return n;
 }
 
 const _u = new Vector3();
@@ -353,6 +365,8 @@ export function traceInterior(
 /**
  * Something burst or struck at world point p: external boxes within `externalRadius` (and, when
  * the skin is defeated, internal boxes within `internalRadius`) may be hurt, more the closer.
+ * `once` marks the boxes already struck by the same round (each at most once). `inside`: the
+ * burst is inside the hull (a jet's overpressure), so a firing pit's earth shields nothing.
  */
 export function strikeNear(
   sim: Sim,
@@ -367,6 +381,7 @@ export function strikeNear(
   cause: DamageCause,
   list: ComponentId[],
   once: Uint8Array | null = null,
+  inside = false,
 ): void {
   const boxes = VEHICLE_MODELS[v.kind].components;
   worldToHull(pose, px, py, pz, _hb);
@@ -380,7 +395,7 @@ export function strikeNear(
     if (once && once[i]) continue;
     if (b.turret && v.thrownTurret) continue;
     // in a firing pit the earth covers what lies below the rim
-    if (v.dugIn && !b.turret && b.max[1] < v.internal.digDepth) continue;
+    if (!inside && v.dugIn && !b.turret && b.max[1] < v.internal.digDepth) continue;
     const d = b.turret ? boxDistance(b, _tb.x, _tb.y, _tb.z) : boxDistance(b, _hb.x, _hb.y, _hb.z);
     if (d >= R) continue;
     if (once) once[i] = 1;
@@ -400,6 +415,20 @@ for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
     map[pi] = m.components.findIndex((b) => b.breakChance !== undefined && b.name === part.name);
   });
   TRACK_BOX[kind] = map;
+}
+
+/**
+ * For each class, the component box that IS each armour part (same name: a track run, a wheel, an
+ * external tank or drum), or −1.
+ */
+const PART_BOX = {} as Record<VehicleKind, Int8Array>;
+for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
+  const m = VEHICLE_MODELS[kind];
+  const map = new Int8Array(m.parts.length).fill(-1);
+  m.parts.forEach((part, pi) => {
+    map[pi] = m.components.findIndex((b) => b.name === part.name);
+  });
+  PART_BOX[kind] = map;
 }
 
 /**
@@ -651,4 +680,188 @@ export function resolveRoundHit(
     list,
   );
   return out;
+}
+
+// ---- Shaped-charge jets (applyWarheadHit, warheads.ts) -----------------------------------------
+
+/** What a shaped-charge jet did to the vehicle it struck (resolveJet). */
+export interface JetResult {
+  /** 'penetrated': through the main armour; 'passedThrough': only spaced layers, then out. */
+  outcome: 'penetrated' | 'stopped' | 'passedThrough';
+  /** The plate that decided it (the main armour perforated, or the plate that stopped the jet). */
+  plate: number;
+  /** Angle between the jet and that plate's normal, rad, and its thickness along the jet, mm. */
+  obliquity: number;
+  effectiveThicknessMm: number;
+  /** Penetration left behind the main armour, mm (0 unless 'penetrated'). */
+  residualMm: number;
+}
+
+const _jn: V3 = { x: 0, y: 0, z: 0 };
+
+/**
+ * A shaped-charge jet of `penetrationMm` (mm RHA) striking `v` at hit.point along the unit world
+ * direction (dx, dy, dz) (SHAPED_CHARGE in data/vehicles.ts). It is spent plate by plate along its
+ * line (t / cos θ). A spaced layer it crosses is holed (a track broken, a wheel or an external tank
+ * destroyed, a holed barrel puts the gun out of action). Each compartment it perforates (the hull,
+ * the turret, the engine compartment, a bulkhead between them) is hurt by the residual jet along
+ * its line, a wide cone of behind-armour debris from the hole and the overpressure filling it; the
+ * jet then carries on to the next part on its line until it is spent or leaves the vehicle.
+ * Damaged components go into `list`; the caller evaluates the condition and records the hit.
+ */
+export function resolveJet(
+  sim: Sim,
+  v: Vehicle,
+  pose: Pose,
+  hit: VehicleHit,
+  dx: number,
+  dy: number,
+  dz: number,
+  penetrationMm: number,
+  list: ComponentId[],
+  out: JetResult,
+): JetResult {
+  const J = SHAPED_CHARGE;
+  const model = VEHICLE_MODELS[v.kind];
+  const L = J.search;
+  let partIndex = hit.partIndex ?? partOfPlate(model, hit.plate);
+  let plate = model.plates[hit.plate] ?? model.parts[partIndex].plates[0];
+  _jn.x = hit.normal.x;
+  _jn.y = hit.normal.y;
+  _jn.z = hit.normal.z;
+  let ax = hit.point.x;
+  let ay = hit.point.y;
+  let az = hit.point.z;
+  // where the jet leaves the struck part (from just before the hit point), m along the jet
+  let exit = rayVehicle(
+    sim,
+    v,
+    pose,
+    ax - dx * 0.01,
+    ay - dy * 0.01,
+    az - dz * 0.01,
+    dx * L,
+    dy * L,
+    dz * L,
+    0,
+    1,
+    -1,
+    _ph,
+  )
+    ? Math.max(0, _ph.exit * L - 0.01)
+    : 0;
+  let pen = penetrationMm;
+  let perforated = false;
+  out.outcome = 'stopped';
+  out.residualMm = 0;
+  for (let layer = 0; layer < J.maxLayers; layer++) {
+    const part = model.parts[partIndex];
+    const cosT = Math.max(1e-3, -(dx * _jn.x + dy * _jn.y + dz * _jn.z));
+    const eff = plate.thicknessMm / cosT;
+    if (!perforated) {
+      out.plate = plate.index;
+      out.obliquity = Math.acos(Math.min(1, cosT));
+      out.effectiveThicknessMm = eff;
+    }
+    if (pen <= eff) {
+      if (!perforated) out.outcome = 'stopped';
+      break;
+    }
+    pen -= eff;
+    if (part.spaced) {
+      // what the layer is (a track, a wheel, a tank, the barrel) is holed
+      const box = PART_BOX[v.kind][partIndex];
+      if (box >= 0) damageBox(sim, v, box, 1, 'jet', 1, list);
+      else if (part.component === 'gun') {
+        const boxes = model.components;
+        for (let i = 0; i < boxes.length; i++)
+          if (boxes[i].id === 'gun') damageBox(sim, v, i, 1, 'jet', 1, list);
+      }
+      if (!perforated) out.outcome = 'passedThrough';
+    } else {
+      if (!perforated) {
+        perforated = true;
+        out.outcome = 'penetrated';
+        out.residualMm = pen;
+      }
+      pen = jetCompartment(sim, v, pose, ax, ay, az, dx, dy, dz, exit, pen, list);
+      if (pen <= 0) break;
+    }
+    // on to the next part along the jet
+    if (
+      !rayVehicle(sim, v, pose, ax, ay, az, dx * L, dy * L, dz * L, 1e-5, 1, partIndex, _ph) ||
+      !_ph.plate
+    )
+      break;
+    ax += dx * L * _ph.t;
+    ay += dy * L * _ph.t;
+    az += dz * L * _ph.t;
+    exit = (_ph.exit - _ph.t) * L;
+    partIndex = _ph.part;
+    plate = _ph.plate;
+    plateNormalWorld(pose, model.parts[partIndex], plate, _jn);
+  }
+  return out;
+}
+
+/**
+ * The jet has perforated a compartment's wall at p with `residualMm` left; `length` m of its line
+ * lie inside the compartment. Everything on that line is destroyed until the jet is spent, a wide
+ * cone of debris sprays from the hole, and overpressure and heat fill the space around it.
+ * Returns the penetration left where the jet leaves the compartment.
+ */
+function jetCompartment(
+  sim: Sim,
+  v: Vehicle,
+  pose: Pose,
+  px: number,
+  py: number,
+  pz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  length: number,
+  residualMm: number,
+  list: ComponentId[],
+): number {
+  const J = SHAPED_CHARGE;
+  const boxes = VEHICLE_MODELS[v.kind].components;
+  // the residual jet destroys what lies on its line until it is spent
+  frameRay(pose, px, py, pz, dx, dy, dz);
+  const n = crossings(v, length);
+  let cap = residualMm;
+  for (let k = 0; k < n && k < J.jetMaxBoxes; k++) {
+    if (cap <= 0) break;
+    const i = crossI[k];
+    damageBox(sim, v, i, J.jetDamage, 'jet', 1, list);
+    cap -= boxes[i].absorbMm;
+  }
+  // behind-armour debris: a wide cone of spall and jet particles around the line
+  const r = sim.rng.damage;
+  const phase = r.range(0, Math.PI * 2);
+  _dir.set(dx, dy, dz);
+  if (Math.abs(dy) < 0.9) _u.set(0, 1, 0);
+  else _u.set(1, 0, 0);
+  _u.cross(_dir).normalize();
+  _w.copy(_dir).cross(_u);
+  for (let k = 0; k < J.debrisRays; k++) {
+    const cone = r.range(J.debrisConeMin, J.debrisConeMax);
+    const phi = phase + (2 * Math.PI * k) / J.debrisRays;
+    const ca = Math.cos(cone);
+    const cu = Math.cos(phi) * Math.sin(cone);
+    const cw = Math.sin(phi) * Math.sin(cone);
+    frameRay(
+      pose,
+      px,
+      py,
+      pz,
+      dx * ca + _u.x * cu + _w.x * cw,
+      dy * ca + _u.y * cu + _w.y * cw,
+      dz * ca + _u.z * cu + _w.z * cw,
+    );
+    walkInterior(sim, v, J.debrisLength, Infinity, J.debrisWeight, J.debrisMaxBoxes, 'jet', list);
+  }
+  // overpressure, heat and smoke filling the compartment from the hole
+  strikeNear(sim, v, pose, px, py, pz, 0, J.blastRadius, J.blastScale, 'jet', list, null, true);
+  return cap;
 }

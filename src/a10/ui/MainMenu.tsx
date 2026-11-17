@@ -1,6 +1,7 @@
 /**
- * Main menu (PLAN_A10.md §11): Fly now, the three weapons-range events, Loadout, Settings and
- * Credits, each with a line saying what it is. Arrow keys move between the entries by where
+ * Main menu (PLAN_A10.md §11): Fly now, the three weapons-range events (with their conditions
+ * and the Range options dialog: wind, turbulence, the lane column's speed), Loadout, Settings
+ * and Credits, each with a line saying what it is. Arrow keys move between the entries by where
  * they are on screen (a list on desktop, rows of tiles on a phone), Enter or a click opens one;
  * hovering an entry moves the focus to it so mouse and keyboard share one highlight. The 3D
  * scene keeps rendering behind the panel.
@@ -12,7 +13,9 @@ import { beginFlight } from '../state/flow';
 import { useA10Store } from '../state/store';
 import A10Mark from './A10Mark';
 import { IconBook, IconJet, IconLane, IconPylons, IconReticle, IconRings } from './icons';
+import { CUSTOM_ID, CUSTOM_NAME } from './customLoadout';
 import { humanizeId, loadoutPresets } from './loadout';
+import { describeRangeOptions } from './rangeOptions';
 import { REALISM_INFO } from './realism';
 import { spatialStep, type NavKey } from './spatialNav';
 import { useA10Ui } from './uiStore';
@@ -103,9 +106,12 @@ function activate(target: Target): void {
 export default function MainMenu() {
   const loadoutId = useA10Store((s) => s.loadoutId);
   const realism = useA10Store((s) => s.settings.realism);
+  const rangeOptions = useA10Ui((s) => s.rangeOptions);
   const navRef = useRef<HTMLElement>(null);
   const loadoutName =
-    loadoutPresets().find((p) => p.id === loadoutId)?.name ?? humanizeId(loadoutId);
+    loadoutId === CUSTOM_ID
+      ? CUSTOM_NAME
+      : (loadoutPresets().find((p) => p.id === loadoutId)?.name ?? humanizeId(loadoutId));
 
   // Keyboard first: the menu is usable the moment it appears (unless a dialog has the focus).
   useEffect(() => {
@@ -208,6 +214,20 @@ export default function MainMenu() {
               <span className="a10-menu__group-line">Scored events for learning each weapon</span>
             </p>
             <div className="a10-menu__range">{RANGE.map((en, i) => entry(en, i + 1))}</div>
+            <button
+              type="button"
+              className="a10-menu__conditions"
+              data-testid="a10-range-options-open"
+              title="Range options: wind, turbulence and the lane column's speed"
+              onClick={() => useA10Ui.getState().setRangeOptionsOpen(true)}
+            >
+              <IconSliders size={14} className="a10-menu__conditions-icon" />
+              <span className="a10-menu__conditions-text">
+                <span className="a10-menu__conditions-key">Range options</span>{' '}
+                <span data-testid="a10-range-conditions">{describeRangeOptions(rangeOptions)}</span>
+              </span>
+              <IconChevronRight size={14} className="a10-menu__conditions-chevron" />
+            </button>
           </div>
           <div className="a10-menu__more">{MORE.map((en, i) => entry(en, i + 4))}</div>
         </nav>

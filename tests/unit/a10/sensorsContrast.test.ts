@@ -28,7 +28,10 @@ import {
 import { addVehicle, createSensorTestbed } from '../../../src/a10/core/sensors/testbed';
 import { CONTRAST, GROUND_THERMAL, SMOKE } from '../../../src/a10/data/sensors';
 import { THERMAL } from '../../../src/a10/data/vehicles';
-import { hazeDensityFor, hazeFactor as viewHazeFactor } from '../../../src/a10/view/environment/haze';
+import {
+  hazeDensityFor,
+  hazeFactor as viewHazeFactor,
+} from '../../../src/a10/view/environment/haze';
 import { thermalUniforms } from '../../../src/a10/view/vehicles/thermal';
 import { daylightAt, sunDirectionAt } from '../../../src/scene/sky/timeOfDay';
 
@@ -104,8 +107,12 @@ describe('the contrast model mirrors what the renderer draws', () => {
     expect(Number(fade?.[2])).toBe(CONTRAST.irHazeShare);
     // solar heating and the lagging ambient level by time of day (terrainSystem.ts)
     const sys = source('terrainSystem.ts');
-    const solar = sys.match(/Math\.sin\(\(\(h - ([\d.]+)\) \/ ([\d.]+)\) \* Math\.PI\)\) \* a10Env\.daylight/);
-    const lag = sys.match(/const lag = Math\.max\(0, Math\.sin\(\(\(h - ([\d.]+)\) \/ ([\d.]+)\) \* Math\.PI\)\)/);
+    const solar = sys.match(
+      /Math\.sin\(\(\(h - ([\d.]+)\) \/ ([\d.]+)\) \* Math\.PI\)\) \* a10Env\.daylight/,
+    );
+    const lag = sys.match(
+      /const lag = Math\.max\(0, Math\.sin\(\(\(h - ([\d.]+)\) \/ ([\d.]+)\) \* Math\.PI\)\)/,
+    );
     const amb = sys.match(/uThermalParams\.value\.set\(solar, ([\d.]+) \+ ([\d.]+) \* lag/);
     expect(Number(solar?.[1])).toBe(CONTRAST.solarStartHour);
     expect(Number(solar?.[2])).toBe(CONTRAST.solarSpanHours);
@@ -191,20 +198,25 @@ describe('the contrast model', () => {
     const target = addVehicle(sim, 'mbt', 0, -6000, Math.PI / 2, { heat: 'idle' });
     const clearTv = targetContrast(sim, target.id, 'TV', from);
     const clearIr = targetContrast(sim, target.id, 'IR', from);
-    // a burning wreck 1.5 km short of the target, under the line of sight (it passes ≈375 m
-    // above it: inside the column's 150 m height? no) — and one right under the line near the end
+    // a burning wreck 60 m short of the target: the line of sight crosses its column ≈16 m up
     const wreck = addVehicle(sim, 'truckFuel', 0, -5940, 0, { heat: 'cold' });
     wreck.fire = 1;
-    expect(smokeBetween(sim, from, target.position.clone().setY(1.5), target.id)).toBe(true);
+    const aim = target.position.clone().setY(1.5);
+    expect(smokeBetween(sim, from, aim, target.id)).toBe(true);
     expect(targetContrast(sim, target.id, 'TV', from)).toBe(0);
     const smokedIr = targetContrast(sim, target.id, 'IR', from);
     expect(smokedIr).toBeLessThan(clearIr);
+    expect(smokedIr).toBeGreaterThan(0); // IR still gets SMOKE.irTransmission through
     expect(clearTv).toBeGreaterThan(0.5);
-    // the column drifts downwind: a strong crosswind blows it off the line
+    // the column drifts downwind (wind / rise speed per metre of height): a 20 m/s wind toward
+    // the east blows it ≈80 m off the line at that height…
     sim.world.surfaceWind.set(20, 0, 0);
-    expect(smokeBetween(sim, from, target.position.clone().setY(1.5), target.id)).toBe(true);
-    wreck.position.set(60, 0, -5940);
-    expect(smokeBetween(sim, from, target.position.clone().setY(1.5), target.id)).toBe(false);
+    expect(smokeBetween(sim, from, aim, target.id)).toBe(false);
+    // …and blows the smoke of a wreck 80 m upwind across it
+    wreck.position.set(-80, 0, -5940);
+    expect(smokeBetween(sim, from, aim, target.id)).toBe(true);
+    // the target's own fire never hides the target
+    expect(smokeBetween(sim, from, aim, wreck.id)).toBe(false);
     expect(SMOKE.irTransmission).toBeLessThan(1);
     expect(targetContrast(sim, 99999, 'IR', from)).toBe(0);
   });

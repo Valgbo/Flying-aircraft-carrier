@@ -29,7 +29,8 @@ import {
   stepKinematic,
 } from '../../../src/a10/core/weapons/testbed';
 import { createFlatTerrain, windAt } from '../../../src/a10/core/world';
-import { BSU49, WARHEADS } from '../../../src/a10/data/munitions';
+import type { Terrain } from '../../../src/a10/core/world/types';
+import { BSU49, FUZE, WARHEADS } from '../../../src/a10/data/munitions';
 import { BLAST } from '../../../src/a10/data/vehicles';
 
 type Detonation = Extract<SimEvent, { type: 'detonation' }>;
@@ -89,7 +90,10 @@ describe('Bomb CCIP (PLAN §16): the live Mk 82 lands on the pipper', () => {
     expect(miss).toBeLessThan(5);
     // It is the same model: centimetres, not metres.
     expect(miss).toBeLessThan(0.1);
-    expect(rec.missDistance).toBeCloseTo(Math.hypot(pred.point.x - rec.impact.x, pred.point.z - rec.impact.z), 6);
+    expect(rec.missDistance).toBeCloseTo(
+      Math.hypot(pred.point.x - rec.impact.x, pred.point.z - rec.impact.z),
+      6,
+    );
     expect(rec.impactTime).toBeCloseTo(pred.time, 1);
     // A sanity check of the delivery: ≈11.5 s time of fall, ≈1.5 km ahead, impact angle ≈55°.
     expect(pred.time).toBeGreaterThan(10.5);
@@ -101,6 +105,12 @@ describe('Bomb CCIP (PLAN §16): the live Mk 82 lands on the pipper', () => {
     // The computer holds the wind at the aircraft; the bomb meets the slower wind lower down.
     expect(miss).toBeLessThan(10);
     expect(detonations(sim)[0].kind).toBe('bomb');
+    // The wind did move the bomb (measured 2.3 m: a heavy, fast store), and the pipper moved
+    // with it (measured 7 cm apart).
+    const calm = ccip(0);
+    const drift = impactOf(sim).distanceTo(impactOf(calm.sim));
+    expect(drift).toBeGreaterThan(1.5);
+    expect(miss).toBeLessThan(0.2 * drift);
   });
 
   it('CCIP with the avionics module’s own solution (integration)', (ctx) => {
@@ -290,7 +300,11 @@ describe('Mk 82 AIR high drag (PLAN §6.5, §16): the BSU-49 ballute', () => {
       runUntilLanded(sim);
       const rec = sim.debrief.weapons[0];
       const trail = sim.aircraft.position.z - rec.impact.z;
-      return { rec, trail: -(450 * KT * (rec.impactTime - rec.release.time)) - rec.impact.z, z: trail };
+      return {
+        rec,
+        trail: -(450 * KT * (rec.impactTime - rec.release.time)) - rec.impact.z,
+        z: trail,
+      };
     };
     const ld = run(false);
     const hd = run(true);
@@ -350,6 +364,45 @@ describe('Fuze (PLAN §6.5, §16): arming time, duds', () => {
     expect(nose.det.position.y).toBeGreaterThan(0.5);
     expect(tail.det.position.y).toBeCloseTo(0, 6);
   });
+
+  it('on water: a nose fuze bursts at the surface, a tail fuze under it (less blast, no fragments)', () => {
+    /** Flat sea-level ground that is all water. */
+    const lake = (): Terrain => {
+      const flat = createFlatTerrain(0);
+      return {
+        ...flat,
+        surfaceAt: () => 'water',
+        segmentHit(p0, p1, out) {
+          if (!flat.segmentHit(p0, p1, out)) return false;
+          out.surface = 'water';
+          return true;
+        },
+      };
+    };
+    const run = (fuze: 'NOSE' | 'TAIL') => {
+      const sim = createGunTestbed({
+        terrain: lake(),
+        altitude: 100,
+        speed: 300 * KT,
+        customLoadout: { 5: ['MK-82'] },
+      });
+      queueRelease(sim, 5, 'MK-82', { fuze, armingTime: 0 });
+      runUntilLanded(sim);
+      return { det: detonations(sim)[0], rec: sim.debrief.weapons[0] };
+    };
+    const nose = run('NOSE');
+    const tail = run('TAIL');
+    const charge = WARHEADS['MK-82']!.charge;
+    expect(nose.det.surface).toBe('water');
+    expect(nose.det.charge).toBe(charge);
+    expect(tail.det.surface).toBe('water');
+    expect(tail.det.kind).toBe('bomb');
+    expect(tail.det.charge).toBeCloseTo(charge * FUZE.underwaterBlast, 9);
+    // 100 m over the burst: the surface burst's fragments reach the aircraft, none get out of
+    // the water.
+    expect(nose.rec.fragmentWarning).toBe(true);
+    expect(tail.rec.fragmentWarning).toBe(false);
+  });
 });
 
 describe('Blast (PLAN §6.5, §16): the targets table through the bombs’ detonation path', () => {
@@ -401,7 +454,8 @@ describe('Blast (PLAN §6.5, §16): the targets table through the bombs’ deton
   });
 
   it('a truck is destroyed at 30 m, rarely at 60 m (fragments)', () => {
-    for (let seed = 1; seed <= 4; seed++) expect(killed(bombNear('truckCargo', 30, seed))).toBe(true);
+    for (let seed = 1; seed <= 4; seed++)
+      expect(killed(bombNear('truckCargo', 30, seed))).toBe(true);
     let at60 = 0;
     for (let seed = 1; seed <= 8; seed++) if (killed(bombNear('truckCargo', 60, seed))) at60++;
     expect(at60).toBeLessThanOrEqual(2);

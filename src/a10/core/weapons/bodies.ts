@@ -21,7 +21,7 @@
  * (weathercocking). Bodies are pooled: nothing is allocated per step.
  */
 import { Quaternion, Vector3 } from 'three';
-import { FUZE, STORE_BODY, WARHEADS } from '../../data/munitions';
+import { BSU49, FUZE, STORE_BODY, WARHEADS } from '../../data/munitions';
 import { applyBlast, applyWarheadHit, segmentHitVehicle } from '../targets';
 import type { VehicleHit } from '../targets/types';
 import type { Sim } from '../types';
@@ -194,16 +194,7 @@ function stepBody(sim: Sim, b: StoreBody, t0: number, t1: number, dt: number): b
   }
   _p0.copy(b.position);
   _v0.copy(b.velocity);
-  integrateStore(
-    spec,
-    b.position,
-    b.velocity,
-    _wind,
-    h,
-    tSince,
-    sim.world.isaDeviation,
-    forcing,
-  );
+  integrateStore(spec, b.position, b.velocity, _wind, h, tSince, sim.world.isaDeviation, forcing);
 
   const terrain = sim.world.terrain;
   const hit = firstHit(sim, terrain, _p0, b.position);
@@ -236,7 +227,7 @@ function stepBody(sim: Sim, b: StoreBody, t0: number, t1: number, dt: number): b
   else if (b.motorTime > 0) b.motorTime = Math.max(0, b.motorTime - h);
   b.armed = tNow >= b.armingTime;
   if (spec.balluteArea > 0 && tNow >= spec.balluteStart) b.highDrag = true;
-  weathercock(b, spec.balluteArea > 0 && b.highDrag ? 0.1 : spec.weathercockTime, h);
+  weathercock(b, b.highDrag ? BSU49.weathercockTime : spec.weathercockTime, h);
   return true;
 }
 

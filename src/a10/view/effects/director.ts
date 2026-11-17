@@ -27,6 +27,7 @@ import { DECAL } from './decals';
 import { fxRandom as R } from './noise';
 import { PK } from './particleKinds';
 import {
+  bombCloud,
   cookOffPop,
   detonationRecipe,
   dud,
@@ -46,7 +47,7 @@ const SPEED_OF_SOUND = 343;
 const EMIT = { none: 0, wp: 1, groundFire: 2, crashFire: 3, dustCloud: 4 } as const;
 
 /** The dust and smoke a bomb raises keeps coming off the crater for this long, s. */
-const DUST_CLOUD_LIFE = 35;
+const DUST_CLOUD_LIFE = 40;
 
 interface FireState {
   id: number;
@@ -328,6 +329,7 @@ export class EffectsDirector {
         const sf = surfaceFx(surface);
         const g = this.groundAt(x, z);
         if (!sf.water && y - g < 6) {
+          bombCloud(ctx, x, g, z, charge, surface);
           const k = this.addEmitter(
             EMIT.dustCloud,
             x,
@@ -925,9 +927,9 @@ export class EffectsDirector {
             x + R.signed(2.5),
             y + 1.5,
             z + R.signed(2.5),
-            R.signed(1),
-            R.range(1, 2.5),
-            R.signed(1),
+            R.signed(1.2),
+            R.range(1.5, 4),
+            R.signed(1.2),
             WP_MARK.puffS0 * R.range(0.8, 1.2) * (0.5 + 0.5 * s),
             WP_MARK.puffS1 * R.range(0.8, 1.2) * (0.4 + 0.6 * s),
             WP_MARK.puffLife * R.range(0.8, 1.2),
@@ -936,22 +938,24 @@ export class EffectsDirector {
         }
       } else if (kind === EMIT.dustCloud) {
         // the dust settling out of a bomb's cloud and the smoke of its crater, drifting downwind
-        this.eAcc[i] += 4.5 * s * Math.exp(-age / 7) * detail * dt;
+        // under the climbing cloud (recipes bombCloud): fewer puffs at low detail, drawn larger
+        const fill = Math.min(1.5, 1 / Math.sqrt(Math.max(0.45, detail)));
+        this.eAcc[i] += 5.5 * s * Math.exp(-age / 9) * detail * dt;
         while (this.eAcc[i] >= 1) {
           this.eAcc[i] -= 1;
-          const r = R.range(2, 10) * s;
+          const r = R.range(3, 14) * s;
           const a = R.next() * Math.PI * 2;
           const j = ps.spawn(
             PK.dust,
             x + Math.cos(a) * r,
-            y + R.range(3, 18) * s,
+            y + R.range(4, 26) * s,
             z + Math.sin(a) * r,
             R.signed(1.5),
-            R.range(0.5, 2),
+            R.range(0.5, 2.5),
             R.signed(1.5),
-            R.range(8, 12) * s,
-            R.range(22, 34) * s,
-            R.range(18, 30),
+            R.range(9, 13) * s * fill,
+            R.range(24, 38) * s * fill,
+            R.range(22, 36),
           );
           const o = i * 3;
           ps.color(j, this.eColour[o], this.eColour[o + 1], this.eColour[o + 2], 0.55);

@@ -24,6 +24,7 @@ export type ChecklistKeyId =
   | 'tmsUp'
   | 'laser'
   | 'slew'
+  | 'soiDisplay'
   | 'pause';
 
 export type ChecklistKeys = Record<ChecklistKeyId, string>;
@@ -42,6 +43,7 @@ export const DEFAULT_CHECKLIST_KEYS: ChecklistKeys = {
   tmsUp: 'T',
   laser: 'L',
   slew: 'W A S D',
+  soiDisplay: ', / .',
   pause: 'Esc',
 };
 
@@ -59,8 +61,15 @@ const ROW_IDS: Record<ChecklistKeyId, string> = {
   tmsUp: 'tmsUp',
   laser: 'laser',
   slew: 'slew',
+  soiDisplay: 'soi',
   pause: 'pause',
 };
+
+/**
+ * Actions that are some items of a list row: the SOI row lists the HUD, the left and the right
+ * display, and a display step names the two display keys ('comma / full stop').
+ */
+const ROW_ITEMS: Partial<Record<ChecklistKeyId, readonly number[]>> = { soiDisplay: [1, 2] };
 
 /** Rows without an id are recognised by their wording (PLAN §12). */
 const KEY_MATCHERS: Record<ChecklistKeyId, RegExp> = {
@@ -76,6 +85,7 @@ const KEY_MATCHERS: Record<ChecklistKeyId, RegExp> = {
   tmsUp: /\btarget management up\b|\btms up\b/i,
   laser: /\bfire the laser\b|\blaser fire\b/i,
   slew: /\bslew\b/i,
+  soiDisplay: /\bsensor of interest\b/i,
   pause: /\bpause\b/i,
 };
 
@@ -101,7 +111,17 @@ function listItems(text: string): string[] {
  */
 export function findKeyLabel(rows: readonly ControlsReferenceRow[], id: ChecklistKeyId): string {
   const byId = rows.find((r) => r.id === ROW_IDS[id]);
+  const items = ROW_ITEMS[id];
+  if (byId && items) {
+    // the row's keys come in the order of its actions, as a list ('H, J, K') or one per
+    // control ('H / comma / full stop')
+    let keys = listItems(byId.keyboard);
+    if (keys.length <= Math.max(...items)) keys = byId.keyboard.split(/\s+\/\s+/);
+    const picked = items.map((i) => keys[i]).filter((k) => k !== undefined && !isNoKey(k));
+    return picked.length === items.length ? picked.join(' / ') : DEFAULT_CHECKLIST_KEYS[id];
+  }
   if (byId) return isNoKey(byId.keyboard) ? DEFAULT_CHECKLIST_KEYS[id] : byId.keyboard.trim();
+  if (items) return DEFAULT_CHECKLIST_KEYS[id];
   const match = KEY_MATCHERS[id];
   let fromList: string | null = null;
   for (const row of rows) {
@@ -146,10 +166,19 @@ export interface ChecklistState {
   releaseBelowGlass: boolean;
   releaseBelowMinimum: boolean;
   spiValid: boolean;
+  /** Where the SPI comes from: 'STPT' (the steerpoint), 'TGP', 'MAV', 'HUD', 'TAD'. */
+  spiSource: string;
+  /** The sensor of interest: 'HUD' or the page on the SOI display ('TGP', 'MAV', 'TAD'…). */
+  soi: string;
+  /** The TGP and MAV pages are on one of the two displays. */
+  tgpPageShown: boolean;
+  mavPageShown: boolean;
   tgpPowered: boolean;
   tgpReady: boolean;
   tgpTracking: boolean;
   lasing: boolean;
+  /** The Maverick seekers have power (the MAV page's PWR; on at an air start). */
+  maverickPowered: boolean;
   maverickAligned: boolean;
   maverickLocked: boolean;
   maverickInZone: boolean;
@@ -298,24 +327,32 @@ function modeStep(mode: string): ProcedureStep['step'] {
 function bombProcedure(s: ChecklistState): ProcedureStep[] {
   const ccrp = s.profileMode === 'CCRP' || (s.profileMode === '' && s.masterMode === 'CCRP');
   const mode = ccrp ? 'CCRP' : 'CCIP';
-  const steps: ProcedureStep[] = [
-    { done: s.masterArm === 'ARM', step: ARM },
-    { done: s.masterMode === mode, step: modeStep(mode) },
-  ];
+  const steps: ProcedureStep[] = [{ done: s.masterArm === 'ARM', step: ARM }];
   if (ccrp) {
+    // the CCRP master mode needs a valid SPI: the target first, then the mode
     steps.push({
       done: s.spiValid,
       step: { id: 'spi', template: 'Set the SPI: point track with the pod, hold {tmsUp}' },
     });
+    steps.push({ done: s.masterMode === mode, step: modeStep(mode) });
     steps.push({
       done: false,
-      step: {
-        id: 'release',
-        template: 'Steer onto the azimuth line and hold release {release} through the cue',
-        tone: 'act',
-      },
+      step:
+        s.spiSource === 'STPT'
+          ? {
+              id: 'release',
+              template:
+                'CCRP onto the steerpoint: steer onto the azimuth line, hold release {release}',
+              tone: 'act',
+            }
+          : {
+              id: 'release',
+              template: 'Steer onto the azimuth line and hold release {release} through the cue',
+              tone: 'act',
+            },
     });
   } else {
+    steps.push({ done: s.masterMode === mode, step: modeStep(mode) });
     let release: StepDef;
     if (s.releaseBelowMinimum)
       release = {
@@ -371,8 +408,20 @@ function laserBombProcedure(s: ChecklistState): ProcedureStep[] {
       step: { id: 'tgpWarmup', template: 'Targeting pod warming up', tone: 'warn' },
     },
     {
+      done: s.tgpTracking || s.tgpPageShown || s.soi === 'TGP',
+      step: { id: 'tgpPage', template: 'TGP page on a display: press its TGP button' },
+    },
+    {
+      done: s.tgpTracking || s.soi === 'TGP',
+      step: { id: 'tgpSoi', template: 'TGP page as sensor of interest {soiDisplay}' },
+    },
+    {
       done: s.tgpTracking,
-      step: { id: 'track', template: 'Slew the pod onto the target {slew}, track {tmsUp}' },
+      step: { id: 'track', template: 'Slew the pod onto the target {slew}, point track {tmsUp}' },
+    },
+    {
+      done: s.spiSource === 'TGP',
+      step: { id: 'spi', template: 'Make the target the SPI: hold {tmsUp}' },
     },
     { done: s.masterMode === 'CCRP', step: modeStep('CCRP') },
     {
@@ -396,8 +445,20 @@ function maverickProcedure(s: ChecklistState): ProcedureStep[] {
   return [
     { done: s.masterArm === 'ARM', step: ARM },
     {
+      done: s.maverickPowered,
+      step: { id: 'power', template: 'Maverick power → ON: PWR on the MAV page' },
+    },
+    {
       done: s.maverickAligned,
       step: { id: 'align', template: 'Maverick seeker aligning: no video yet', tone: 'warn' },
+    },
+    {
+      done: s.maverickLocked || s.mavPageShown || s.soi === 'MAV',
+      step: { id: 'mavPage', template: 'MAV page on a display: press its MAV button' },
+    },
+    {
+      done: s.maverickLocked || s.soi === 'MAV',
+      step: { id: 'mavSoi', template: 'MAV page as sensor of interest {soiDisplay}' },
     },
     {
       done: s.maverickLocked,
@@ -473,15 +534,22 @@ export function nextChecklistStep(s: ChecklistState, keys: ChecklistKeys): Check
 
 // ---------------------------------------------------------------------------------------------
 
-/** Snapshot the sim for the checklist (the selected weapon follows the master mode). */
+/**
+ * Snapshot the sim for the checklist (the selected weapon follows the master mode, as the
+ * avionics module decides releases: core/avionics/delivery.ts).
+ */
 export function checklistStateFromSim(sim: Sim): ChecklistState {
   const av = sim.avionics;
-  // The gun is the weapon in NAV and GUNS, and in CCIP when it is the CCIP weapon (no profile).
+  const selected = av.profiles.find((p) => p.id === av.selectedProfile);
+  // A Maverick profile launches in any master mode (the pickle with the seeker locked): it is the
+  // weapon in NAV too. Otherwise the gun is the weapon in NAV and GUNS, and in CCIP when it is the
+  // CCIP weapon (no profile).
+  const maverick = selected ? weaponKind(selected.store) === 'maverick' : false;
   const gunMode =
-    av.masterMode === 'NAV' ||
     av.masterMode === 'GUNS' ||
+    (av.masterMode === 'NAV' && !maverick) ||
     (av.sight === 'GUN' && !av.selectedProfile);
-  const profile = gunMode ? undefined : av.profiles.find((p) => p.id === av.selectedProfile);
+  const profile = gunMode ? undefined : selected;
   const weapon = gunMode ? 'GUN' : (profile?.store ?? '');
   let storesLeft = 0;
   if (profile) {
@@ -506,10 +574,15 @@ export function checklistStateFromSim(sim: Sim): ChecklistState {
     releaseBelowGlass: av.release.belowGlass,
     releaseBelowMinimum: av.release.belowMinimum,
     spiValid: av.spi.valid,
+    spiSource: av.spi.source,
+    soi: av.soi === 'LMFD' ? av.mfd.left : av.soi === 'RMFD' ? av.mfd.right : 'HUD',
+    tgpPageShown: av.mfd.left === 'TGP' || av.mfd.right === 'TGP',
+    mavPageShown: av.mfd.left === 'MAV' || av.mfd.right === 'MAV',
     tgpPowered: av.tgpPower && tgp.powered,
     tgpReady: tgp.warmup <= 0,
     tgpTracking: tgp.mode === 'POINT' || tgp.mode === 'AREA',
     lasing: tgp.lasing,
+    maverickPowered: mav ? mav.powered : sim.sensors.mavPower,
     maverickAligned: mav ? mav.align <= 0 : false,
     maverickLocked: mav?.locked ?? false,
     maverickInZone: mav?.inZone ?? false,

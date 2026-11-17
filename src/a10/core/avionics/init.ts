@@ -64,6 +64,7 @@ export function createAvionicsState(): AvionicsState {
       dsmsCodeDigit: 0,
       tgpCodeDigit: 0,
       msgClearTime: -1,
+      scratchpad: '',
     },
     delivery: createDeliveryState(),
   };

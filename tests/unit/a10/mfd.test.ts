@@ -12,6 +12,7 @@ import {
   createDsmsView,
   OSB_TABLE,
   PAGE_SELECT_OSB,
+  TAD_RANGES_NM,
 } from '../../../src/a10/core/avionics';
 import type { MfdPage } from '../../../src/a10/core/avionics/types';
 import { quaternionFromAttitude } from '../../../src/a10/core/frames';
@@ -20,6 +21,7 @@ import { createSim } from '../../../src/a10/core/sim';
 import type { Sim } from '../../../src/a10/core/types';
 import { NM } from '../../../src/a10/core/units';
 import { createFlatTerrain } from '../../../src/a10/core/world';
+import type { Terrain } from '../../../src/a10/core/world/types';
 import { DEG } from '../../../src/a10/view/hud/hudMath';
 import {
   createPageInfo,
@@ -31,16 +33,24 @@ import {
 import { MessageLog, type PageContext } from '../../../src/a10/view/mfd/context';
 import {
   MFD_COLOR,
+  MFD_LINE_WIDTH,
+  MFD_OUTLINE,
   MFD_TEXT,
   OSB_ANCHORS,
   SOI_BOX,
   STORE_SHORT,
   TAD,
+  TGP_PAGE,
 } from '../../../src/a10/view/mfd/mfdLayout';
 import { MfdDisplayRenderer, MfdRenderer } from '../../../src/a10/view/mfd/MfdRenderer';
 import { osbActive, osbLabel, osbValue, stationX } from '../../../src/a10/view/mfd/pages';
 import { MfdPainter, type ColorSink } from '../../../src/a10/view/mfd/painter';
 import { createTadFrame, tadFrame, tadProject } from '../../../src/a10/view/mfd/tad';
+import {
+  getSensorPicture,
+  publishSensorPicture,
+  type SensorPictureInfo,
+} from '../../../src/a10/view/sensors/pictures';
 
 const PAGES: MfdPage[] = ['DSMS', 'TGP', 'MAV', 'TAD', 'STAT', 'MSG'];
 
@@ -183,8 +193,7 @@ describe('MFD page frame', () => {
     const box = (rec: Recorder) =>
       rec.segs.filter(
         ([x0, y0, x1, y1, w]) =>
-          w === 2.2 &&
-          [x0, y0, x1, y1].every((v) => Math.abs(Math.abs(v) - SOI_BOX) < 1e-12),
+          w === 2.2 && [x0, y0, x1, y1].every((v) => Math.abs(Math.abs(v) - SOI_BOX) < 1e-12),
       ).length;
     for (const page of ['TAD', 'TGP', 'MAV'] as MfdPage[]) {
       const soi = draw(sim, page, { soi: true });
@@ -251,7 +260,7 @@ describe('MFD moving map (TAD)', () => {
     const f = createTadFrame();
     const p = { x: 0, y: 0 };
     const own = { x: 1200, z: -3400 };
-    for (const range of TAD.ranges) {
+    for (const range of TAD_RANGES_NM) {
       for (const hdgDeg of [0, 37, 90, 211]) {
         const h = hdgDeg * DEG;
         tadFrame(own.x, own.z, h, range, false, 0, 0, f);
@@ -302,30 +311,49 @@ describe('MFD moving map (TAD)', () => {
     expect(info.tad.ownX).toBeCloseTo(0, 12);
     expect(info.tad.ownY).toBeCloseTo(TAD.ownAnchorY, 12);
     expect(info.tad.steerpoints).toBe(2);
-    const f = tadFrame(500, 800, ac.heading, TAD.defaultRange, false, 0, 0, createTadFrame());
+    const range = av.pages.tadRange;
+    const f = tadFrame(500, 800, ac.heading, range, false, 0, 0, createTadFrame());
     const p = tadProject(f, 500, 800 - 4 * NM, { x: 0, y: 0 });
     expect(texts.some((t) => t.text === '2' && Math.abs(t.x - p.x) < 1e-9)).toBe(true);
     tadProject(f, 500 + 3 * NM, 800, p);
     expect(info.tad.spi).toBe(true);
     expect(info.tad.spiX).toBeCloseTo(p.x, 9);
     expect(info.tad.spiY).toBeCloseTo(p.y, 9);
-    expect(texts.some((t) => t.text === `${TAD.defaultRange} NM`)).toBe(true);
+    // The range is the RNG+ button's value (OSB 1, top left), printed under its label.
+    const rng = OSB_ANCHORS[1];
+    expect(
+      texts.some((t) => t.text === String(range) && Math.abs(t.x - rng.x) < 1e-9 && t.y < rng.y),
+    ).toBe(true);
   });
 
   it('marks the target areas only with the realism aid', () => {
-    const sim = sim0();
-    expect(sim.options.realism.mapMarkers).toBe(false);
-    expect(draw(sim, 'TAD').info.tad.targetAreas).toBe(0);
-    const marked = createSim({
-      terrain: sim.world.terrain,
+    // Two target areas: one 3 nm ahead (on the map), one 200 nm away (off it).
+    const terrain: Terrain = {
+      ...createFlatTerrain(0),
+      targetAreas: [
+        { id: 1, name: 'NEAR', kind: 'open', x: 0, z: -3 * NM, radius: 400 },
+        { id: 2, name: 'FAR', kind: 'open', x: 200 * NM, z: 0, radius: 400 },
+      ],
+    };
+    const sim = createSim({
+      terrain,
       scenario: 'empty',
       seed: 2,
-      realism: { ...sim.options.realism, mapMarkers: true },
       start: { x: 0, z: 0, agl: 2400, heading: 0, speed: 130 },
     });
-    // The flat test world has no target areas: the count is what the terrain lists in range.
-    const areas = marked.world.terrain.targetAreas.length;
-    expect(draw(marked, 'TAD').info.tad.targetAreas).toBeLessThanOrEqual(areas);
+    expect(sim.options.realism.mapMarkers).toBe(false);
+    // The marker's label is yellow (a steerpoint of the same name is navigation data, cyan, and
+    // the STP value prints the active one's name).
+    const marker = (texts: Text[], name: string) =>
+      texts.some((t) => t.text === name && t.color === MFD_COLOR.yellow);
+    let r = draw(sim, 'TAD');
+    expect(r.info.tad.targetAreas).toBe(0);
+    expect(marker(r.texts, 'NEAR')).toBe(false);
+    sim.options.realism.mapMarkers = true;
+    r = draw(sim, 'TAD');
+    expect(r.info.tad.targetAreas).toBe(1);
+    expect(marker(r.texts, 'NEAR')).toBe(true);
+    expect(marker(r.texts, 'FAR')).toBe(false);
   });
 });
 
@@ -363,38 +391,53 @@ describe('MFD sensor pages', () => {
     expect(r.info.sensor.status).toBe('NOT TIMED OUT');
     expect(r.has('1:35')).toBe(true);
     tgp.warmup = 0;
+    tgp.pointValid = true;
+    tgp.point.set(0, 0, -9 * NM);
+    tgp.pointRange = 0;
+    sim.aircraft.position.set(0, 0, 0);
+    // The track mode (TRK value) and its gate; the range behind its source letter.
     for (const mode of ['INR', 'AREA', 'POINT'] as const) {
       tgp.mode = mode;
       r = draw(sim, 'TGP');
       expect(r.has(mode)).toBe(true);
       expect(r.info.sensor.gate).toBe(mode === 'INR' ? 'NONE' : mode);
+      expect(r.info.sensor.rangeSource).toBe(mode === 'INR' ? '' : 'T');
+      expect(r.has('T')).toBe(mode !== 'INR');
+      expect(r.info.sensor.range).toBeCloseTo(9 * NM, 6);
+      expect(r.has('9.0')).toBe(true);
     }
+    // The sensors module's own slant range wins over the aircraft's distance.
+    tgp.pointRange = 8.04 * NM;
+    expect(draw(sim, 'TGP').has('8.0')).toBe(true);
+    // The options are the OSB values (not repeated on the page): field of view, zoom, picture.
     tgp.fovSetting = 'NARROW';
     tgp.zoom = 2;
     tgp.picture = 'BHOT';
-    tgp.pointValid = true;
-    tgp.point.set(0, 0, -9 * NM);
-    sim.aircraft.position.set(0, 0, 0);
     r = draw(sim, 'TGP');
-    expect(r.has('NARO')).toBe(true);
-    expect(r.has('2.0X')).toBe(true);
-    expect(r.has('BHOT')).toBe(true);
-    expect(r.has('T 9.0')).toBe(true);
-    // Lasing: L flashes in place of T; the latch and the code.
+    for (const t of ['NARO', '2.0', 'BHOT'])
+      expect(r.texts.filter((e) => e.text === t)).toHaveLength(1);
+    // Lasing: "L" (flashing) and the laser range; the code is the CODE value.
     tgp.lasing = true;
-    tgp.latched = true;
     tgp.laserRange = 5 * NM;
     sim.time = 0;
     r = draw(sim, 'TGP');
-    expect(r.has('L 5.0')).toBe(true);
-    expect(r.has('LTCH')).toBe(true);
-    expect(r.has(String(tgp.laserCode))).toBe(true);
+    expect(r.info.sensor.rangeSource).toBe('L');
+    expect(r.has('L')).toBe(true);
+    expect(r.has('5.0')).toBe(true);
+    expect(r.has(String(sim.avionics.laserCode))).toBe(true);
     sim.time = 0.3;
-    expect(draw(sim, 'TGP').has('L 5.0')).toBe(false);
+    r = draw(sim, 'TGP');
+    expect(r.has('L')).toBe(false); // the letter flashes…
+    expect(r.has('5.0')).toBe(true); // …the range stays
+    // Masked: M beside the letter, MASK across the picture.
     tgp.masked = true;
     r = draw(sim, 'TGP');
+    expect(r.info.sensor.masked).toBe(true);
+    expect(r.has('M')).toBe(true);
     expect(r.has('MASK')).toBe(true);
-    expect(r.has('POINT-M')).toBe(true);
+    const m = r.find('M')!;
+    expect(m.x).toBeGreaterThan(TGP_PAGE.leftX);
+    expect(Math.abs(m.y - TGP_PAGE.lowerY)).toBeLessThan(1e-9);
     // The pod as SPI generator.
     sim.avionics.spi.valid = true;
     sim.avionics.spi.source = 'TGP';
@@ -419,7 +462,8 @@ describe('MFD sensor pages', () => {
     expect(r.info.sensor.crossY).toBeCloseTo(-8.6 * DEG * k, 12);
     expect(r.info.sensor.gate).toBe('SEARCH');
     // The TRK annunciation at the lower left (an OSB may also be labelled TRK).
-    const trk = (texts: Text[]) => texts.some((t) => t.text === 'TRK' && Math.abs(t.x + 0.62) < 1e-9);
+    const trk = (texts: Text[]) =>
+      texts.some((t) => t.text === 'TRK' && Math.abs(t.x + 0.62) < 1e-9);
     expect(trk(r.texts)).toBe(false);
     s.locked = true;
     r = draw(sim, 'MAV');
@@ -428,6 +472,13 @@ describe('MFD sensor pages', () => {
     expect(r.has('IN RNG')).toBe(false);
     s.inZone = true;
     expect(draw(sim, 'MAV').has('IN RNG')).toBe(true);
+    // The seeker's slant range (nm); the gimbal-limit circle while held at the limit.
+    s.range = 6.04 * NM;
+    r = draw(sim, 'MAV');
+    expect(r.has('6.0')).toBe(true);
+    expect(r.info.sensor.gimbalLimit).toBe(false);
+    s.atLimit = true;
+    expect(draw(sim, 'MAV').info.sensor.gimbalLimit).toBe(true);
     s.powered = false;
     expect(draw(sim, 'MAV').info.sensor.status).toBe('MAV OFF');
   });
@@ -534,5 +585,69 @@ describe('MFD redraw scheduling', () => {
     expect(both.left.ctx.messages).toBe(both.right.ctx.messages);
     both.dispose();
     expect(MFD_TEXT.label).toBeGreaterThan(0.04);
+  });
+
+  it('over a sensor picture every stroke has a dark outline, drawn before any colour', () => {
+    const sim = sim0();
+    sim.avionics.tgpPower = true;
+    sim.sensors.tgp.powered = true;
+    sim.sensors.tgp.warmup = 0;
+    sim.sensors.tgp.mode = 'POINT';
+    const gl = {
+      autoClear: true,
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      getClearColor: (c: unknown) => c,
+      getClearAlpha: () => 1,
+      setClearColor: () => {},
+      clear: () => {},
+      render: () => {},
+    } as unknown as WebGLRenderer;
+    const d = new MfdDisplayRenderer('L', new MessageLog());
+    const before = getSensorPicture('TGP');
+    try {
+      // No picture published: black screen, no outline.
+      publishSensorPicture('TGP', null);
+      d.compose(gl, sim, 'TGP');
+      expect(d.outlined).toBe(false);
+      expect(d.batch.count).toBe(d.info.strokes);
+      // A live picture: every stroke twice — first all outlines, then the colours.
+      const picture = { texture: d.target.texture, valid: true, status: 'OK' };
+      publishSensorPicture('TGP', picture as unknown as SensorPictureInfo);
+      d.compose(gl, sim, 'TGP');
+      expect(d.outlined).toBe(true);
+      const n = d.info.strokes;
+      expect(d.batch.count).toBe(2 * n);
+      const data = d.batch.data;
+      const extra = MFD_OUTLINE.extraPx / MFD_LINE_WIDTH;
+      for (let k = 0; k < n; k++) {
+        const o = k * 7;
+        const c = (k + n) * 7;
+        // Same geometry, wider, in the outline colour (palette 0, black).
+        for (let j = 0; j < 4; j++) expect(data[o + j]).toBe(data[c + j]);
+        expect(data[o + 4]).toBeCloseTo(data[c + 4] + extra, 5);
+        expect(data[o + 6]).toBe(MFD_COLOR.outline);
+        expect(data[c + 6]).not.toBe(MFD_COLOR.outline);
+      }
+      // Masked: the field the pod shows is still a picture (outlined); not valid, still shown.
+      publishSensorPicture('TGP', {
+        ...picture,
+        valid: false,
+        status: 'MASKED',
+      } as unknown as SensorPictureInfo);
+      d.compose(gl, sim, 'TGP');
+      expect(d.outlined).toBe(true);
+      // No video at all (the pod off): no outline.
+      publishSensorPicture('TGP', {
+        ...picture,
+        valid: false,
+        status: 'OFF',
+      } as unknown as SensorPictureInfo);
+      d.compose(gl, sim, 'TGP');
+      expect(d.outlined).toBe(false);
+    } finally {
+      publishSensorPicture('TGP', before);
+      d.dispose();
+    }
   });
 });

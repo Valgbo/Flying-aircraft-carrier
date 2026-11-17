@@ -9,7 +9,8 @@
  *  - paused in flight: Escape always resumes, also from the controls page or the settings
  *    dialog opened from the pause menu;
  *  - with the help panel open (and not paused) it closes the panel;
- *  - on the menu, loadout and credits: it closes the settings dialog or goes back to the menu.
+ *  - on the menu, loadout and credits: it closes the settings or range options dialog, or goes
+ *    back to the menu.
  * The UI decides during the key's dispatch and calls preventDefault() on an Escape it used; the
  * input runtime toggles pause only after the dispatch, and only for an Escape nobody prevented
  * (src/a10/input/runtime.ts), so one press never resumes and pauses again. An Escape already
@@ -23,22 +24,25 @@ import { useA10Store } from '../state/store';
 import { useSimBridge } from './bridge';
 import CreditsScreen from './CreditsScreen';
 import DebriefScreen from './DebriefScreen';
+import { installFlightSetup } from './flightSetup';
 import FlightOverlay from './FlightOverlay';
 import HelpPanel from './HelpPanel';
 import LoadingScreen from './LoadingScreen';
 import LoadoutScreen from './LoadoutScreen';
 import MainMenu from './MainMenu';
 import PauseMenu from './PauseMenu';
+import RangeOptionsDialog from './RangeOptionsDialog';
 import SettingsDialog from './SettingsDialog';
 import Toasts from './Toasts';
-import { persistLoadoutChoices } from './uiStore';
+import { persistLoadoutChoices, useA10Ui } from './uiStore';
 import './ui.css';
 
 let flagsApplied = false;
 
-// The player's last preset and gun load are in the store before any flight can start (also
-// with ?ui=0).
+// The player's last preset and gun load are in the store before any flight can start, and every
+// flight gets the custom load and the range options before its first step (also with ?ui=0).
 persistLoadoutChoices();
+installFlightSetup();
 
 // Leaving the pause (by any key, button or module) also closes what was open on top of it.
 useA10Store.subscribe((s, prev) => {
@@ -62,9 +66,13 @@ function onKeyDown(e: KeyboardEvent): void {
     s.setPaused(false);
     return;
   }
+  const ui = useA10Ui.getState();
   if (s.settingsOpen) {
     e.preventDefault();
     s.setSettingsOpen(false);
+  } else if (ui.rangeOptionsOpen) {
+    e.preventDefault();
+    ui.setRangeOptionsOpen(false);
   } else if (s.screen === 'loadout' || s.screen === 'credits') {
     e.preventDefault();
     s.setScreen('menu');
@@ -77,6 +85,7 @@ export default function UIRoot() {
   const settingsOpen = useA10Store((s) => s.settingsOpen);
   const showFps = useA10Store((s) => s.settings.showFps);
   const helpOpen = useA10Store((s) => s.helpOpen);
+  const rangeOptionsOpen = useA10Ui((s) => s.rangeOptionsOpen);
 
   useEffect(() => {
     if (flagsApplied) return;
@@ -104,6 +113,7 @@ export default function UIRoot() {
       {helpOpen && screen !== 'loading' && <HelpPanel />}
       {flying && paused && <PauseMenu />}
       {settingsOpen && (!flying || paused) && <SettingsDialog />}
+      {rangeOptionsOpen && screen === 'menu' && !settingsOpen && <RangeOptionsDialog />}
       {screen === 'loading' && <LoadingScreen />}
       {showFps && <FpsCounter />}
     </div>

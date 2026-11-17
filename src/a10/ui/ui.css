@@ -570,6 +570,64 @@
   border-top: 1px solid var(--a10-hair);
 }
 
+/* the range events' conditions under their tiles: one button that opens the Range options */
+.a10-menu__conditions {
+  pointer-events: auto;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px dashed var(--fac-border);
+  border-radius: var(--fac-radius-sm);
+  background: transparent;
+  color: var(--fac-text-dim);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.a10-menu__conditions:hover {
+  border-color: var(--fac-accent);
+  background: rgba(57, 198, 255, 0.08);
+  color: var(--fac-text);
+}
+
+.a10-menu__conditions:focus-visible {
+  outline: 2px solid var(--fac-accent-strong);
+  outline-offset: 2px;
+}
+
+.a10-menu__conditions-icon,
+.a10-menu__conditions-chevron {
+  flex: none;
+  color: var(--fac-accent);
+}
+
+.a10-menu__conditions-chevron {
+  margin-left: auto;
+}
+
+.a10-menu__conditions-text {
+  min-width: 0;
+}
+
+.a10-menu__conditions-key {
+  margin-right: 4px;
+  color: var(--fac-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .a10-menu__hint {
   display: flex;
   align-items: center;
@@ -1021,6 +1079,105 @@
   outline: none;
 }
 
+.a10-dialog--narrow {
+  width: min(560px, 100%);
+}
+
+/* ---------- Range options dialog ---------------------------------------------------------- */
+
+.a10-range-options {
+  display: grid;
+  gap: 14px;
+  padding-top: 12px;
+  padding-bottom: 4px;
+}
+
+.a10-range-options__section {
+  display: grid;
+  gap: 8px;
+}
+
+/* the footer stays in view below the scrolling body */
+.a10-range-options__foot {
+  flex: none;
+  margin: 0;
+  padding: 12px 20px 16px;
+}
+
+.a10-range-options .a10-choices--row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.a10-range-options__wind {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.a10-range-options__controls {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.a10-range-options__section > .settings-row {
+  gap: 12px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.a10-range-options__section > .settings-row .settings-select {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.a10-windcard {
+  flex: none;
+  width: 104px;
+  height: 104px;
+}
+
+.a10-windcard__face {
+  fill: rgba(57, 198, 255, 0.04);
+  stroke: var(--fac-border);
+  stroke-width: 1;
+}
+
+.a10-windcard__tick {
+  stroke: var(--fac-text-dim);
+  stroke-width: 1.2;
+}
+
+.a10-windcard__label {
+  fill: var(--fac-text-dim);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.a10-windcard__runin {
+  stroke: var(--fac-text);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.a10-windcard__runin-head,
+.a10-windcard__target {
+  fill: var(--fac-text);
+}
+
+.a10-windcard__wind line {
+  stroke: var(--fac-accent-strong);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.a10-windcard__wind polygon {
+  fill: var(--fac-accent-strong);
+}
+
 .a10-dialog__head {
   display: flex;
   flex: none;
@@ -1335,6 +1492,46 @@
 .a10-stations__mass {
   color: var(--fac-text-dim);
   font-size: 12px;
+}
+
+/* the free choice: a select per station */
+.a10-stations__row--edit {
+  grid-template-columns: 26px minmax(0, 1fr) 58px;
+  align-items: center;
+  padding: 3px 6px;
+}
+
+.a10-stations__select.settings-select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  font-size: 12.5px;
+}
+
+.a10-custom__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.a10-custom__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fac-text-dim);
+  font-size: 12px;
+}
+
+.a10-custom__clear {
+  min-height: 32px;
+}
+
+.a10-choice--custom .a10-choice__name::after {
+  content: ' ✎';
+  color: var(--fac-accent);
 }
 
 .a10-facts {

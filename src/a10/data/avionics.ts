@@ -122,7 +122,11 @@ export const RELEASE_NOTES: Record<keyof typeof RELEASE, SourceNote> = {
     confidence: 'estimate',
     note: 'CCIP consent release: the delay cue on the bomb fall line at the bottom of the HUD field of view; the margin is a design value',
   },
-  delayCueMaxRange: { source: 'plan', confidence: 'estimate', note: 'design: beyond any CCIP solution' },
+  delayCueMaxRange: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'design: beyond any CCIP solution',
+  },
   solverTolerance: {
     source: 'plan',
     confidence: 'estimate',
@@ -222,6 +226,20 @@ export const TAD_RANGES_NOTES: SourceNote = {
   source: 'dcsA10Manual',
   confidence: 'approximate',
   note: 'A-10C TAD display ranges 5–160 nm',
+};
+
+/** Data entry on the up-front controller (core/avionics/ufc.ts). */
+export const UFC_ENTRY = {
+  /** Characters the scratchpad holds; further digits are ignored. */
+  scratchpadMax: 8,
+} as const;
+
+export const UFC_ENTRY_NOTES: Record<keyof typeof UFC_ENTRY, SourceNote> = {
+  scratchpadMax: {
+    source: 'dcsA10Manual',
+    confidence: 'estimate',
+    note: 'A-10C: values are typed into the UFC scratchpad and entered with the OSB beside the field; the length is a design value',
+  },
 };
 
 /** Which deliveries a store supports, and the defaults of its weapon profile on the DSMS. */

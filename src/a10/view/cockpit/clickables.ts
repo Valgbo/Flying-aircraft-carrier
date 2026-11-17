@@ -4,7 +4,8 @@
  * tests/unit/a10/cockpitPanel.test.ts.
  *
  *   controls     the switches of switches.ts (COCKPIT_CONTROLS): AHCP, stick, UFC STEER and
- *                ALT ALRT, flaps, gear, autopilot box, g-meter
+ *                ALT ALRT, flaps, gear, the LASTE panel's autopilot button and mode switch,
+ *                g-meter
  *   OSBs         'osb:L:1' … 'osb:R:20': each queues { type: 'osb', display, button }; the hover
  *                label is the avionics' label for the page the display shows (OSB_TABLE, read
  *                through osbBinding), with its live value when the binding has one

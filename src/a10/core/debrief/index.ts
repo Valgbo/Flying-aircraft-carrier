@@ -27,13 +27,7 @@ export {
   type FramePoint,
 } from './geometry';
 export { emptyLayout, findRangeLayout, rangeEventOf } from './layout';
-export {
-  burstOfRound,
-  isIndirect,
-  isRoundWeapon,
-  recordOfBody,
-  ROUND_NAMES,
-} from './recorder';
+export { burstOfRound, isIndirect, isRoundWeapon, recordOfBody, ROUND_NAMES } from './recorder';
 export {
   burstHits,
   burstRecord,

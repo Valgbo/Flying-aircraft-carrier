@@ -73,7 +73,11 @@ export const PASS_RULES = {
 } as const;
 
 export const PASS_RULES_NOTES: Record<keyof typeof PASS_RULES, SourceNote> = {
-  rollInDive: { source: 'plan', confidence: 'estimate', note: 'Low-angle strafe is flown at 5–15°' },
+  rollInDive: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'Low-angle strafe is flown at 5–15°',
+  },
   maxRollIn: { source: 'plan', confidence: 'estimate' },
   pullOffClimb: { source: 'plan', confidence: 'estimate' },
   pullOffMinTime: { source: 'plan', confidence: 'estimate' },

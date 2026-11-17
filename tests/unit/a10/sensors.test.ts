@@ -77,7 +77,11 @@ describe('targeting pod: where it hangs and where it looks', () => {
     expect(t.powered && t.ready).toBe(true);
     expect(t.mode).toBe('INR');
     // head under the right outer wing, ahead of the leading edge
-    const local = worldToBody(sim.aircraft.orientation, t.head.clone().sub(sim.aircraft.position), new Vector3());
+    const local = worldToBody(
+      sim.aircraft.orientation,
+      t.head.clone().sub(sim.aircraft.position),
+      new Vector3(),
+    );
     expect(local.x).toBeCloseTo(4.85, 1);
     expect(local.y).toBeLessThan(-0.7);
     expect(rayMiss(t.head, t.los, target)).toBeLessThan(0.05);
@@ -124,6 +128,30 @@ describe('targeting pod: where it hangs and where it looks', () => {
       }
     report.push(['upper hemisphere (el ≥ 20°) masked', `${((100 * masked) / n).toFixed(0)} %`]);
     expect(masked / n).toBeGreaterThan(0.4);
+  });
+
+  it('the mask follows the loadout: missiles leaving the next station stop hiding the view', () => {
+    const sim = createSensorTestbed({ altitude: 3000, speed: 0 });
+    stepSensorTestbed(sim);
+    const t = sim.sensors.tgp;
+    const st9 = sim.stores.stations.find((s) => s.station === 9);
+    if (!st9) throw new Error('no station 9');
+    // 90° left, 30° down: through the AGM-65H on the LAU-88's right rail, next to the pod
+    lookBody(sim, -90 * DEG, -30 * DEG);
+    expect(t.maskReason).toBe('AIRFRAME');
+    st9.stores.shift(); // the first H (left rail) leaves: the right one still hangs there
+    lookBody(sim, -90 * DEG, -30 * DEG);
+    expect(t.maskReason).toBe('AIRFRAME');
+    st9.stores.shift(); // the second one leaves: the empty launcher is above the line of sight
+    lookBody(sim, -90 * DEG, -30 * DEG);
+    expect(t.maskReason).toBe('NONE');
+    st9.stores.push('AGM-65H', 'AGM-65H'); // a rearm fills the rails again
+    lookBody(sim, -90 * DEG, -30 * DEG);
+    expect(t.maskReason).toBe('AIRFRAME');
+    st9.rack = null; // jettisoned with its launcher
+    st9.stores.length = 0;
+    lookBody(sim, -90 * DEG, -30 * DEG);
+    expect(t.maskReason).toBe('NONE');
   });
 
   it('a masked pod drops its area track to INR and cannot lase', () => {
@@ -203,7 +231,10 @@ describe('targeting pod: slew, fields of view and zoom', () => {
     const late = b.angleTo(t.los) / 0.1;
     expect(early / (t.fov * TGP.slewFovPerSecond)).toBeLessThan(1.3);
     expect(late / early).toBeGreaterThan(TGP.slewAccelMax * 0.8);
-    report.push(['slew acceleration after 1.5 s at full deflection', `× ${(late / early).toFixed(2)}`]);
+    report.push([
+      'slew acceleration after 1.5 s at full deflection',
+      `× ${(late / early).toFixed(2)}`,
+    ]);
   });
 
   it('FOV, zoom and picture follow the HOTAS / page requests', () => {
@@ -295,8 +326,17 @@ describe('targeting pod: INR, AREA and POINT tracks', () => {
     let tracked = 0;
     let lostAt = -1;
     let areaAt = -1;
+    // the pod's point (what the avionics copies into the SPI when the pod is its source): its
+    // largest step-to-step move over the ground (y follows the slope), and the jumps over a metre
+    const prev = t.point.clone();
+    let pointStep = 0;
+    let pointJumps = 0;
     const start = sim.time;
     runSensorTestbed(sim, 120, (s) => {
+      expect(t.pointValid).toBe(true);
+      if (t.point.distanceTo(prev) > 1) pointJumps++;
+      else pointStep = Math.max(pointStep, Math.hypot(t.point.x - prev.x, t.point.z - prev.z));
+      prev.copy(t.point);
       driveVehicles(s);
       if (t.mode === 'POINT' && !t.coasting) {
         worst = Math.max(worst, rayMiss(t.head, t.los, centre(v)));
@@ -305,7 +345,7 @@ describe('targeting pod: INR, AREA and POINT tracks', () => {
       if (t.coasting && lostAt < 0) lostAt = s.time;
       if (t.mode === 'AREA' && areaAt < 0) areaAt = s.time;
     });
-    return { sim, v, worst, tracked, lostAt, areaAt };
+    return { sim, v, worst, tracked, lostAt, areaAt, pointStep, pointJumps };
   }
 
   it('POINT holds a tank driving at 40 km/h and falls back to AREA behind a ridge', () => {
@@ -321,9 +361,17 @@ describe('targeting pod: INR, AREA and POINT tracks', () => {
     expect(r.v.position.z).toBeLessThan(-10000);
     const locks = events(r.sim, 'lock') as Extract<SimEvent, { type: 'lock' }>[];
     expect(locks.map((e) => `${e.sensor}:${e.on}`)).toEqual(['TGP:true', 'TGP:false']);
+    // the point moves with the tank (≤ 40 km/h × one step) through track, coast and hand-off; the
+    // one jump is the area tracker taking the crest that now hides the coasted point
+    expect(r.pointStep).toBeLessThan((40 / 3.6 / 120) * 1.05);
+    expect(r.pointJumps).toBeLessThanOrEqual(1);
     report.push([
       'POINT track, tank at 40 km/h toward a ridge',
       `held ${r.tracked.toFixed(1)} s (line of sight within ${r.worst.toFixed(3)} m of its centre), lost at ${r.lostAt.toFixed(1)} s, AREA ${(r.areaAt - r.lostAt).toFixed(2)} s later`,
+    ]);
+    report.push([
+      'pod point (SPI source) step to step, ridge run',
+      `≤ ${(r.pointStep * 1000).toFixed(1)} mm per step; ${r.pointJumps} jump (AREA onto the crest)`,
     ]);
   });
 
@@ -334,6 +382,7 @@ describe('targeting pod: INR, AREA and POINT tracks', () => {
     expect(r.sim.sensors.tgp.mode).toBe('AREA');
     // it went out of sight entering the strip (z −9,100), not before
     expect(r.tracked).toBeGreaterThan(7);
+    expect(r.pointStep).toBeLessThan((40 / 3.6 / 120) * 1.05);
     report.push([
       'POINT track, tank at 40 km/h into a forest strip',
       `held ${r.tracked.toFixed(1)} s, AREA ${(r.areaAt - r.lostAt).toFixed(2)} s after the loss`,
@@ -409,7 +458,10 @@ describe('laser designator and ranger', () => {
     expect(t.spotVehicle).toBe(-1);
     expect(t.spot.distanceTo(ground)).toBeLessThan(0.05);
     expect(t.laserRange).toBeCloseTo(t.head.distanceTo(ground), 2);
-    report.push(['laser range to the tank / to the ground beside it', `${t.head.distanceTo(centre(tank)).toFixed(0)} m / ${t.laserRange.toFixed(1)} m`]);
+    report.push([
+      'laser range to the tank / to the ground beside it',
+      `${t.head.distanceTo(centre(tank)).toFixed(0)} m / ${t.laserRange.toFixed(1)} m`,
+    ]);
   });
 
   it('TRAIN ranges but marks no spot', () => {
@@ -519,7 +571,14 @@ describe('determinism', () => {
       s.input.laser = k > 400;
     });
     const t = sim.sensors.tgp;
-    return JSON.stringify([t.los.toArray(), t.point.toArray(), t.spot.toArray(), t.mode, t.laserRange, t.trackedVehicle]);
+    return JSON.stringify([
+      t.los.toArray(),
+      t.point.toArray(),
+      t.spot.toArray(),
+      t.mode,
+      t.laserRange,
+      t.trackedVehicle,
+    ]);
   }
   it('the same inputs give the same pod state', () => {
     expect(scripted()).toBe(scripted());

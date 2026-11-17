@@ -13,6 +13,7 @@ import {
   burstRecord,
   burstRounds,
   isIndirect,
+  missClock,
   passRounds,
   toHeadingFrame,
   type FramePoint,
@@ -42,6 +43,7 @@ import {
 } from './debriefData';
 import { formatClockDirection, formatFeetFromM, formatInt, formatMiss, formatPct } from './format';
 import { storeLabel } from './loadout';
+import { TURBULENCE_LEVELS } from './rangeOptions';
 
 /** What the model needs of the flight (a Sim fits). */
 export interface DebriefSource {
@@ -49,6 +51,8 @@ export interface DebriefSource {
   debrief: DebriefState;
   gun: GunState;
   targets: { vehicles: readonly Vehicle[] };
+  /** The flight's weather (constant through a flight): the range card states it. */
+  world?: { surfaceWind: { x: number; z: number }; turbulence: number };
 }
 
 // ---- passes -----------------------------------------------------------------------------------
@@ -434,7 +438,10 @@ function passResult(
   if (kills.length > 0) return kills.map((k) => `${k.name} destroyed`).join(' · ');
   if (bombs.length > 0)
     return bombs
-      .map((b) => `${storeLabel(b.store).short} ${formatMiss(b.miss)} ${formatClockDirection(b.clock)}`)
+      .map(
+        (b) =>
+          `${storeLabel(b.store).short} ${formatMiss(b.miss)} ${formatClockDirection(b.clock)}`,
+      )
       .join(' · ');
   const parts: string[] = [];
   if (p.bursts.length > 0) {
@@ -522,15 +529,49 @@ export interface RangeView {
   title: string;
   /** One line under the title: the rules or the session summary. */
   line: string;
+  /** The weather of the flight as the range calls it ('' when unknown). */
+  conditions: string;
   strafe: { rows: StrafeRow[]; total: StrafeScores } | null;
   bombs: { rows: BombRow[]; mean: number; cep: number; best: number } | null;
   lane: LaneScores | null;
+}
+
+/**
+ * The range's weather as the range officer gives it ("Wind 15 kn from 3 o'clock · moderate
+ * turbulence"): the surface wind's speed and the clock
+ * direction it blows from along the run-in (12 = a headwind), and the turbulence setting.
+ */
+export function rangeConditions(
+  world: { surfaceWind: { x: number; z: number }; turbulence: number },
+  runIn: number,
+): string {
+  const w = world.surfaceWind;
+  const kt = Math.hypot(w.x, w.z) / 0.514444;
+  let wind = 'Calm wind';
+  if (kt >= 0.5) {
+    // the wind blows FROM the opposite of where the air moves
+    const from = Math.atan2(-w.x, w.z);
+    const clock = missClock(Math.sin(from), -Math.cos(from), runIn);
+    wind = `Wind ${Math.round(kt)} kn from ${formatClockDirection(clock)}`;
+  }
+  let level: string = TURBULENCE_LEVELS.calm.label;
+  let best = Infinity;
+  for (const t of Object.values(TURBULENCE_LEVELS)) {
+    const dv = Math.abs(t.value - world.turbulence);
+    if (dv < best) {
+      best = dv;
+      level = t.label;
+    }
+  }
+  return `${wind} · ${level.toLowerCase()} turbulence`;
 }
 
 export function rangeView(src: DebriefSource): RangeView | null {
   const d = src.debrief;
   const s = d.scores;
   if (s.event === 'none') return null;
+  const layout = d.internal.layout;
+  const conditions = src.world && layout ? rangeConditions(src.world, layout.runIn) : '';
   if (s.event === 'strafePit') {
     const total = s.strafe ?? {
       passes: [],
@@ -558,6 +599,7 @@ export function rangeView(src: DebriefSource): RangeView | null {
     return {
       event: 'strafePit',
       title: 'Strafe pit',
+      conditions,
       line: `Foul line ${formatInt(total.foulLine)} m (${formatFeetFromM(total.foulLine)}) short of the panels · minimum altitude ${formatFeetFromM(total.minAltitude)} · a fouled pass scores no hits`,
       strafe: { rows, total },
       bombs: null,
@@ -579,6 +621,7 @@ export function rangeView(src: DebriefSource): RangeView | null {
     return {
       event: 'bombCircle',
       title: 'Bombing circle',
+      conditions,
       line: 'Miss from the bull on the ground; clock from your run-in heading (12 = long, 6 = short)',
       strafe: null,
       bombs: { rows, mean: b?.mean ?? NaN, cep: b?.cep ?? NaN, best: b?.best ?? NaN },
@@ -588,6 +631,7 @@ export function rangeView(src: DebriefSource): RangeView | null {
   return {
     event: 'tacticalLane',
     title: 'Tactical lane',
+    conditions,
     line: 'Kills by weapon; time to kill from the first shot of the pass',
     strafe: null,
     bombs: null,

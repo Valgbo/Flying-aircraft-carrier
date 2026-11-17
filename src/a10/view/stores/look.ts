@@ -96,8 +96,8 @@ export const WP_MARK = {
   earlyShare: 0.6,
   /** Puffs per second at the start, at full detail, and their size (m) and life (s). */
   rate: 2.2,
-  puffS0: 4,
-  puffS1: 28,
+  puffS0: 8,
+  puffS1: 40,
   puffLife: 70,
   /** The burst: the white bloom (puffs) and the burning streamers (fragments). */
   bloomPuffs: 24,
@@ -114,8 +114,18 @@ export const WP_MARK_NOTES: Record<keyof typeof WP_MARK, SourceNote> = {
   },
   earlyShare: { source: 'plan', confidence: 'estimate', note: 'visual' },
   rate: { source: 'plan', confidence: 'estimate', note: 'visual' },
-  puffS0: { source: 'plan', confidence: 'estimate', note: 'visual' },
-  puffS1: { source: 'plan', confidence: 'estimate', note: 'visual: a mark ≈30–50 m across' },
+  puffS0: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'the burning pellets cover metres of ground: the smoke is a dense cloud at once; visual',
+  },
+  puffS1: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'a plume ≈40–80 m wide a few hundred metres downwind (Pasquill–Gifford class D spread: ' +
+      'σy ≈ 20–35 m at 300–500 m); visual',
+  },
   puffLife: { source: 'plan', confidence: 'estimate', note: 'visual' },
   bloomPuffs: { source: 'plan', confidence: 'estimate', note: 'visual' },
   streamers: { source: 'plan', confidence: 'estimate', note: 'visual' },
@@ -126,6 +136,32 @@ export const WP_MARK_NOTES: Record<keyof typeof WP_MARK, SourceNote> = {
  * (body.flight.balluteStart/balluteFull), s.
  */
 export const BALLUTE_FILL = 0.2;
+
+/**
+ * The GBU-12's canards (MAU-169 computer-control group): bang-bang — each one at full deflection
+ * toward the laser spot the seeker sees (PLAN §6.6), neutral without a spot. Drawn from the body's
+ * guidance (`body.guidance`, the guided module's), so they move only when it has a target.
+ */
+export const CANARD = {
+  /** Full deflection, rad. */
+  max: (10 * Math.PI) / 180,
+  /** Actuator rate, rad/s (stop to stop in about a tenth of a second). */
+  rate: 3.5,
+  /** Seeker error inside which an axis is not commanded, rad. */
+  deadband: 0.004,
+} as const;
+
+export const CANARD_NOTES: Record<keyof typeof CANARD, SourceNote> = {
+  max: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'Paveway II steers bang-bang with all-moving canards (public descriptions; the deflection ' +
+      'angle is not published): ±10° drawn',
+  },
+  rate: { source: 'plan', confidence: 'estimate', note: 'pneumatic actuators: visual' },
+  deadband: { source: 'plan', confidence: 'estimate', note: 'visual' },
+};
 
 /** A released store is blended from where it hung into its flight path over this time, s. */
 export const HANDOFF_BLEND = 0.25;

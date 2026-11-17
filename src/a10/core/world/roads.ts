@@ -116,7 +116,9 @@ export function nearestRoadPoint(
       t = t < 0 ? 0 : t > 1 ? 1 : t;
       const qx = ax + dx * t;
       const qz = az + dz * t;
-      const d = Math.hypot(x - qx, z - qz);
+      const ex = x - qx;
+      const ez = z - qz;
+      const d = Math.sqrt(ex * ex + ez * ez);
       if (d < best) {
         best = d;
         out.x = qx;

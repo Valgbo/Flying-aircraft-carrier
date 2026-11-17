@@ -9,7 +9,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { Box3, Matrix4, Ray, Vector3 } from 'three';
-import { osbBinding } from '../../../src/a10/core/avionics';
+import {
+  osbBinding,
+  scratchpadLaserCode,
+  ufcKey as avionicsUfcKey,
+} from '../../../src/a10/core/avionics';
 import type { MfdPage } from '../../../src/a10/core/avionics/types';
 import { createSim } from '../../../src/a10/core/sim';
 import type { Sim } from '../../../src/a10/core/types';
@@ -48,14 +52,19 @@ import {
   pressDepth,
 } from '../../../src/a10/view/cockpit/mfcd';
 import { AHCP, MFCD, MFCD_MOUNT, UFC } from '../../../src/a10/view/cockpit/panelData';
-import { pickTarget, type PickTarget } from '../../../src/a10/view/cockpit/picking';
+import {
+  HOVER_LABEL,
+  hoverLabelLayout,
+  pickTarget,
+  type PickTarget,
+} from '../../../src/a10/view/cockpit/picking';
 import {
   COCKPIT_CONTROLS,
   commandForControl,
   createSwitchState,
   type CockpitSwitchState,
 } from '../../../src/a10/view/cockpit/switches';
-import { UFC_KEYS, Ufc, ufcKey } from '../../../src/a10/view/cockpit/ufc';
+import { UFC_KEYS, Ufc, ufcKey, ufcScratchpadKey } from '../../../src/a10/view/cockpit/ufc';
 
 const metaFiles = import.meta.glob('../../../public/a10/models/a10-meta.json', {
   eager: true,
@@ -207,6 +216,38 @@ describe('MFCD option-select buttons', () => {
     expect(clickHoverText(osbClickId('L', 14), s, state(), decor)).toContain(
       osbBinding('DSMS', 14)?.label ?? '?',
     );
+  });
+
+  it('fits every OSB hover label in its box, neither cut nor shrunk', () => {
+    // bold 34 px Arial: capitals and digits average ≈ 0.62 em; 0.68 em errs on the wide side
+    const charPx = 0.68 * HOVER_LABEL.font;
+    const s = sim();
+    const decor = createAhcpDecorState();
+    let longest = '';
+    for (const page of ['DSMS', 'TGP', 'MAV', 'TAD', 'STAT', 'MSG'] as MfdPage[]) {
+      s.avionics.mfd.left = page;
+      s.avionics.mfd.right = page;
+      for (const id of allOsbClickIds()) {
+        const text = clickHoverText(id, s, state(), decor);
+        if (text.length > longest.length) longest = text;
+      }
+    }
+    const textPx = longest.length * charPx;
+    const layout = hoverLabelLayout(textPx);
+    expect(layout.font, longest).toBe(HOVER_LABEL.font);
+    expect(layout.width).toBeLessThanOrEqual(HOVER_LABEL.width);
+    expect(layout.width).toBeGreaterThanOrEqual(textPx + HOVER_LABEL.padding - 1);
+    // the wave-1 label (512 px, text centred) cut such a label at both ends
+    expect(textPx + HOVER_LABEL.padding, longest).toBeGreaterThan(512);
+    // a short label gets a short box (the sprite shows only the box)
+    expect(hoverLabelLayout(100).width).toBe(100 + HOVER_LABEL.padding);
+    // a label too long even for the canvas is drawn smaller, never cut
+    const huge = hoverLabelLayout(3000);
+    expect(huge.font).toBeLessThan(HOVER_LABEL.font);
+    expect((3000 * huge.font) / HOVER_LABEL.font + HOVER_LABEL.padding).toBeLessThanOrEqual(
+      HOVER_LABEL.width,
+    );
+    expect(huge.width).toBeLessThanOrEqual(HOVER_LABEL.width);
   });
 
   it('a pressed cap goes in and springs back', () => {
@@ -384,6 +425,21 @@ describe('the up-front controller', () => {
       kind: 'ufc',
       key: 'ALT_ALRT',
     });
+  });
+
+  it("names the avionics scratchpad's key for each digit and CLR (for a future ufc command)", () => {
+    for (const k of UFC_KEYS) {
+      const key = ufcScratchpadKey(k.id);
+      if (/^[0-9]$/.test(k.id) || k.id === 'CLR') expect(key, k.id).toBe(k.id);
+      else expect(key, k.id).toBeNull();
+    }
+    // the avionics' own handler takes them: 1-6-8-8 is a laser code, CLR empties the pad
+    const s = sim();
+    for (const id of ['1', '6', '8', '8'] as const) avionicsUfcKey(s, ufcScratchpadKey(id) ?? '');
+    expect(s.avionics.pages.scratchpad).toBe('1688');
+    expect(scratchpadLaserCode(s.avionics.pages.scratchpad)).toBe(1688);
+    avionicsUfcKey(s, ufcScratchpadKey('CLR') ?? '');
+    expect(s.avionics.pages.scratchpad).toBe('');
   });
 
   it('gives every key its own click box', () => {

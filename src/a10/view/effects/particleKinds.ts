@@ -142,6 +142,8 @@ export const PK = {
   launchSmoke: 31,
   /** White-phosphorus mark: the dense cloud that drifts downwind for minutes. */
   wpMark: 32,
+  /** A bomb's cloud: soil and smoke lifted by the hot gases of the burst, a buoyant thermal. */
+  blastCloud: 33,
 } as const;
 export type PK = (typeof PK)[keyof typeof PK];
 
@@ -819,8 +821,11 @@ define(
     // phosphorus pentoxide takes up water from the air: a dense white cloud that swells slowly
     growTau: 9,
     drag: 0.9,
-    rise: 1.1,
-    riseTau: 30,
+    // the burning phosphorus (≈25 MJ/kg) makes a hot plume that climbs a few tens of metres
+    // while the wind bends it over (bent-over plume rise of a ≈0.3 MW source: ≈20–35 m at
+    // 200–500 m downwind in a 4 m/s wind)
+    rise: 1.6,
+    riseTau: 25,
     wind: 1,
     ground: 1,
     grow: 0.5,
@@ -832,6 +837,31 @@ define(
     // seen from kilometres away: never thinner than a few pixels
     minPx: 3,
     thermal: 0.45,
+  }),
+);
+define(
+  PK.blastCloud,
+  kind({
+    name: 'blastCloud',
+    // thrown out by the blast, the cloud is a dome tens of metres wide within a second or two,
+    // then swells slowly as it mixes with the air
+    growTau: 0.9,
+    drag: 1.5,
+    // the burst's hot gases make it a buoyant thermal: it climbs tens of metres over the first
+    // quarter of a minute, then stops and drifts
+    rise: 7.5,
+    riseTau: 7,
+    wind: 1,
+    ground: 1,
+    grow: 0.5,
+    fadeIn: 0.01,
+    fadeOut: 0.55,
+    alpha: 0.95,
+    spin: 0.12,
+    // pulverised soil and the soot of the explosive (the recipe tints it by the surface)
+    color: [0.2, 0.17, 0.13],
+    minPx: 2.5,
+    thermal: 0.4,
   }),
 );
 

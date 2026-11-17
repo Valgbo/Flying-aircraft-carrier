@@ -182,3 +182,45 @@ export const UFC_NOTES: Record<keyof typeof UFC, SourceNote> = {
   key: { source: 'plan', confidence: 'estimate' },
   keyTravel: { source: 'plan', confidence: 'estimate' },
 };
+
+/**
+ * The LASTE control panel on the front of the left console, as the FlightGear cockpit models it:
+ * EAC (ARM/OFF, guarded), RDR ALTM (NORM/DIS), the autopilot's ENGAGE/DISENGAGE button and its
+ * PATH – ALT/HDG – ALT mode switch. The A-10C's low-altitude autopilot is worked from here, so
+ * the cockpit's two autopilot controls are the model's own button and lever (laste.ts). Their
+ * parts are merged into the cockpit's static mesh; positions measured on the converted model,
+ * BODY frame, m (cockpit.ac objects LASTE_AP_Engage and LASTE_AP_Switch).
+ */
+export const LASTE = {
+  /** The ENGAGE/DISENGAGE button: its axis (x, z), the top of its cap (y), the cap's radius. */
+  button: { x: -0.3431, z: -4.8107, top: 0.4185, radius: 0.0031 },
+  /**
+   * The mode switch's lever: its axis (x, z), the pivot height (the top of the switch's bezel:
+   * only what is above it moves), the tip height and the bat's radius.
+   */
+  lever: { x: -0.3121, z: -4.8104, pivot: 0.416, tip: 0.4298, radius: 0.004 },
+  /**
+   * Lever throw either side of the centre position, rad. The stencils read from the seat:
+   * PATH is the forward position (toward the nose), ALT/HDG the centre, ALT aft.
+   */
+  leverThrow: (25 * Math.PI) / 180,
+  /** A click pushes the button cap in this far, m, for this long, s (as an OSB). */
+  buttonTravel: 0.0015,
+  buttonPressTime: 0.16,
+} as const;
+
+export const LASTE_NOTES: Record<keyof typeof LASTE, SourceNote> = {
+  button: {
+    source: 'flightgearA10',
+    confidence: 'confirmed',
+    note: 'measured on Models/Cockpit/cockpit.ac (LASTE_AP_Engage); the panel stencil reads ENGAGE/DISENGAGE under AUTOPILOT',
+  },
+  lever: {
+    source: 'flightgearA10',
+    confidence: 'confirmed',
+    note: 'measured on Models/Cockpit/cockpit.ac (LASTE_AP_Switch, LASTE_SW_Bases); stencil PATH / ALT/HDG / ALT',
+  },
+  leverThrow: { source: 'plan', confidence: 'estimate', note: 'as the AHCP toggles' },
+  buttonTravel: { source: 'plan', confidence: 'estimate' },
+  buttonPressTime: { source: 'plan', confidence: 'estimate' },
+};

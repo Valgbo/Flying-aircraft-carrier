@@ -3,10 +3,11 @@
  * around the control and a label with its name and position). OWNED BY THE COCKPIT MODULE.
  *
  * Every control is a box in the local frame of a node of the cockpit model (FlightGear's pick
- * boxes from meta.pick, the bounds of a moving part) or of one of the panels built in code (the
- * MFCDs' faces, the AHCP, the UFC, the autopilot box). A ray from
- * the cockpit camera through the pointer is tested against the boxes in their own frames, so
- * moving parts (the gear handle, the flap lever) stay clickable wherever they are.
+ * boxes from meta.pick, the bounds of a moving part, the LASTE panel's autopilot button and
+ * lever in the model's own frame) or of one of the panels built in code (the MFCDs' faces, the
+ * AHCP, the UFC). A ray from the cockpit camera through the pointer is tested against the boxes
+ * in their own frames, so moving parts (the gear handle, the flap lever) stay clickable
+ * wherever they are.
  */
 import {
   AdditiveBlending,
@@ -47,6 +48,22 @@ export interface PickTarget {
 
 /** Extra margin around every box, m (small switches are hard to hit otherwise). */
 export const PICK_PAD = 0.006;
+
+/** The hover label's canvas (px), its font size and the padding around the text (px). */
+export const HOVER_LABEL = { width: 1024, height: 64, font: 34, padding: 28 } as const;
+
+/**
+ * The hover label's box for a text `textWidth` px wide at the full font size: the font size to
+ * draw with (smaller only when the text would not fit the canvas) and the box width, px. The
+ * sprite shows only the box, so a short label is not stretched and a long one is not cut.
+ */
+export function hoverLabelLayout(textWidth: number): { font: number; width: number } {
+  const L = HOVER_LABEL;
+  const room = L.width - L.padding;
+  const font = textWidth > room ? Math.floor((L.font * room) / textWidth) : L.font;
+  const drawn = (textWidth * font) / L.font;
+  return { font, width: Math.min(L.width, Math.ceil(drawn) + L.padding) };
+}
 
 const _inv = new Matrix4();
 const _local = new Ray();
@@ -145,8 +162,8 @@ export class PickHighlight {
         ? null
         : (document.createElement('canvas') as HTMLCanvasElement);
     if (this.canvas) {
-      this.canvas.width = 512;
-      this.canvas.height = 64;
+      this.canvas.width = HOVER_LABEL.width;
+      this.canvas.height = HOVER_LABEL.height;
       this.texture = new CanvasTexture(this.canvas);
       this.texture.colorSpace = SRGBColorSpace;
     } else this.texture = null;
@@ -197,24 +214,28 @@ export class PickHighlight {
     this.label.position.y += Math.max(_size.y, 0.01) * 0.5 + h * 0.9;
   }
 
+  /** Draw the label in the canvas's left part; the sprite shows just that box. */
   private paint(text: string): void {
     const c = this.canvas;
     const ctx = c?.getContext('2d');
     if (!c || !ctx || !this.texture) return;
-    ctx.font = 'bold 34px Arial, Helvetica, sans-serif';
-    const w = Math.min(c.width, Math.ceil(ctx.measureText(text).width) + 28);
+    const family = 'Arial, Helvetica, sans-serif';
+    ctx.font = `bold ${HOVER_LABEL.font}px ${family}`;
+    const { font, width: w } = hoverLabelLayout(ctx.measureText(text).width);
+    if (font !== HOVER_LABEL.font) ctx.font = `bold ${font}px ${family}`;
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.fillStyle = 'rgba(10,12,14,0.78)';
-    ctx.fillRect((c.width - w) / 2, 6, w, c.height - 12);
+    ctx.fillRect(0, 6, w, c.height - 12);
     ctx.strokeStyle = 'rgba(255,181,58,0.9)';
     ctx.lineWidth = 2;
-    ctx.strokeRect((c.width - w) / 2 + 1, 7, w - 2, c.height - 14);
+    ctx.strokeRect(1, 7, w - 2, c.height - 14);
     ctx.fillStyle = '#ffd38a';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, c.width / 2, c.height / 2 + 1);
+    ctx.fillText(text, w / 2, c.height / 2 + 1);
+    this.texture.repeat.set(w / c.width, 1);
     this.texture.needsUpdate = true;
-    this.aspect = c.width / c.height;
+    this.aspect = w / c.height;
   }
 
   dispose(): void {

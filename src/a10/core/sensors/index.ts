@@ -21,6 +21,7 @@
 import { Vector3 } from 'three';
 import { LASER, TGP } from '../../data/sensors';
 import type { Sim } from '../types';
+import { syncLoads } from './loads';
 import { stepMavericks, slaveMaverickToSpi } from './maverick';
 import { MASK_CAPACITY } from './mask';
 import { slaveTgpToSpi, stepTgp } from './tgp';
@@ -141,6 +142,10 @@ export function createSensorsState(): SensorsState {
       stationKeys: new Int32Array(12),
       maskStation: -1,
       maskDirty: true,
+      maskLoads: new Int32Array(12),
+      loadInitial: new Int32Array(12),
+      loadCount: new Int32Array(12),
+      loadCode: new Int32Array(12),
       maskBoxes: new Float64Array(MASK_CAPACITY * 6),
       maskCount: 0,
       lastSelectedStation: 0,
@@ -168,6 +173,7 @@ function slaveFallback(sim: Sim): void {
 
 /** Step 8: the targeting pod, its laser and the Maverick seekers. */
 export function stepSensors(sim: Sim, dt: number): void {
+  syncLoads(sim);
   slaveFallback(sim);
   stepTgp(sim, dt);
   stepMavericks(sim, dt);

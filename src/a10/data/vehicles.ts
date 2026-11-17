@@ -317,6 +317,10 @@ export const TRUCK_SKIN = {
   tyre: 4.0,
   /** The truck's own fuel tank. */
   fuelTank: 1.5,
+  /** Pressed-steel chassis members: bumper, frame rails, a tanker's saddles (≈5–6 mm channel). */
+  frame: 5.0,
+  /** A tanker's hose and pump cabinet at the rear (sheet steel). */
+  cabinet: 1.5,
 } as const;
 
 export const TRUCK_SKIN_NOTES: Record<keyof typeof TRUCK_SKIN, SourceNote> = {
@@ -333,6 +337,12 @@ export const TRUCK_SKIN_NOTES: Record<keyof typeof TRUCK_SKIN, SourceNote> = {
   crates: { source: 'plan', confidence: 'estimate', note: '25 mm pine ≈ 2.5 mm steel' },
   tyre: { source: 'plan', confidence: 'estimate' },
   fuelTank: { source: 'plan', confidence: 'estimate' },
+  frame: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'review TE-6: the drawn bumper, frame rails and tank saddles have armour behind them',
+  },
+  cabinet: { source: 'plan', confidence: 'estimate' },
 };
 
 // ---- Layout helpers (pure; used once at load) --------------------------------------------------
@@ -450,6 +460,93 @@ function boxPart(
   opts: { turret?: boolean; spaced?: boolean; component?: ComponentId | null } = {},
 ): PartDef {
   return part(name, kind, boxPlates(name, min, max, mm), min, max, opts);
+}
+
+/**
+ * A wheel as the 3D model draws it (review TE-6): an octagonal prism across x around the circle of
+ * radius r at (yc, zc), so the corners of a box do not stop rounds that pass beside the tyre.
+ */
+function wheelPart(
+  name: string,
+  x0: number,
+  x1: number,
+  yc: number,
+  zc: number,
+  r: number,
+  mm: number,
+  component: ComponentId,
+): PartDef {
+  const plates: PlateDef[] = [
+    plane(`${name} front`, 'front', mm, [0, 0, -1], [0, 0, zc - r]),
+    plane(`${name} rear`, 'rear', mm, [0, 0, 1], [0, 0, zc + r]),
+    plane(`${name} left`, 'side', mm, [-1, 0, 0], [x0, 0, 0]),
+    plane(`${name} right`, 'side', mm, [1, 0, 0], [x1, 0, 0]),
+    plane(`${name} top`, 'top', mm, [0, 1, 0], [0, yc + r, 0]),
+    plane(`${name} bottom`, 'bottom', mm, [0, -1, 0], [0, yc - r, 0]),
+  ];
+  const c = Math.SQRT1_2;
+  for (const [ny, nz, face] of [
+    [1, -1, 'front'],
+    [1, 1, 'rear'],
+    [-1, -1, 'front'],
+    [-1, 1, 'rear'],
+  ] as const)
+    plates.push(
+      plane(
+        `${name} ${ny > 0 ? 'upper' : 'lower'} ${face}`,
+        face,
+        mm,
+        [0, ny * c, nz * c],
+        [0, yc + ny * c * r, zc + nz * c * r],
+      ),
+    );
+  return part(name, 'wheels', plates, [x0, yc - r, zc - r], [x1, yc + r, zc + r], {
+    spaced: true,
+    component,
+  });
+}
+
+/**
+ * Where the drawn track belt runs (view/vehicles/models/tracked.ts): on the ground between the
+ * first and last road wheels, then up around the idler and the sprocket. Returns the two lower
+ * chamfers of the track-run box, from the ground run's ends to the bottom of the end wheels.
+ */
+function trackChamfers(s: VehicleShape, frontDrive: boolean, mm: number): PlateDef[] {
+  const L = s.hullLength;
+  const rw = Math.min(0.42, Math.max(0.28, s.hullClearance * 0.8));
+  const th = 0.075;
+  const yw = rw + th;
+  // ground run, sprocket and idler (centre height, position along z, outer radius)
+  const zGf = -L / 2 + 0.95;
+  const zGr = L / 2 - 1.0;
+  const sprocket = {
+    y: yw + 0.17,
+    r: rw * 0.82 + th,
+    z: frontDrive ? -L / 2 + 0.34 : L / 2 - 0.34,
+  };
+  const idler = { y: yw + 0.13, r: rw * 0.78 + th, z: frontDrive ? L / 2 - 0.32 : -L / 2 + 0.32 };
+  const front = frontDrive ? sprocket : idler;
+  const rear = frontDrive ? idler : sprocket;
+  return [
+    slope(
+      'track lower front',
+      'front',
+      mm,
+      [0, 0, zGf],
+      [0, front.y - front.r, front.z],
+      'x',
+      [0, -1, -1],
+    ),
+    slope(
+      'track lower rear',
+      'rear',
+      mm,
+      [0, 0, zGr],
+      [0, rear.y - rear.r, rear.z],
+      'x',
+      [0, -1, 1],
+    ),
+  ];
 }
 
 /** One sector of a turret: its compass direction (0 = bow, + clockwise), face and thicknesses. */
@@ -732,13 +829,17 @@ function buildMbt(kind: VehicleKind, s: VehicleShape, drums: boolean, internals:
   for (const side of [-1, 1]) {
     const x0 = side < 0 ? -xo : xi;
     const x1 = side < 0 ? -xi : xo;
+    const name = side < 0 ? 'left track' : 'right track';
     defs.push(
-      boxPart(
-        side < 0 ? 'left track' : 'right track',
+      part(
+        name,
         'tracks',
+        [
+          ...boxPlates(name, [x0, 0, zF + 0.03], [x1, yT, zR - 0.03], uniform(A.trackRun)),
+          ...trackChamfers(s, false, A.trackRun),
+        ],
         [x0, 0, zF + 0.03],
         [x1, yT, zR - 0.03],
-        uniform(A.trackRun),
         { spaced: true, component: 'runningGear' },
       ),
     );
@@ -1072,13 +1173,16 @@ function buildIfv(s: VehicleShape) {
     ),
   ];
   for (const side of [-1, 1]) {
+    const name = side < 0 ? 'left track' : 'right track';
+    const min: V3 = [side < 0 ? -xo : xi, 0, zF + 0.05];
+    const max: V3 = [side < 0 ? -xi : xo, yT, zR - 0.05];
     defs.push(
-      boxPart(
-        side < 0 ? 'left track' : 'right track',
+      part(
+        name,
         'tracks',
-        [side < 0 ? -xo : xi, 0, zF + 0.05],
-        [side < 0 ? -xi : xo, yT, zR - 0.05],
-        uniform(A.trackRun),
+        [...boxPlates(name, min, max, uniform(A.trackRun)), ...trackChamfers(s, true, A.trackRun)],
+        min,
+        max,
         { spaced: true, component: 'runningGear' },
       ),
     );
@@ -1317,12 +1421,7 @@ function buildApc(s: VehicleShape) {
       const name = `${side < 0 ? 'left' : 'right'} wheel ${i + 1}`;
       const min: V3 = [side * xw - ww / 2, 0, z - r];
       const max: V3 = [side * xw + ww / 2, 2 * r, z + r];
-      defs.push(
-        boxPart(name, 'wheels', min, max, uniform(A.wheel), {
-          spaced: true,
-          component: 'runningGear',
-        }),
-      );
+      defs.push(wheelPart(name, min[0], max[0], r, z, r, A.wheel, 'runningGear'));
       comps.push(
         comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }),
       );
@@ -1435,13 +1534,31 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       top: T.bonnet,
       bottom: T.sump,
     }),
-    boxPart('cab', 'cab', [-cw, C, zBonnet], [cw, cabTop, zCabRear], {
-      front: T.windscreen,
-      rear: T.cabSheet,
-      side: T.cabSheet,
-      top: T.cabSheet,
-      bottom: T.cabFloor,
-    }),
+    part(
+      'cab',
+      'cab',
+      [
+        ...boxPlates('cab', [-cw, C, zBonnet], [cw, cabTop, zCabRear], {
+          front: T.cabSheet,
+          rear: T.cabSheet,
+          side: T.cabSheet,
+          top: T.cabSheet,
+          bottom: T.cabFloor,
+        }),
+        // the windscreen slopes back from the scuttle to the roof, as drawn
+        slope(
+          'windscreen',
+          'front',
+          T.windscreen,
+          [0, C + 0.95, zBonnet],
+          [0, cabTop, zBonnet + 0.3],
+          'x',
+          [0, 1, -1],
+        ),
+      ],
+      [-cw, C, zBonnet],
+      [cw, cabTop, zCabRear],
+    ),
     boxPart(
       'fuel tank',
       'tank',
@@ -1452,6 +1569,26 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
         spaced: true,
         component: 'fuel',
       },
+    ),
+    // the bumper and the two frame rails under the whole truck, as the 3D model draws them
+    // (review TE-6): thin steel a round goes through
+    boxPart(
+      'bumper',
+      'cab',
+      [-(W - 0.3) / 2, C - 0.21, zF + 0.01],
+      [(W - 0.3) / 2, C - 0.03, zF + 0.15],
+      uniform(T.frame),
+      { spaced: true },
+    ),
+    ...[-1, 1].map((side) =>
+      boxPart(
+        `${side < 0 ? 'left' : 'right'} frame rail`,
+        'cab',
+        [side * 0.45 - 0.06, C - 0.17, 0.05 - (L - 0.35) / 2],
+        [side * 0.45 + 0.06, C + 0.07, 0.05 + (L - 0.35) / 2],
+        uniform(T.frame),
+        { spaced: true },
+      ),
     ),
   ];
   const comps: ComponentBox[] = [
@@ -1546,7 +1683,37 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
         ),
       );
     }
-    defs.push(part('tank body', 'tank', plates, [-rh, yb, z0], [rh, top, z1]));
+    defs.push(
+      part('tank body', 'tank', plates, [-rh, yb, z0], [rh, top, z1]),
+      // the bed platform under the tank, the two saddles it rests on and the hose cabinet at
+      // the rear, as the 3D model draws them (review TE-6): sheet steel, nothing behind
+      boxPart(
+        'bed platform',
+        'cargo',
+        [-W / 2, yBed - 0.06, zBed],
+        [W / 2, yBed + 0.06, zR],
+        uniform(T.bedFloor),
+        { spaced: true },
+      ),
+      ...[z0 + 0.5, z1 - 0.5].map((zs, i) =>
+        boxPart(
+          `${i === 0 ? 'front' : 'rear'} saddle`,
+          'cargo',
+          [-(W - 0.25) / 2, yb + 0.01, zs - 0.1],
+          [(W - 0.25) / 2, yb + 0.23, zs + 0.1],
+          uniform(T.frame),
+          { spaced: true },
+        ),
+      ),
+      boxPart(
+        'hose cabinet',
+        'cargo',
+        [-(W - 0.2) / 2, yBed + 0.05, zR - 0.33],
+        [(W - 0.2) / 2, top - 0.55, zR - 0.01],
+        uniform(T.cabinet),
+        { spaced: true },
+      ),
+    );
     comps.push(
       comp(
         'fuel',
@@ -1557,10 +1724,17 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       ),
     );
   } else {
+    // the crate stack as the 3D model draws it near (review TE-6): two full layers, and a top
+    // layer of 2 rows × `cols` crates with every third one left out
     const chh = Math.min(0.5, (top - yBed - 0.3) / 3);
     const cTop = yBed + 0.06 + 3 * chh;
+    const cBase = yBed + 0.06;
+    const bedLen = zR - zBed;
+    const cols = Math.max(2, Math.floor((bedLen - 0.2) / 1.0));
+    const cw2 = (W - 0.25) / 2;
+    const cl = (bedLen - 0.25) / cols;
     defs.push(
-      // the bed is open on top: the crates stand out of it (their own part)
+      // the bed is open on top: the crates stand out of it (their own parts)
       boxPart('cargo bed', 'cargo', [-W / 2, yBed - 0.06, zBed], [W / 2, yBed + 0.45, zR], {
         front: T.bedSide,
         rear: T.bedSide,
@@ -1571,11 +1745,26 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       boxPart(
         'ammunition crates',
         'cargo',
-        [-W / 2 + 0.125, yBed + 0.06, zBed + 0.125],
-        [W / 2 - 0.125, cTop, zR - 0.125],
+        [-W / 2 + 0.125, cBase, zBed + 0.125],
+        [W / 2 - 0.125, cBase + 2 * chh, zR - 0.125],
         uniform(T.crates),
       ),
     );
+    for (let rI = 0; rI < 2; rI++)
+      for (let c = 0; c < cols; c++) {
+        if ((c + rI) % 3 === 0) continue;
+        const x0 = -W / 2 + 0.125 + cw2 * rI;
+        const z0 = zBed + 0.125 + cl * c;
+        defs.push(
+          boxPart(
+            `top crate ${rI * cols + c + 1}`,
+            'cargo',
+            [x0 + 0.03, cBase + 2 * chh, z0 + 0.03],
+            [x0 + cw2 - 0.03, cBase + 3 * chh - 0.02, z0 + cl - 0.03],
+            uniform(T.crates),
+          ),
+        );
+      }
     comps.push(
       comp(
         'ammo',
@@ -1598,12 +1787,7 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       const name = `${side < 0 ? 'left' : 'right'} wheel ${i + 1}`;
       const min: V3 = [side * xw - ww / 2, 0, z - r];
       const max: V3 = [side * xw + ww / 2, 2 * r, z + r];
-      defs.push(
-        boxPart(name, 'wheels', min, max, uniform(T.tyre), {
-          spaced: true,
-          component: 'runningGear',
-        }),
-      );
+      defs.push(wheelPart(name, min[0], max[0], r, z, r, T.tyre, 'runningGear'));
       comps.push(
         comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }),
       );
@@ -1782,32 +1966,142 @@ export const KILL_RULES_NOTES: Record<keyof typeof KILL_RULES, SourceNote> = {
   truckFailures: { source: 'plan', confidence: 'estimate' },
 };
 
-/** Ignition chances per damaging hit, by cause, and the fire each source makes. */
+/**
+ * Ignition chances per damaging hit, by cause, and the fire each source makes. `jet`: a missile's
+ * shaped-charge jet and its behind-armour spray (hot metal particles, a hole tens of mm wide).
+ */
 export const FIRE_SOURCES = {
   /** Diesel in the hull: hard to light, but the DU core of an API round is pyrophoric. */
-  fuelInternal: { api: 0.35, hei: 0.5, fragment: 0.12, blast: 0.3, intensity: 0.85, load: 260 },
+  fuelInternal: {
+    api: 0.35,
+    hei: 0.5,
+    fragment: 0.12,
+    blast: 0.3,
+    jet: 0.75,
+    intensity: 0.85,
+    load: 260,
+  },
   /** External cells, drums and a truck's own tank: burn outside the crew space. */
-  fuelExternal: { api: 0.25, hei: 0.45, fragment: 0.1, blast: 0.35, intensity: 0.45, load: 90 },
+  fuelExternal: {
+    api: 0.25,
+    hei: 0.45,
+    fragment: 0.1,
+    blast: 0.35,
+    jet: 0.6,
+    intensity: 0.45,
+    load: 90,
+  },
   /** Ruptured oil and fuel lines. */
-  engine: { api: 0.12, hei: 0.22, fragment: 0.05, blast: 0.1, intensity: 0.45, load: 70 },
+  engine: {
+    api: 0.12,
+    hei: 0.22,
+    fragment: 0.05,
+    blast: 0.1,
+    jet: 0.35,
+    intensity: 0.45,
+    load: 70,
+  },
   /** Propellant fire when a hit on the ammunition does not detonate it. */
-  ammo: { api: 0.8, hei: 0.6, fragment: 0.4, blast: 0.6, intensity: 1.0, load: 300 },
-  cargo: { api: 0.08, hei: 0.25, fragment: 0.05, blast: 0.15, intensity: 0.6, load: 400 },
+  ammo: { api: 0.8, hei: 0.6, fragment: 0.4, blast: 0.6, jet: 0.95, intensity: 1.0, load: 300 },
+  cargo: { api: 0.08, hei: 0.25, fragment: 0.05, blast: 0.15, jet: 0.5, intensity: 0.6, load: 400 },
   /** The load of a fuel tanker. */
-  tanker: { api: 0.4, hei: 0.65, fragment: 0.15, blast: 0.6, intensity: 1.0, load: 900 },
+  tanker: { api: 0.4, hei: 0.65, fragment: 0.15, blast: 0.6, jet: 0.9, intensity: 1.0, load: 900 },
 } as const;
 
 export const FIRE_SOURCES_NOTES: Record<keyof typeof FIRE_SOURCES, SourceNote> = {
   fuelInternal: {
     source: 'wikiGau8',
     confidence: 'estimate',
-    note: 'API: pyrophoric depleted-uranium core; diesel ignites less readily than petrol',
+    note:
+      'API: pyrophoric depleted-uranium core; diesel ignites less readily than petrol. jet: a ' +
+      'shaped-charge jet through a diesel tank starts a fire in most hits',
   },
   fuelExternal: { source: 'plan', confidence: 'estimate' },
   engine: { source: 'plan', confidence: 'estimate' },
-  ammo: { source: 'plan', confidence: 'estimate' },
+  ammo: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'jet: bagged and combustible-case propellant is set alight by almost every jet strike',
+  },
   cargo: { source: 'plan', confidence: 'estimate' },
   tanker: { source: 'plan', confidence: 'estimate', note: 'PLAN §9: large secondary explosions' },
+};
+
+/**
+ * What a missile's shaped-charge jet does to the vehicle it strikes (ARCHITECTURE §12.4, PLAN
+ * §6.4 "a hit destroys any vehicle"). The jet's penetration comes with the strike (the warhead's
+ * data); it is spent plate by plate along its line (t / cos θ, spaced layers included) and what it
+ * passes through outside is holed (a track broken, a wheel or an external tank destroyed, the
+ * barrel holed). Behind the armour it perforates, three things hurt the interior, each far
+ * more lethal than a 30 mm round: the residual jet itself along its line (it crosses the whole
+ * vehicle), a wide cone of behind-armour debris (spall from the hole, molten jet particles), and
+ * the overpressure, heat and smoke that fill the compartment.
+ */
+export const SHAPED_CHARGE = {
+  /** Plates (spaced layers, then the main armour) the jet may cross. */
+  maxLayers: 6,
+  /** After a spaced layer, how far along the jet to look for the next part, m. */
+  search: 12,
+  /** Path of the residual jet through the interior, m (end to end of a tank). */
+  jetLength: 7,
+  /** Boxes on the jet's line it may cross, and the health each one loses. */
+  jetMaxBoxes: 12,
+  jetDamage: 1,
+  /** Behind-armour debris: rays, cone half-angle range (rad), path (m), weight of each ray. */
+  debrisRays: 16,
+  debrisConeMin: 15 * DEG,
+  debrisConeMax: 45 * DEG,
+  debrisLength: 2.5,
+  debrisWeight: 0.8,
+  debrisMaxBoxes: 3,
+  /** Overpressure and heat: internal boxes within this radius of the hole (m), and the scale there. */
+  blastRadius: 2.0,
+  blastScale: 1.0,
+  /** A jet sets off ammunition this much more readily than a 30 mm DU penetrator. */
+  detonationFactor: 1.6,
+} as const;
+
+export const SHAPED_CHARGE_NOTES: Record<keyof typeof SHAPED_CHARGE, SourceNote> = {
+  maxLayers: { source: 'plan', confidence: 'estimate' },
+  search: { source: 'plan', confidence: 'estimate', note: 'longer than any vehicle' },
+  jetLength: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'a ≈1,000 mm jet that perforates ≤ 500 mm keeps hundreds of mm: it crosses the hull',
+  },
+  jetMaxBoxes: { source: 'plan', confidence: 'estimate' },
+  jetDamage: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'whatever lies on the jet’s line (crew, ammunition, fuel, the engine) is destroyed',
+  },
+  debrisRays: { source: 'plan', confidence: 'estimate' },
+  debrisConeMin: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'behind-armour debris of large shaped charges spreads in a ≈30–90° full cone, wider ' +
+      'than a KE penetrator’s (ROUND_EFFECTS.debrisCone*); open literature: M. Held, BAD studies',
+  },
+  debrisConeMax: { source: 'plan', confidence: 'estimate' },
+  debrisLength: { source: 'plan', confidence: 'estimate' },
+  debrisWeight: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'hundreds of spall fragments vs ROUND_EFFECTS.debrisWeight 0.35 for a 30 mm round',
+  },
+  debrisMaxBoxes: { source: 'plan', confidence: 'estimate' },
+  blastRadius: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'a 57 kg-class warhead’s jet vents blast, heat and smoke through a hole tens of mm wide',
+  },
+  blastScale: { source: 'plan', confidence: 'estimate' },
+  detonationFactor: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'T-72 carousel struck by a large jet: pDetonate 0.55 × 1.6 ≈ 0.9 (PLAN §6.4)',
+  },
 };
 
 /** Fire growth and decay, and how fires turn into ammunition cook-offs. */
@@ -1935,6 +2229,67 @@ export const SECONDARY_CHARGE: Record<VehicleKind, number> = {
   truckAmmo: 70,
   hulk: 3,
   panel: 0.5,
+};
+
+/**
+ * Secondary explosions are real explosions (review TE-1): the blast and fragments of a vehicle
+ * that goes up reach its neighbours through the same blast table and fragment model as a bomb.
+ * This is the mass that breaks into fragments, kg: shell bodies of an ammunition load, hatches,
+ * stowage and fittings of an armoured hull, a tanker's shell.
+ */
+export const SECONDARY_FRAGMENTS: Record<VehicleKind, number> = {
+  mbt: 40,
+  ifv: 20,
+  apc: 15,
+  truckCargo: 10,
+  truckFuel: 30,
+  truckAmmo: 250,
+  hulk: 5,
+  panel: 0,
+};
+
+export const SECONDARY_FRAGMENTS_NOTES: Record<VehicleKind, SourceNote> = {
+  mbt: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'the hull contains most of a cook-off; hatches, stowage and road-wheel debris fly',
+  },
+  ifv: { source: 'plan', confidence: 'estimate' },
+  apc: { source: 'plan', confidence: 'estimate' },
+  truckCargo: { source: 'plan', confidence: 'estimate' },
+  truckFuel: { source: 'plan', confidence: 'estimate', note: 'the tank shell and the chassis' },
+  truckAmmo: {
+    source: 'plan',
+    confidence: 'estimate',
+    note:
+      'HE shells are ≈15–20 % fill: a 70 kg TNT-equivalent mass detonation throws ≈250 kg of ' +
+      'shell bodies (AMMO_EFFECTS.truckAmmo.charge)',
+  },
+  hulk: { source: 'plan', confidence: 'estimate' },
+  panel: { source: 'plan', confidence: 'estimate' },
+};
+
+export const SECONDARY_EFFECTS = {
+  /**
+   * A neighbour that the blast of a secondary would make go up catastrophically does so this long
+   * later, s (set off by fire and fragments, not in the same instant): a chain reaction ripples.
+   */
+  chainDelay: [0.1, 1.0] as readonly [number, number],
+  /** An ammunition truck's later pops: fragmenting case per kg of charge (a shell or two). */
+  popCaseRatio: 4,
+} as const;
+
+export const SECONDARY_EFFECTS_NOTES: Record<keyof typeof SECONDARY_EFFECTS, SourceNote> = {
+  chainDelay: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'review TE-1: schedule the neighbour’s explosion 0.1–1 s later, not recursively',
+  },
+  popCaseRatio: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'HE shells: ≈15–20 % of the mass is the filling',
+  },
 };
 
 // ---- Blast and fragments (PLAN §6.5) -----------------------------------------------------------

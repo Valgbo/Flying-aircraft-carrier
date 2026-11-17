@@ -399,7 +399,10 @@ export function createTerrain(data: TerrainData, options: CreateTerrainOptions =
     }
     if (q.padIndex >= 0 && q.padDistance === 0) {
       const c = padCentre(features!, q.padIndex);
-      return Math.hypot(x - c.x, z - c.z) < c.radius * PAD_DIRT_FRACTION ? 'dirt' : 'grass';
+      const ex = x - c.x;
+      const ez = z - c.z;
+      const r = c.radius * PAD_DIRT_FRACTION;
+      return ex * ex + ez * ez < r * r ? 'dirt' : 'grass';
     }
     if (q.airfieldDistance < 60) return 'grass';
     if (!slopeBound || slopeBound[gridCell(x, z)] > ROCK_MIN_SLOPE) {

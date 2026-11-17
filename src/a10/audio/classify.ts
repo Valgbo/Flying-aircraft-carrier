@@ -110,7 +110,10 @@ export function burstReach(charge: number): number {
 function isStoreBurst(e: SimEvent): e is Detonation {
   return (
     e.type === 'detonation' &&
-    (e.kind === 'bomb' || e.kind === 'rocket' || e.kind === 'missile' || e.kind === 'whitePhosphorus')
+    (e.kind === 'bomb' ||
+      e.kind === 'rocket' ||
+      e.kind === 'missile' ||
+      e.kind === 'whitePhosphorus')
   );
 }
 

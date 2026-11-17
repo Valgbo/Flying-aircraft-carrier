@@ -54,7 +54,7 @@ import {
   storeAxisBody,
   vehicleCentre,
 } from './geometry';
-import { airframeMasked, buildMask } from './mask';
+import { airframeMasked, buildMask, maskStale } from './mask';
 import { checkVehicle, createTrackCheck, searchGate, type TrackRules } from './track';
 import type { SensorPicture, TgpState, TrackMode } from './types';
 
@@ -573,7 +573,9 @@ function initialAim(sim: Sim): void {
     t.internal.aim.copy(spi.position);
     t.internal.aimValid = true;
   } else {
-    _v.set(0, -Math.sin(Math.PI / 6), -Math.cos(Math.PI / 6)).applyQuaternion(sim.aircraft.orientation);
+    _v.set(0, -Math.sin(Math.PI / 6), -Math.cos(Math.PI / 6)).applyQuaternion(
+      sim.aircraft.orientation,
+    );
     t.los.copy(_v);
     aimAlongLos(sim);
   }
@@ -583,9 +585,9 @@ function initialAim(sim: Sim): void {
 export function stepTgp(sim: Sim, dt: number): void {
   const t = sim.sensors.tgp;
   const ti = t.internal;
-  const internal = sim.sensors.internal;
   const station = podStation(sim);
-  if (station !== t.station || internal.maskDirty || internal.maskStation !== station) {
+  // the mask follows the loadout: a new pod station, or stores gone from (or back on) a station
+  if (station !== t.station || maskStale(sim, station)) {
     t.station = station;
     buildMask(sim, station);
   }
@@ -634,7 +636,10 @@ export function stepTgp(sim: Sim, dt: number): void {
   if (t.ready) {
     if (t.mode === 'POINT') updatePoint(sim, dt, check);
     else if (t.mode === 'AREA')
-      updateArea(sim, check && sim.stepCount % Math.max(1, Math.round(TGP.pointCheckHz / TGP.areaCheckHz)) === 0);
+      updateArea(
+        sim,
+        check && sim.stepCount % Math.max(1, Math.round(TGP.pointCheckHz / TGP.areaCheckHz)) === 0,
+      );
   }
 
   // the ground point the pod looks at (the SPI when the pod is the SPI source)

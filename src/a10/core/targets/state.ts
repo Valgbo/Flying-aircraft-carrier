@@ -95,6 +95,7 @@ function createInternal(kind: VehicleKind): VehicleInternal {
     cookOffDecided: false,
     popTime: -1,
     popsLeft: 0,
+    secondaryCharge: 0,
     lastWeapon: '',
     burstTime: -1,
     burstX: 0,
@@ -463,13 +464,17 @@ function throwTurret(sim: Sim, v: Vehicle): void {
 /**
  * The ammunition (or a tanker's load) goes up: catastrophic kill, turret thrown, big fire, the
  * 'secondary' detonation event with the vehicle id (and 'vehicleDestroyed' through setCondition,
- * in the same step, so effects and audio show and play it once).
+ * in the same step, so effects and audio show and play it once). Its blast and fragments are
+ * real (review TE-1): they reach the neighbours when stepTargets applies `secondaryCharge` later
+ * in the same step (never from here: explode() may run inside another blast's loop). Kills in
+ * the chain are credited to `weapon`, the weapon that started it.
  */
 export function explode(sim: Sim, v: Vehicle, weapon: string): void {
   if (v.condition === 'catastrophic') return;
   const rt = v.internal;
   const fx = AMMO_EFFECTS[v.kind];
   rt.explodeTime = -1;
+  if (weapon) rt.lastWeapon = weapon;
   throwTurret(sim, v);
   igniteInside(v, 1, 600);
   rt.fireIn = Math.max(rt.fireIn, 0.8);
@@ -484,6 +489,7 @@ export function explode(sim: Sim, v: Vehicle, weapon: string): void {
   if (HAS[v.kind].gun) v.firepowerKill = true;
   setCondition(sim, v, 'catastrophic', weapon || rt.lastWeapon);
   const charge = fx ? fx.charge : SECONDARY_CHARGE[v.kind];
+  rt.secondaryCharge = charge;
   sim.events.push({
     type: 'detonation',
     t: sim.time,

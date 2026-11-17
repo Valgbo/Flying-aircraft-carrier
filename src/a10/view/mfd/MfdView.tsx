@@ -6,6 +6,9 @@
  * page into its render target when due, and hands the two targets to the cockpit's display
  * surfaces (`onDisplaySurfaces` → `DisplaySurface.setPicture`). Cockpit view only: elsewhere the
  * displays are not seen and nothing is drawn. The flight's `message` events feed the MSG page.
+ *
+ * Development (dev server only): `window.__A10_MFD__ = { stats, left, right }` — the pass's CPU
+ * time and each display's drawings, strokes and page info.
  */
 import { useEffect } from 'react';
 import type { Sim } from '../../core/types';
@@ -52,7 +55,15 @@ export function useMfdPass(source: () => Sim | null): void {
         if (sim) mfd.render(ctx.gl, sim, ctx.dt, getA10Quality().sensorRate);
       },
     });
+    // Development (dev server only): window.__A10_MFD__ = { stats, left, right }.
+    const w =
+      import.meta.env.DEV && typeof window !== 'undefined'
+        ? (window as unknown as { __A10_MFD__?: unknown })
+        : null;
+    if (w) w.__A10_MFD__ = { stats: mfd.stats, left: mfd.left, right: mfd.right };
     return () => {
+      if (w && (w.__A10_MFD__ as { stats?: unknown } | undefined)?.stats === mfd.stats)
+        delete w.__A10_MFD__;
       unregister();
       offMessages();
       offSurfaces();

@@ -820,6 +820,12 @@ export const BSU49 = {
   openStart: 0.2,
   /** Time from release to full inflation, s. */
   openFull: 0.5,
+  /**
+   * Time constant of the drawn axis turning into the relative wind once the ballute is out, s:
+   * its drag acts far behind the centre of gravity, so it holds the tail downwind much harder
+   * than the fins (the bomb swings nose-down with the steepening path).
+   */
+  weathercockTime: 0.1,
 } as const;
 
 export const BSU49_NOTES: Record<keyof typeof BSU49, SourceNote> = {
@@ -838,6 +844,11 @@ export const BSU49_NOTES: Record<keyof typeof BSU49, SourceNote> = {
       'reachable; FlightGear uses 0.65 s)',
   },
   openFull: { source: 'plan', confidence: 'estimate' },
+  weathercockTime: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'drawn attitude only; ≈3× stiffer than the fins (drag area ×5 at ≈1.5 bomb lengths aft)',
+  },
 };
 
 /**
@@ -894,7 +905,11 @@ export const MK66_NOTES: Record<keyof typeof MK66, SourceNote> = {
     note: 'fitted to the 739 m/s static burn-out (no public propellant weight found)',
   },
   tubeTravel: { source: 'plan', confidence: 'estimate', note: 'LAU-131/A tube ≈1.7 m long' },
-  plumeDrag: { source: 'hoernerDrag', confidence: 'estimate', note: 'base drag removed while burning' },
+  plumeDrag: {
+    source: 'hoernerDrag',
+    confidence: 'estimate',
+    note: 'base drag removed while burning',
+  },
   dispersion: {
     source: 'plan',
     confidence: 'estimate',

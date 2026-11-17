@@ -66,7 +66,9 @@ function aimAndLock(sim: Sim, point: Vector3): boolean {
 
 function lockEvents(sim: Sim): string[] {
   return sim.events
-    .filter((e): e is Extract<SimEvent, { type: 'lock' }> => e.type === 'lock' && e.sensor === 'MAV')
+    .filter(
+      (e): e is Extract<SimEvent, { type: 'lock' }> => e.type === 'lock' && e.sensor === 'MAV',
+    )
     .map((e) => (e.on ? 'on' : 'off'));
 }
 
@@ -146,10 +148,43 @@ describe('Maverick seekers: power, alignment, selection', () => {
     expect(s.mode).toBe('BORESIGHT');
     expect(s.offAxis).toBeLessThan(1e-9);
   });
+
+  it('DMS up / down select the narrow / wide field of view, DMS left / right the IR polarity', () => {
+    const sim = bed(3);
+    const s = seeker(sim);
+    queueRequest(sim, 'MAV', 'dms', 'up');
+    stepSensorTestbed(sim);
+    expect(s.fov).toBe('NARROW');
+    expect(s.fovAngle).toBeCloseTo(MAVERICK.fovNarrow, 12);
+    queueRequest(sim, 'MAV', 'dms', 'down');
+    stepSensorTestbed(sim);
+    expect(s.fov).toBe('WIDE');
+    expect(s.fovAngle).toBeCloseTo(MAVERICK.fovWide, 12);
+    queueRequest(sim, 'MAV', 'dms', 'right');
+    stepSensorTestbed(sim);
+    expect(s.picture).toBe('BHOT');
+    queueRequest(sim, 'MAV', 'chinaHat', 'fwd'); // China hat forward short toggles
+    stepSensorTestbed(sim);
+    expect(s.fov).toBe('NARROW');
+    // a pod request leaves the seeker alone; a television seeker has one picture
+    queueRequest(sim, 'TGP', 'dms', 'down');
+    stepSensorTestbed(sim);
+    expect(s.fov).toBe('NARROW');
+    cockpitSwitches(sim).selectedStation = 9;
+    stepSensorTestbed(sim);
+    queueRequest(sim, 'MAV', 'dms', 'left');
+    stepSensorTestbed(sim);
+    expect(seeker(sim).picture).toBe('CCD');
+  });
 });
 
 describe('Maverick lock rules (PLAN §16: no lock without line of sight or below the contrast threshold)', () => {
-  function locksAt(station: number, fov: 'WIDE' | 'NARROW', slant: number, opts: SensorTestbedOptions = {}) {
+  function locksAt(
+    station: number,
+    fov: 'WIDE' | 'NARROW',
+    slant: number,
+    opts: SensorTestbedOptions = {},
+  ) {
     const sim = bed(station, opts);
     const tank = tankAhead(sim, slant);
     seeker(sim).fov = fov;
@@ -323,7 +358,10 @@ describe('launch zone and hand-over', () => {
     expect(s.locked).toBe(false);
     expect(s.lockFailure).toBe('GIMBAL LIMIT');
     expect(s.inZone).toBe(false);
-    report.push(['heading change before the gimbal breaks the lock', `${(brokeAt / DEG).toFixed(1)}°`]);
+    report.push([
+      'heading change before the gimbal breaks the lock',
+      `${(brokeAt / DEG).toFixed(1)}°`,
+    ]);
     // too close for a launch: 0.46 nmi slant from 300 m, inside the gimbal
     const close = createSensorTestbed({ altitude: 300, speed: 0 });
     cockpitSwitches(close).selectedStation = 3;
@@ -339,14 +377,20 @@ describe('launch zone and hand-over', () => {
     const tank = tankAhead(sim, 3 * NM);
     expect(aimAndLock(sim, tank.position)).toBe(true);
     const first = seeker(sim);
+    expect(first.rail).toBe(0);
+    const second = sim.sensors.mavericks.find((m) => m.station === 9 && m !== first);
+    const secondHead = second?.head.clone();
     // the weapons module releases the station's first store
     const st = sim.stores.stations.find((x) => x.station === 9);
     st?.stores.shift();
     stepSensorTestbed(sim);
     const next = seeker(sim);
     expect(next).not.toBe(first);
+    expect(next).toBe(second);
     expect(next.station).toBe(9);
-    expect(next.rail).toBe(0);
+    // it stays on its own rail (the LAU-88's right one): its seeker does not move
+    expect(next.rail).toBe(1);
+    expect(secondHead && next.head.distanceTo(secondHead)).toBeLessThan(1e-9);
     expect(sim.sensors.mavericks.length).toBe(3);
     expect(next.mode).toBe('STAB');
     expect(next.los.angleTo(tank.position.clone().sub(next.head).normalize())).toBeLessThan(2e-3);
@@ -394,7 +438,13 @@ describe('determinism', () => {
       aircraftPose(s).bank = 10 * DEG * Math.sin(k / 200);
     });
     const s = seeker(sim);
-    return JSON.stringify([s.los.toArray(), s.lockPoint.toArray(), s.locked, s.lockedVehicle, s.contrast]);
+    return JSON.stringify([
+      s.los.toArray(),
+      s.lockPoint.toArray(),
+      s.locked,
+      s.lockedVehicle,
+      s.contrast,
+    ]);
   }
   it('the same inputs give the same seeker state', () => {
     expect(scripted()).toBe(scripted());

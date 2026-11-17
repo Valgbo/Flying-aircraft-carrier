@@ -23,6 +23,9 @@ import {
   stepFireControl,
   stepLaserDigit,
   TAD_RANGES_NM,
+  UFC_ENTRY,
+  scratchpadLaserCode,
+  ufcKey,
 } from '../../../src/a10/core/avionics';
 import type { MfdPage, SensorRequest } from '../../../src/a10/core/avionics/types';
 import type { MaverickSeekerState } from '../../../src/a10/core/sensors/types';
@@ -108,7 +111,14 @@ describe('OSB labels of every page', () => {
       7: 'BRK',
       ...PAGE_ROW,
     });
-    expect(labels(sim, 'TAD')).toEqual({ 1: 'RNG+', 2: 'RNG-', 3: 'CEN', 6: 'STP+', 7: 'STP-', ...PAGE_ROW });
+    expect(labels(sim, 'TAD')).toEqual({
+      1: 'RNG+',
+      2: 'RNG-',
+      3: 'CEN',
+      6: 'STP+',
+      7: 'STP-',
+      ...PAGE_ROW,
+    });
     expect(labels(sim, 'STAT')).toEqual({ 1: 'MSG', ...PAGE_ROW });
     expect(labels(sim, 'MSG')).toEqual({ 1: 'STAT', 2: 'CLR', ...PAGE_ROW });
     // The static table and the binding lookup agree with the live labels.
@@ -130,7 +140,13 @@ describe('OSB labels of every page', () => {
     const sim = makeSim();
     sim.avionics.mfd.left = 'DSMS';
     const snapshot = () =>
-      JSON.stringify({ ...sim.avionics, release: null, gun: null, lastSwitch: null, lastSwitchValue: null });
+      JSON.stringify({
+        ...sim.avionics,
+        release: null,
+        gun: null,
+        lastSwitch: null,
+        lastSwitchValue: null,
+      });
     const before = snapshot();
     const ev = press(sim, 'DSMS', 5);
     expect(ev).toEqual([{ type: 'switch', t: sim.time, name: 'osb', value: 'L5' }]);
@@ -283,7 +299,9 @@ describe('DSMS: the selected profile’s settings', () => {
     av.masterArm = 'ARM';
     const ev = press(sim, 'DSMS', 2);
     expect(sim.stores.stations[3].stores).toEqual([]);
-    expect(ev.some((e) => e.type === 'switch' && e.name === 'jettison' && e.value === '4')).toBe(true);
+    expect(ev.some((e) => e.type === 'switch' && e.name === 'jettison' && e.value === '4')).toBe(
+      true,
+    );
     expect(av.pages.jettisonStation).toBe(0);
     // Nothing chosen: a message.
     expect(messages(press(sim, 'DSMS', 2))).toEqual(['JETT: SELECT A STATION']);
@@ -321,7 +339,9 @@ describe('TGP, MAV, TAD, STAT and MSG pages', () => {
     expect(av.laserLatch).toBe(false);
     const ev = press(sim, 'TGP', 8);
     expect(av.laserLatch).toBe(true);
-    expect(ev.some((e) => e.type === 'switch' && e.name === 'laserLatch' && e.value === 'ON')).toBe(true);
+    expect(ev.some((e) => e.type === 'switch' && e.name === 'laserLatch' && e.value === 'ON')).toBe(
+      true,
+    );
     expect(osbActive(sim, 'L', 8)).toBe(true);
     expect(osbValue(sim, 'L', 8)).toBe('ON');
     press(sim, 'TGP', 8);
@@ -426,7 +446,9 @@ describe('SPI from the sensors (PLAN §7 "SOI and SPI")', () => {
     applyCommand(sim, { type: 'tms', dir: 'up', long: true });
     expect(av.spi.source).toBe('MAV');
     expect(av.spi.position.toArray()).toEqual([50, 0, -7000]);
-    expect(sim.events.some((e) => e.type === 'switch' && e.name === 'spi' && e.value === 'MAV')).toBe(true);
+    expect(
+      sim.events.some((e) => e.type === 'switch' && e.name === 'spi' && e.value === 'MAV'),
+    ).toBe(true);
     // The seeker tracks a moving vehicle: the SPI follows.
     seeker.lockPoint.set(60, 0, -7010);
     stepFireControl(sim, 1 / 120);
@@ -439,5 +461,89 @@ describe('SPI from the sensors (PLAN §7 "SOI and SPI")', () => {
     // TMS aft long: back to the steerpoint.
     applyCommand(sim, { type: 'tms', dir: 'down', long: true });
     expect(av.spi.source).toBe('STPT');
+  });
+});
+
+describe('UFC scratchpad: laser codes typed on the up-front controller', () => {
+  function type(sim: Sim, keys: string): void {
+    for (const k of keys) ufcKey(sim, k);
+  }
+
+  it('digits fill the scratchpad, CLR empties it, every key clicks; STEER steps the steerpoint', () => {
+    const sim = makeSim();
+    const av = sim.avionics;
+    sim.events.length = 0;
+    type(sim, '1511');
+    expect(av.pages.scratchpad).toBe('1511');
+    expect(sim.events.filter((e) => e.type === 'switch' && e.name === 'ufc')).toHaveLength(4);
+    ufcKey(sim, 'CLR');
+    expect(av.pages.scratchpad).toBe('');
+    type(sim, '1234567890');
+    expect(av.pages.scratchpad).toBe('1234567890'.slice(0, UFC_ENTRY.scratchpadMax));
+    ufcKey(sim, 'CLR');
+    // Keys without a function change nothing.
+    ufcKey(sim, 'ENT');
+    ufcKey(sim, 'FUNC');
+    expect(av.pages.scratchpad).toBe('');
+    const n = av.steerpoints.length;
+    expect(n).toBeGreaterThan(1);
+    const before = av.activeSteerpoint;
+    ufcKey(sim, 'STEER_UP');
+    expect(av.activeSteerpoint).toBe((before + 1) % n);
+    ufcKey(sim, 'STEER_DN');
+    expect(av.activeSteerpoint).toBe(before);
+  });
+
+  it('only four-digit PRF codes are laser codes (first digit 1–2, the others 1–8)', () => {
+    expect(scratchpadLaserCode('1688')).toBe(1688);
+    expect(scratchpadLaserCode('2111')).toBe(2111);
+    expect(scratchpadLaserCode('3111')).toBe(0);
+    expect(scratchpadLaserCode('1911')).toBe(0);
+    expect(scratchpadLaserCode('1680')).toBe(0);
+    expect(scratchpadLaserCode('168')).toBe(0);
+    expect(scratchpadLaserCode('16881')).toBe(0);
+    expect(scratchpadLaserCode('')).toBe(0);
+  });
+
+  it('CODE enters a typed code into the GBU-12 profile (DSMS) or the pod (TGP); an invalid code is refused', () => {
+    const sim = makeSim('tankHunter');
+    const av = sim.avionics;
+    av.selectedProfile = 'GBU12';
+    const p = av.profiles.find((x) => x.id === 'GBU12')!;
+    // DSMS: the profile's code; the cursor digit does not move.
+    type(sim, '1511');
+    let ev = press(sim, 'DSMS', 3);
+    expect(p.laserCode).toBe(1511);
+    expect(av.pages.scratchpad).toBe('');
+    expect(av.pages.dsmsCodeDigit).toBe(0);
+    expect(ev.some((e) => e.type === 'switch' && e.name === 'profile')).toBe(true);
+    expect(osbValue(sim, 'L', 3)).toBe('1511');
+    // TGP: the pod's code, separate from the bomb's.
+    type(sim, '1742');
+    ev = press(sim, 'TGP', 9);
+    expect(av.laserCode).toBe(1742);
+    expect(p.laserCode).toBe(1511);
+    expect(
+      ev.some((e) => e.type === 'switch' && e.name === 'laserCode' && e.value === '1742'),
+    ).toBe(true);
+    expect(av.pages.tgpCodeDigit).toBe(0);
+    // Invalid: a message, nothing changes, the scratchpad stays for the pilot to clear.
+    type(sim, '1911');
+    ev = press(sim, 'TGP', 9);
+    expect(messages(ev)).toEqual(['INVALID CODE 1911']);
+    expect(av.laserCode).toBe(1742);
+    expect(av.pages.scratchpad).toBe('1911');
+    ev = press(sim, 'DSMS', 3);
+    expect(messages(ev)).toEqual(['INVALID CODE 1911']);
+    expect(p.laserCode).toBe(1511);
+    ufcKey(sim, 'CLR');
+    // Empty scratchpad: CODE moves the cursor digit again.
+    press(sim, 'TGP', 9);
+    expect(av.pages.tgpCodeDigit).toBe(1);
+    // A store without a laser code keeps the scratchpad (and says so).
+    type(sim, '1688');
+    av.selectedProfile = 'MK82LD';
+    expect(messages(press(sim, 'DSMS', 3))).toEqual(['MK82LD: NO LASER CODE']);
+    expect(av.pages.scratchpad).toBe('1688');
   });
 });

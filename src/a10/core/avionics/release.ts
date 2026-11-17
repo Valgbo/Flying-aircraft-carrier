@@ -188,7 +188,10 @@ export function groundRay(
   if (!(len > 0) || dir.y >= 0) return false;
   const t = ((ground.plane - origin.y) / dir.y) * len;
   if (!(t >= 0) || t > maxDistance) return false;
-  out.copy(dir).multiplyScalar(t / len).add(origin);
+  out
+    .copy(dir)
+    .multiplyScalar(t / len)
+    .add(origin);
   return true;
 }
 
@@ -583,7 +586,10 @@ export function computeReleaseSolution(sim: Sim, ground: FireControlGround, dt: 
   } else {
     // CCRP onto the SPI.
     const spi = av.spi;
-    if (!spi.valid || !solveReleaseTime(sim, model, station, spi.position, ground, _wind, false, _solve)) {
+    if (
+      !spi.valid ||
+      !solveReleaseTime(sim, model, station, spi.position, ground, _wind, false, _solve)
+    ) {
       invalidate(rel);
       fc.storePredictions = _predictions;
       return;

@@ -10,18 +10,26 @@
  *
  *   infrared    PLATEAU HISTOGRAM EQUALIZATION, as modern thermal imagers do it: the signal
  *               range [lo, hi] spans the 0.2 to 99.8 percentiles (at least `minSpan` wide: the
- *               maximum gain, set by the detector's noise), and a transfer curve (LUT) gives each
+ *               maximum gain, set by the detector's noise), widened on one side until the median
+ *               is mid-range (the level control: the scene's bulk in the mid-greys, cold and hot
+ *               outliers on either side), and a transfer curve (LUT) gives each
  *               part of that range display levels in proportion to how many pixels it holds,
  *               each histogram bin capped at a plateau so that a few hot pixels still get their
  *               own levels and a large uniform background cannot take them all. The curve is
- *               mixed with a straight line so that temperature steps keep their proportions. The
+ *               mixed with a straight line so that temperature steps keep their proportions, and
+ *               it is never steeper than the maximum gain (a contrast limit: a uniform field does
+ *               not stretch its own noise over the display). The
  *               bulk of the scene (fields, roads, woods) fills the mid-greys with its texture,
  *               hot engines and fires go white, cold hulls and the sky dark; the mapping is
  *               monotonic, so hotter is always brighter (white-hot).
- *   television  the camera's auto-exposure: the 98th percentile at 90 % of full scale within
- *               the camera's range (very bright scenes saturate, dim ones reach the gain limit
- *               and darken), and a black level that removes most of the 2nd percentile (haze
- *               penetration: it stretches the contrast the haze left, and the noise with it).
+ *   television  the camera's auto-exposure, average metering: the picture's median at the mid
+ *               level (mid-grey on the display), unless that would push the 98th percentile past
+ *               full scale; within the camera's range (very bright scenes saturate, dim ones reach
+ *               the gain limit and darken). A black level (pedestal) takes away part of the 2nd
+ *               percentile: dark-object subtraction, the haze penetration of a TV tracker — the
+ *               airlight lifts every dark thing in a hazy picture, and removing it stretches the
+ *               contrast the haze left (and the noise with it). Only part of it: in a narrow
+ *               field over one sunlit field the darkest pixels are ground, not haze.
  */
 import { SENSOR_AGC, SENSOR_NOISE } from './sensorViewData';
 
@@ -67,6 +75,15 @@ export interface AgcState {
 const IR_DEFAULT_LO = -8;
 const IR_DEFAULT_HI = 25;
 
+/**
+ * The narrowest infrared range (the maximum gain) of a detector whose total noise is `noiseK`
+ * kelvin rms: at least SENSOR_AGC.irMinSpan, and wide enough that the noise of a uniform scene is
+ * 1 / irNoiseSpan of the display range.
+ */
+export function irMinSpanForNoise(noiseK: number): number {
+  return Math.max(SENSOR_AGC.irMinSpan, SENSOR_AGC.irNoiseSpan * Math.max(0, noiseK));
+}
+
 /** Exposure limits of the television AGC. */
 export function tvExposureRange(): [number, number] {
   const day = SENSOR_NOISE.daylightLuminance;
@@ -107,8 +124,9 @@ export function resetAgc(s: AgcState, band: SensorBand): void {
   s.hi = s.targetHi = IR_DEFAULT_HI;
   linearLut(s.lut);
   linearLut(s.targetLut);
-  s.exposure = s.targetExposure = 0.9 / (4 * SENSOR_NOISE.daylightLuminance);
-  s.black = s.targetBlack = 0.1;
+  // television: daylit open ground at the mid level until the first statistics arrive
+  s.exposure = s.targetExposure = SENSOR_AGC.tvMidLevel / SENSOR_NOISE.daylightLuminance;
+  s.black = s.targetBlack = 0;
   s.hasTarget = false;
   s.settled = false;
   s.version++;
@@ -139,15 +157,27 @@ function irKelvin(v: number): number {
   return v * STATS_IR_RANGE - STATS_IR_OFFSET;
 }
 
+/** Luminance of a statistics value. */
+function tvLuminance(v: number): number {
+  return 2 ** (v * STATS_TV_LOG_RANGE + STATS_TV_LOG_MIN);
+}
+
 /**
- * The infrared transfer curve for samples over [lo, hi]: plateau-clipped cumulative histogram,
- * mixed with a straight line (pure; `counts` is scratch of LUT_SIZE entries).
+ * The infrared transfer curve for samples over [lo, hi] (pure; `counts` is scratch of
+ * `out.length` entries). Each bin of the range gets a share of the display levels: the
+ * plateau-clipped histogram's share mixed with a straight line's. No share may exceed the bin's
+ * width over `minSpan` — the curve is never steeper than the AGC's maximum gain, so a uniform
+ * field that fills a few bins cannot stretch its own noise over the whole display (a contrast
+ * limit, as in CLAHE). What the limit takes from the steep bins goes to the others in proportion
+ * to their room below it; the range is at least `minSpan` wide, so there is always room. The
+ * curve is the running sum of the shares, sampled at the bins' centres.
  */
 export function equalize(
   bytes: Uint8Array,
   count: number,
   lo: number,
   hi: number,
+  minSpan: number,
   counts: Float32Array,
   out: Float32Array,
 ): void {
@@ -165,13 +195,31 @@ export function equalize(
     counts[b] = Math.min(counts[b], plateau);
     total += counts[b];
   }
+  // shares of the display range (they sum to 1)
   const w = SENSOR_AGC.irEqualization;
+  for (let b = 0; b < n; b++) {
+    counts[b] = (1 - w) / n + (total > 0 ? (w * counts[b]) / total : w / n);
+  }
+  // contrast limit: at most the maximum gain (the whole display over minSpan kelvin)
+  const cap = Math.max(1 / n, span / n / Math.max(1e-6, minSpan));
+  let excess = 0;
+  let room = 0;
+  for (let b = 0; b < n; b++) {
+    if (counts[b] > cap) {
+      excess += counts[b] - cap;
+      counts[b] = cap;
+    } else {
+      room += cap - counts[b];
+    }
+  }
+  if (excess > 0 && room > 0) {
+    const f = Math.min(1, excess / room);
+    for (let b = 0; b < n; b++) counts[b] += (cap - counts[b]) * f;
+  }
   let acc = 0;
   for (let b = 0; b < n; b++) {
-    // the cumulative share at the bin's centre
-    const c = total > 0 ? (acc + 0.5 * counts[b]) / total : (b + 0.5) / n;
+    out[b] = acc + 0.5 * counts[b];
     acc += counts[b];
-    out[b] = (1 - w) * ((b + 0.5) / n) + w * c;
   }
 }
 
@@ -196,25 +244,34 @@ export function agcFromStats(
   if (s.band === 'IR') {
     let lo = irKelvin(quantile(hist, count, SENSOR_AGC.irLowQuantile));
     let hi = irKelvin(quantile(hist, count, SENSOR_AGC.irHighQuantile));
+    const mid = irKelvin(quantile(hist, count, 0.5));
     if (hi - lo < s.minSpan) {
-      const mid = irKelvin(quantile(hist, count, 0.5));
       lo = Math.min(lo, mid - 0.5 * s.minSpan);
       hi = lo + s.minSpan;
-    } else if (hi - lo > SENSOR_AGC.irMaxSpan) {
-      lo = hi - SENSOR_AGC.irMaxSpan;
     }
+    // level: the picture's median kept toward the middle of the range, so the bulk of the scene
+    // sits in the mid-greys whichever side its outliers are on (a warm field with a cold tank
+    // and a hot road, cold ground with hot engines)
+    const balance = SENSOR_AGC.irLevelBalance;
+    if (mid - lo < balance * (hi - mid)) lo = mid - balance * (hi - mid);
+    else if (hi - mid < balance * (mid - lo)) hi = mid + balance * (mid - lo);
+    // the widest range (the least gain) keeps the hot end: fires and engines
+    if (hi - lo > SENSOR_AGC.irMaxSpan) lo = hi - SENSOR_AGC.irMaxSpan;
     s.targetLo = lo;
     s.targetHi = hi;
-    equalize(bytes, count, lo, hi, counts, s.targetLut);
+    equalize(bytes, count, lo, hi, s.minSpan, counts, s.targetLut);
   } else {
-    const logLo =
-      quantile(hist, count, SENSOR_AGC.tvLowQuantile) * STATS_TV_LOG_RANGE + STATS_TV_LOG_MIN;
-    const logHi =
-      quantile(hist, count, SENSOR_AGC.tvHighQuantile) * STATS_TV_LOG_RANGE + STATS_TV_LOG_MIN;
+    const lumLo = tvLuminance(quantile(hist, count, SENSOR_AGC.tvLowQuantile));
+    const lumMid = tvLuminance(quantile(hist, count, 0.5));
+    const lumHi = tvLuminance(quantile(hist, count, SENSOR_AGC.tvHighQuantile));
     const [eMin, eMax] = tvExposureRange();
-    const e = Math.min(eMax, Math.max(eMin, 0.9 / 2 ** logHi));
-    s.targetExposure = e;
-    s.targetBlack = Math.min(0.8, Math.max(0, SENSOR_AGC.tvBlackStretch * 2 ** logLo * e));
+    // average metering: the median at the mid level, the bright end at most at full scale
+    const e = Math.min(SENSOR_AGC.tvMidLevel / lumMid, 1 / lumHi);
+    s.targetExposure = Math.min(eMax, Math.max(eMin, e));
+    s.targetBlack = Math.min(
+      SENSOR_AGC.tvMaxBlack,
+      Math.max(0, SENSOR_AGC.tvBlackStretch * lumLo * s.targetExposure),
+    );
   }
   if (!s.hasTarget) {
     s.lo = s.targetLo;
@@ -236,7 +293,8 @@ function updateSettled(s: AgcState): void {
   if (s.band === 'IR') {
     const span = Math.max(1e-3, s.targetHi - s.targetLo);
     let lutErr = 0;
-    for (let i = 0; i < s.lut.length; i++) lutErr = Math.max(lutErr, Math.abs(s.lut[i] - s.targetLut[i]));
+    for (let i = 0; i < s.lut.length; i++)
+      lutErr = Math.max(lutErr, Math.abs(s.lut[i] - s.targetLut[i]));
     s.settled =
       Math.abs(s.lo - s.targetLo) < 0.03 * span &&
       Math.abs(s.hi - s.targetHi) < 0.03 * span &&

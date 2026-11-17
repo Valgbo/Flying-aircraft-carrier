@@ -9,11 +9,12 @@
  *   1. SCENE    the world scene from the sensor camera (sensorPose.ts) into a half-float target
  *               with a depth texture, at the sensor's EFFECTIVE resolution (the detector's
  *               pixels across the displayed field after electronic zoom, and the optics'
- *               diffraction limit) — television: the normal scene with its haze; infrared: the
- *               thermal hooks on and the sky, clouds and non-thermal overlays left out
- *               (sceneState.ts);
- *   2. SIGNAL   kelvin or luminance per detector pixel, with the infrared atmosphere and sky
- *               from the depth buffer and the detector's noise (sensorShaders.ts);
+ *               diffraction limit) times the preset's samples per pixel — television: the normal
+ *               scene with its haze; infrared: the thermal hooks on, the terrain's close-range
+ *               detail off, and the sky, clouds and non-thermal overlays left out (sceneState.ts);
+ *   2. SIGNAL   kelvin or luminance per detector pixel — the scene samples weighted by the
+ *               point-spread function (optics, jitter, the pixel's area), the infrared atmosphere
+ *               and sky from the depth buffer — and the detector's noise (sensorShaders.ts);
  *   3. STATS    a few times a second: 64 × 64 samples read back asynchronously for the AGC;
  *   4. DISPLAY  upsampled to the picture size, gain, level, polarity, video noise, into an 8-bit
  *               sRGB target: the published picture (pictures.ts).
@@ -51,6 +52,7 @@ import {
   agcFromStats,
   AGC_BINS,
   createAgc,
+  irMinSpanForNoise,
   LUT_SIZE,
   resetAgc,
   stepAgc,
@@ -73,6 +75,7 @@ import {
   maverickCameraPose,
   maverickPicture,
   pictureEffectivePixels,
+  picturePsfPixels,
   tgpCameraPose,
   type SensorCameraPose,
 } from './sensorPose';
@@ -82,7 +85,13 @@ import {
   createSignalMaterial,
   createStatsMaterial,
 } from './sensorShaders';
-import { RADIOMETRY, SENSOR_AGC, SENSOR_NOISE, SENSOR_OPTICS, SENSOR_RENDER } from './sensorViewData';
+import {
+  RADIOMETRY,
+  SENSOR_AGC,
+  SENSOR_NOISE,
+  SENSOR_OPTICS,
+  SENSOR_RENDER,
+} from './sensorViewData';
 import {
   hasVideo,
   maverickPictureStatus,
@@ -146,10 +155,20 @@ export const sensorViewOverrides = {
   /** Render the picture even when no display shows its page. */
   forceTgp: false,
   forceMav: false,
-  /** Wait for the GPU after each picture so `cpuMs` includes its execution (measurement only). */
+  /**
+   * Wait for the GPU before and after each picture so `cpuMs` includes its execution
+   * (measurement only: a one-pixel synchronous read stalls the pipeline; `gl.finish()` does not
+   * wait in browsers).
+   */
   finish: false,
-  /** Most the close-range terrain detail distance may grow with the sensor's magnification. */
-  detailScaleMax: 6,
+  /**
+   * Television: most the close-range terrain detail distance may grow with the sensor's
+   * magnification. The ground's detail (texture, tramlines) fades out with distance at the
+   * outside view's pixel size; the sensor's pixels are 10–100 times finer, so the detail has to
+   * reach as far as the magnification for the same look. A cap only guards against nonsense
+   * magnifications. (Infrared renders without the close detail: INFRARED_DETAIL_DISTANCE.)
+   */
+  detailScaleMax: 128,
 };
 
 let source: () => Sim | null = getSim;
@@ -164,6 +183,8 @@ interface Channel {
   camera: PerspectiveCamera;
   pose: SensorCameraPose;
   size: number;
+  /** Scene samples per detector pixel (each axis) the scene target is made for. */
+  ss: number;
   scene: WebGLRenderTarget | null;
   signal: WebGLRenderTarget | null;
   output: WebGLRenderTarget | null;
@@ -195,9 +216,32 @@ const BLACK = new Color(0, 0, 0);
 const _clear = new Color();
 const _rot = new Matrix3();
 
+/**
+ * The terrain's close-range detail distance in an infrared picture, m: none. The detail's bump
+ * (crop rows, furrows) drives the thermal output through the sun on the bumped normal, by up to
+ * ±8 K, and the bump is a finite difference of the mipmapped detail texture whose texel grid
+ * beats against the picture's samples at any range a sensor looks from (broad moiré arcs over
+ * every field). The seekers' contrast model has no row-scale texture either. Television keeps
+ * the detail (its bump only nudges the lighting).
+ */
+const INFRARED_DETAIL_DISTANCE = 1e-3;
+
 /** Round a picture size to a multiple of 16 pixels. */
 function round16(n: number): number {
   return Math.max(16, Math.round(n / 16) * 16);
+}
+
+/** Scene samples per detector pixel (each axis) for a graphics preset. */
+function supersampleFor(quality: A10Quality): number {
+  return SENSOR_RENDER.supersample[quality.level] ?? 1;
+}
+
+/** The infrared AGC's narrowest range for a sensor: from its detector's total noise, K. */
+function irMinSpanFor(name: SensorName): number {
+  const pod = name === 'TGP';
+  const netd = pod ? SENSOR_NOISE.podNetd : SENSOR_NOISE.maverickIrNetd;
+  const fpn = pod ? SENSOR_NOISE.podFpn : SENSOR_NOISE.maverickIrFpn;
+  return irMinSpanForNoise(Math.hypot(netd, fpn));
 }
 
 export class SensorRenderer {
@@ -206,7 +250,8 @@ export class SensorRenderer {
   private readonly schedule = createSensorSchedule();
   private readonly demand: SensorDemand = { tgp: false, mav: false };
   private readonly saved = createSavedSceneState();
-  private readonly signalMaterial = createSignalMaterial();
+  /** Signal-pass materials by samples per detector pixel (compiled on first use). */
+  private readonly signalMaterials = new Map<number, ReturnType<typeof createSignalMaterial>>();
   private readonly displayMaterial = createDisplayMaterial();
   private readonly statsMaterial = createStatsMaterial();
   private readonly quadScene = new Scene();
@@ -214,10 +259,11 @@ export class SensorRenderer {
   private readonly quad: Mesh;
   private readonly hist = new Int32Array(AGC_BINS);
   private readonly counts = new Float32Array(LUT_SIZE);
+  private readonly probe = new Uint8Array(4);
   private disposed = false;
 
   constructor(private readonly gl: WebGLRenderer) {
-    this.quad = new Mesh(createFullscreenTriangle(), this.signalMaterial);
+    this.quad = new Mesh(createFullscreenTriangle(), this.displayMaterial);
     this.quad.frustumCulled = false;
     this.quadScene.add(this.quad);
     this.tgp = this.createChannel('TGP', 11);
@@ -239,16 +285,13 @@ export class SensorRenderer {
     lut.minFilter = LinearFilter;
     lut.magFilter = LinearFilter;
     lut.needsUpdate = true;
-    // the most gain the AGC gives: a uniform scene's noise fills a tenth of the picture
-    const pod = name === 'TGP';
-    const netd = pod ? SENSOR_NOISE.podNetd : SENSOR_NOISE.maverickIrNetd;
-    const fpn = pod ? SENSOR_NOISE.podFpn : SENSOR_NOISE.maverickIrFpn;
-    const minSpan = Math.max(SENSOR_AGC.irMinSpan, 10 * Math.hypot(netd, fpn));
+    const minSpan = irMinSpanFor(name);
     const ch: Channel = {
       name,
       camera: new PerspectiveCamera(4, 1, SENSOR_RENDER.nearMin, SENSOR_RENDER.far),
       pose: createSensorCameraPose(),
       size: 0,
+      ss: 1,
       scene: null,
       signal: null,
       output: null,
@@ -282,14 +325,17 @@ export class SensorRenderer {
     return ch;
   }
 
-  /** Make the channel's targets `size` pixels square. */
-  private ensureTargets(ch: Channel, size: number): void {
-    if (ch.size === size && ch.output) return;
+  /** Make the channel's targets `size` pixels square, its scene `ss` samples per pixel. */
+  private ensureTargets(ch: Channel, size: number, ss: number): void {
+    if (ch.size === size && ch.ss === ss && ch.output) return;
     this.disposeTargets(ch);
     ch.size = size;
-    const depth = new DepthTexture(size, size);
+    ch.ss = ss;
+    // the scene at several samples per detector pixel (the detector's area integration)
+    const sceneSize = size * ss;
+    const depth = new DepthTexture(sceneSize, sceneSize);
     depth.type = UnsignedIntType;
-    ch.scene = new WebGLRenderTarget(size, size, {
+    ch.scene = new WebGLRenderTarget(sceneSize, sceneSize, {
       type: HalfFloatType,
       format: RGBAFormat,
       minFilter: NearestFilter,
@@ -372,7 +418,10 @@ export class SensorRenderer {
       publishSensorPicture(ch.name, null);
       return;
     }
-    if (!ch.output) this.ensureTargets(ch, this.sizeFor(ch, getA10Quality()));
+    if (!ch.output) {
+      const quality = getA10Quality();
+      this.ensureTargets(ch, this.sizeFor(ch, quality), supersampleFor(quality));
+    }
     let info = ch.info;
     if (!info) {
       info = ch.info = {
@@ -400,6 +449,15 @@ export class SensorRenderer {
     publishSensorPicture(ch.name, info);
   }
 
+  private signalMaterialFor(ss: number): ReturnType<typeof createSignalMaterial> {
+    let m = this.signalMaterials.get(ss);
+    if (!m) {
+      m = createSignalMaterial(ss);
+      this.signalMaterials.set(ss, m);
+    }
+    return m;
+  }
+
   private sizeFor(ch: Channel, quality: A10Quality): number {
     return ch.name === 'TGP'
       ? quality.sensorResolution
@@ -414,8 +472,9 @@ export class SensorRenderer {
     status: SensorPictureStatus,
   ): void {
     const gl = this.gl;
-    const glContext = sensorViewOverrides.finish ? gl.getContext() : null;
-    glContext?.finish();
+    // measurement: wait for everything queued before this picture, so the time is its own
+    const bench = sensorViewOverrides.finish;
+    if (bench) this.waitForGpu(null);
     const t0 = performance.now();
     const pose = ch.pose;
     const posed = ch.name === 'TGP' ? tgpCameraPose(sim, pose) : maverickCameraPose(sim, pose);
@@ -461,14 +520,16 @@ export class SensorRenderer {
     ch.lastStatus = status;
 
     const size = this.sizeFor(ch, quality);
-    this.ensureTargets(ch, size);
+    const ss = supersampleFor(quality);
+    this.ensureTargets(ch, size, ss);
     const n = pictureEffectivePixels(size, pose.fov, zoom, detector, wavelength, aperture);
     const dt = ch.sinceRender;
     ch.sinceRender = 0;
     stepAgc(ch.agc, dt);
     ch.refocus = Math.max(0, ch.refocus - dt);
     ch.statsClock += dt;
-    const state = showsScene(status) || (status === 'MASKED' && !airframeMasked) ? 2 : airframeMasked ? 1 : 0;
+    const state =
+      showsScene(status) || (status === 'MASKED' && !airframeMasked) ? 2 : airframeMasked ? 1 : 0;
 
     // renderer state we change
     const prevTarget = gl.getRenderTarget();
@@ -505,8 +566,9 @@ export class SensorRenderer {
         cam.quaternion.copy(pose.quaternion);
         cam.updateMatrixWorld();
         const target = ch.scene!;
-        target.viewport.set(0, 0, n, n);
-        target.scissor.set(0, 0, n, n);
+        const samples = n * ss;
+        target.viewport.set(0, 0, samples, samples);
+        target.scissor.set(0, 0, samples, samples);
         target.scissorTest = true;
         // the outside view's pixel, for the terrain's close-detail distance
         const mainFov = (ctx.camera as PerspectiveCamera).fov ?? 50;
@@ -524,7 +586,11 @@ export class SensorRenderer {
             band,
             pixelAngle: pixel,
             near: pose.near,
-            detailDistance: terrainUniforms.uDetailDistance.value * detailScale,
+            // infrared: no close-range detail (see INFRARED_DETAIL_DISTANCE)
+            detailDistance:
+              band === 'IR'
+                ? INFRARED_DETAIL_DISTANCE
+                : terrainUniforms.uDetailDistance.value * detailScale,
             hazeDensity: rho,
           },
           this.saved,
@@ -549,10 +615,20 @@ export class SensorRenderer {
       sig.viewport.set(0, 0, n, n);
       sig.scissor.set(0, 0, n, n);
       sig.scissorTest = true;
-      const su = this.signalMaterial.uniforms;
+      const signalMaterial = this.signalMaterialFor(ss);
+      const su = signalMaterial.uniforms;
       su.tScene.value = ch.scene!.texture;
       su.tDepth.value = ch.scene!.depthTexture;
       su.uRect.value.set(n / size, n / size);
+      const sceneTexel = 1 / (size * ss);
+      su.uSceneTexel.value.set(sceneTexel, sceneTexel);
+      su.uPsf.value = picturePsfPixels(
+        pose.fov,
+        n,
+        wavelength,
+        aperture,
+        ch.name === 'TGP' ? SENSOR_OPTICS.podBlurRad : SENSOR_OPTICS.maverickBlurRad,
+      );
       su.uPixels.value.set(n, n);
       su.uBand.value = band === 'IR' ? 1 : 0;
       su.uState.value = state;
@@ -588,7 +664,7 @@ export class SensorRenderer {
         SENSOR_NOISE.daylightLuminance;
       su.uRead.value = SENSOR_NOISE.readNoise;
       su.uFrame.value = ch.frame + 1;
-      this.quad.material = this.signalMaterial;
+      this.quad.material = signalMaterial;
       gl.setRenderTarget(sig);
       gl.render(this.quadScene, this.quadCamera);
 
@@ -668,7 +744,7 @@ export class SensorRenderer {
       gl.autoClear = prevAutoClear;
     }
 
-    glContext?.finish();
+    if (bench && ch.output) this.waitForGpu(ch.output);
     const st = ch.passStats;
     st.cpuMs = performance.now() - t0;
     st.cpuMsAvg = st.renders <= 1 ? st.cpuMs : st.cpuMsAvg * 0.9 + st.cpuMs * 0.1;
@@ -691,6 +767,11 @@ export class SensorRenderer {
       info.valid = showsScene(status);
       info.agcSettled = ch.agc.settled;
     }
+  }
+
+  /** Measurement only: block until the GPU has finished all work (one-pixel synchronous read). */
+  private waitForGpu(target: WebGLRenderTarget | null): void {
+    this.gl.readRenderTargetPixels(target ?? this.tgp.stats, 0, 0, 1, 1, this.probe);
   }
 
   /** The latest picture of a sensor as a PNG data URL (development: screenshots). */
@@ -725,7 +806,8 @@ export class SensorRenderer {
       publishSensorPicture(ch.name, null);
       ch.info = null;
     }
-    this.signalMaterial.dispose();
+    for (const m of this.signalMaterials.values()) m.dispose();
+    this.signalMaterials.clear();
     this.displayMaterial.dispose();
     this.statsMaterial.dispose();
     this.quad.geometry.dispose();

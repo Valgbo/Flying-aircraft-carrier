@@ -308,7 +308,14 @@ function firePulses(sim: Sim, ground: FireControlGround, now: number, dt: number
   while (d.pulseIndex < d.pulses && d.nextTime < now + dt - 1e-9) {
     const t = Math.max(d.nextTime, now);
     const train = av.masterArm === 'TRAIN';
-    const n = pulseStations(sim, d.store, d.perPulse === 2, train ? d.used : null, d.lastSide, _stations);
+    const n = pulseStations(
+      sim,
+      d.store,
+      d.perPulse === 2,
+      train ? d.used : null,
+      d.lastSide,
+      _stations,
+    );
     if (n === 0) {
       if (d.pulseIndex === 0) notify(sim, `NO ${d.store}`, 'info');
       d.phase = 'DONE';

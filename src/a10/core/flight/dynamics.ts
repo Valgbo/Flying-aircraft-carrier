@@ -343,7 +343,7 @@ export function integrateRk4(s: Float64Array, dt: number, ctx: StepContext): voi
   derivative(_tmp, _k4, ctx);
   const h = dt / 6;
   for (let i = 0; i < n; i++) s[i] += h * (_k1[i] + 2 * _k2[i] + 2 * _k3[i] + _k4[i]);
-  const qn = 1 / Math.hypot(s[6], s[7], s[8], s[9]);
+  const qn = 1 / Math.sqrt(s[6] * s[6] + s[7] * s[7] + s[8] * s[8] + s[9] * s[9]);
   s[6] *= qn;
   s[7] *= qn;
   s[8] *= qn;

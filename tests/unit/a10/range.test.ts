@@ -201,7 +201,13 @@ describe('tactical lane: kills by weapon and time to kill', () => {
     s.hit(a, r + 9, { weapon: 'HEI', outcome: 'fragment' });
     s.release();
     s.step(0.6);
-    s.sim.debrief.kills.push({ time: s.sim.time, vehicleId: a, kind: 'apc', weapon: 'API', catastrophic: false });
+    s.sim.debrief.kills.push({
+      time: s.sim.time,
+      vehicleId: a,
+      kind: 'apc',
+      weapon: 'API',
+      catastrophic: false,
+    });
     const k1 = s.sim.time;
     s.fly({ gamma: 6 });
     s.step(2);
@@ -212,7 +218,13 @@ describe('tactical lane: kills by weapon and time to kill', () => {
     const w = s.drop({ store: 'AGM-65D', weapon: 'AGM-65D', delivery: 'MAV' });
     s.step(4);
     s.hit(b, w.bodyId, { weapon: 'AGM-65D', outcome: 'penetrated', condition: 'destroyed' });
-    s.sim.debrief.kills.push({ time: s.sim.time, vehicleId: b, kind: 'mbt', weapon: 'AGM-65D', catastrophic: true });
+    s.sim.debrief.kills.push({
+      time: s.sim.time,
+      vehicleId: b,
+      kind: 'mbt',
+      weapon: 'AGM-65D',
+      catastrophic: true,
+    });
     const k2 = s.sim.time;
     s.step(12);
 

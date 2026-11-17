@@ -16,6 +16,7 @@
  *  gunsight.ts   the CCIP gun sight
  *  release.ts    store CCIP (delay cue), CCRP and consent solutions
  *  delivery.ts   the pickle: consent, CCRP, pairs and ripples, rockets, Maverick launch, TRAIN
+ *  ufc.ts        the up-front controller's scratchpad (laser codes entered with the CODE OSBs)
  *  data/avionics.ts  fire-control and release constants, profile defaults, with sources
  */
 // The registry has no runtime imports and must load before anything that pulls in the weapons
@@ -45,6 +46,8 @@ export {
   RELEASE,
   RELEASE_NOTES,
   TAD_RANGES_NM,
+  UFC_ENTRY,
+  UFC_ENTRY_NOTES,
 } from '../../data/avionics';
 export {
   computeGunSolution,
@@ -153,6 +156,7 @@ export {
   type OsbBinding,
 } from './mfd';
 export { GUN_SIGHTS, HOTAS_TABLE, makeSpi, soiTarget } from './hotas';
+export { scratchpadLaserCode, takeScratchpadCode, ufcKey } from './ufc';
 
 const _ground = createFireControlGround();
 

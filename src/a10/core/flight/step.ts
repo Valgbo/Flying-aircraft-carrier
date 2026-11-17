@@ -166,7 +166,7 @@ export function refreshDerived(sim: Sim, ctx: StepContext, dt: number): void {
   ac.bank = _att.bank;
   const v = ac.velocity;
   ac.verticalSpeed = v.y;
-  ac.groundSpeed = Math.hypot(v.x, v.z);
+  ac.groundSpeed = Math.sqrt(v.x * v.x + v.z * v.z);
   ac.flightPathAngle = Math.atan2(v.y, ac.groundSpeed);
   ac.track = ac.groundSpeed > 0.1 ? headingOf(v.x, v.z) : ac.heading;
   ac.altitude = alt;

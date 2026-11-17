@@ -1,15 +1,29 @@
 /**
- * Loadout screen (PLAN_A10.md §6.8, §11.3): the presets the weapons module offers, a top-down
+ * Loadout screen (PLAN_A10.md §6.8, §11.3): the presets the weapons module offers and the free
+ * choice ('Custom': a load per station, from what the weapons module allows there), a top-down
  * schematic of the eleven stations, what hangs on each, the total stores weight and drag, and
- * the gun load for the next flight. store.setLoadout(id) picks the preset every flight uses.
+ * the gun load for the next flight. store.setLoadout(id) picks the load every flight uses; the
+ * custom load itself lives in the UI store (customLoadout.ts) and reaches the flight through
+ * flightSetup.ts.
  */
 import { useMemo, useState } from 'react';
+import { loadoutIssues } from '../core/weapons';
 import { COMPACT_QUERY, IconArrowLeft, useMediaQuery } from '../../engine';
 import { A10 } from '../data/aircraft';
 import { GAU8 } from '../data/gun';
 import { beginFlight } from '../state/flow';
 import { useA10Store } from '../state/store';
 import AircraftSchematic from './AircraftSchematic';
+import {
+  copyStations,
+  CUSTOM_ID,
+  CUSTOM_NAME,
+  customSummary,
+  keyOf,
+  setStationLoad,
+  stationOptions,
+  type CustomStations,
+} from './customLoadout';
 import { formatDragArea, formatInt, formatKg, formatLbFromKg, DASH } from './format';
 import { IconJet } from './icons';
 import {
@@ -21,7 +35,10 @@ import {
   storeLabel,
   type StoreCategory,
 } from './loadout';
-import { GUN_LOADS } from './uiStore';
+import { GUN_LOADS, useA10Ui } from './uiStore';
+
+/** The loads each station can take (the weapons module's rules do not change in a visit). */
+const OPTIONS = Array.from({ length: 11 }, (_, i) => stationOptions(i + 1));
 
 const LEGEND: readonly { category: StoreCategory; label: string }[] = [
   { category: 'missile', label: 'Missiles' },
@@ -38,15 +55,53 @@ export default function LoadoutScreen() {
   const setScreen = useA10Store((s) => s.setScreen);
   const gunLoad = useA10Store((s) => s.ammoLoad);
   const setGunLoad = useA10Store((s) => s.setAmmoLoad);
+  const custom = useA10Ui((s) => s.customStations);
+  const setCustom = useA10Ui((s) => s.setCustomStations);
   const compact = useMediaQuery(COMPACT_QUERY);
   const [active, setActive] = useState<number | null>(null);
+  const [cleared, setCleared] = useState<string | null>(null);
 
   const presets = useMemo(() => loadoutPresets(), []);
+  const isCustom = loadoutId === CUSTOM_ID;
   const preset = presets.find((p) => p.id === loadoutId);
   const shown = useMemo(
-    () => preset ?? { id: loadoutId, name: humanizeId(loadoutId), stations: {} },
-    [preset, loadoutId],
+    () =>
+      isCustom
+        ? { id: CUSTOM_ID, name: CUSTOM_NAME, stations: custom }
+        : (preset ?? { id: loadoutId, name: humanizeId(loadoutId), stations: {} }),
+    [isCustom, custom, preset, loadoutId],
   );
+  const customTotals = useMemo(
+    () => loadoutTotals({ id: CUSTOM_ID, name: CUSTOM_NAME, stations: custom }),
+    [custom],
+  );
+  const issues = useMemo(() => (isCustom ? loadoutIssues(custom) : []), [isCustom, custom]);
+
+  /** Choose the free choice; the first time, start it from the preset on screen. */
+  const chooseCustom = () => {
+    if (Object.keys(custom).length === 0 && preset) setCustom(copyStations(preset.stations));
+    setCleared(null);
+    setLoadout(CUSTOM_ID);
+  };
+
+  const setStation = (station: number, key: string) => {
+    const option = OPTIONS[station - 1].find((o) => o.key === key);
+    if (!option) return;
+    const next = setStationLoad(custom, station, option.list);
+    setCustom(next.stations);
+    setCleared(
+      next.cleared.length > 0
+        ? `${next.cleared.length > 1 ? 'Stations' : 'Station'} ${next.cleared.join(' and ')} emptied: the centreline station 6 cannot be loaded together with stations 5 and 7.`
+        : null,
+    );
+  };
+
+  const copyPreset = (id: string) => {
+    const p = presets.find((x) => x.id === id);
+    if (!p) return;
+    setCustom(copyStations(p.stations));
+    setCleared(null);
+  };
   const stations = useMemo(() => stationViews(shown), [shown]);
   const totals = useMemo(() => loadoutTotals(shown), [shown]);
   const categories = new Set(stations.flatMap((s) => s.stores.map((t) => storeLabel(t).category)));
@@ -89,7 +144,7 @@ export default function LoadoutScreen() {
             <h2 className="a10-section-title" id="a10-presets-title">
               Presets
             </h2>
-            {!preset && (
+            {!preset && !isCustom && (
               <p className="a10-note a10-note--warn" role="note">
                 “{humanizeId(loadoutId)}” is not available in this build, so the aircraft carries
                 the gun only. Pick a preset below.
@@ -119,6 +174,26 @@ export default function LoadoutScreen() {
                   </label>
                 );
               })}
+              <label className="a10-choice a10-choice--custom" data-testid="a10-loadout-custom">
+                <input
+                  type="radio"
+                  name="a10-loadout"
+                  value={CUSTOM_ID}
+                  checked={isCustom}
+                  onChange={chooseCustom}
+                />
+                <span className="a10-choice__name">{CUSTOM_NAME}</span>
+                <span className="a10-choice__desc">
+                  {Object.keys(custom).length > 0
+                    ? customSummary(custom)
+                    : 'Your own load, station by station'}
+                </span>
+                <span className="a10-choice__meta fac-readout">
+                  {Object.keys(custom).length > 0 && Number.isFinite(customTotals.mass)
+                    ? formatKg(customTotals.mass)
+                    : 'Free choice'}
+                </span>
+              </label>
             </div>
           </section>
 
@@ -148,11 +223,44 @@ export default function LoadoutScreen() {
               <h2 className="a10-section-title" id="a10-stations-title">
                 Stations
               </h2>
+              {isCustom && (
+                <div className="a10-custom__tools">
+                  <label className="a10-custom__copy">
+                    <span>Start from</span>
+                    <select
+                      className="settings-select fac-focusable"
+                      data-testid="a10-custom-copy"
+                      value=""
+                      onChange={(e) => copyPreset(e.target.value)}
+                    >
+                      <option value="" disabled>
+                        a preset…
+                      </option>
+                      {presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="fac-btn fac-btn--ghost a10-custom__clear"
+                    data-testid="a10-custom-clear"
+                    onClick={() => {
+                      setCustom({} as CustomStations);
+                      setCleared(null);
+                    }}
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
               <ol className="a10-stations" data-testid="a10-loadout-stations">
                 {stations.map((st) => (
                   <li
                     key={st.station}
-                    className={`a10-stations__row${active === st.station ? ' a10-stations__row--active' : ''}`}
+                    className={`a10-stations__row${active === st.station ? ' a10-stations__row--active' : ''}${isCustom ? ' a10-stations__row--edit' : ''}`}
                     onPointerEnter={() => setActive(st.station)}
                     onPointerLeave={() => setActive(null)}
                   >
@@ -162,17 +270,52 @@ export default function LoadoutScreen() {
                     >
                       {st.station}
                     </span>
-                    <span
-                      className={`a10-stations__what${st.label ? '' : ' a10-stations__what--empty'}`}
-                    >
-                      {st.label || 'Empty'}
-                    </span>
+                    {isCustom ? (
+                      <select
+                        className="settings-select fac-focusable a10-stations__select"
+                        data-testid={`a10-station-select-${st.station}`}
+                        aria-label={`Station ${st.station}`}
+                        value={keyOf(custom[st.station] ?? [])}
+                        onChange={(e) => setStation(st.station, e.target.value)}
+                        onFocus={() => setActive(st.station)}
+                        onBlur={() => setActive(null)}
+                      >
+                        {OPTIONS[st.station - 1].map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        className={`a10-stations__what${st.label ? '' : ' a10-stations__what--empty'}`}
+                      >
+                        {st.label || 'Empty'}
+                      </span>
+                    )}
                     <span className="a10-stations__mass fac-readout">
                       {st.label ? (Number.isFinite(st.mass) ? formatKg(st.mass) : DASH) : ''}
                     </span>
                   </li>
                 ))}
               </ol>
+              {isCustom && cleared && (
+                <p className="a10-note" role="status">
+                  {cleared}
+                </p>
+              )}
+              {issues.length > 0 && (
+                <p className="a10-note a10-note--warn" role="note" data-testid="a10-custom-issues">
+                  This load is not legal: {issues.join('; ')}.
+                </p>
+              )}
+              {isCustom && (
+                <p className="a10-note">
+                  Each station lists only what the weapons rules let it carry: Mavericks on 3 and 9,
+                  the targeting pod on 2, 3, 9 or 10, the AIM-9 pair and the jamming pod on the wing
+                  tips.
+                </p>
+              )}
             </section>
 
             <section aria-labelledby="a10-totals-title">

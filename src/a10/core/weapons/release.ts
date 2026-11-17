@@ -199,7 +199,8 @@ export function executeRelease(sim: Sim, req: ReleaseRequest, t0: number, dt: nu
     store: req.store,
     bodyId: b.id,
   });
-  if (kind === 'rocket' || kind === 'missile') sim.events.push({ type: 'motorIgnition', t, bodyId: b.id });
+  if (kind === 'rocket' || kind === 'missile')
+    sim.events.push({ type: 'motorIgnition', t, bodyId: b.id });
   if (kind === 'missile' || kind === 'laserBomb') {
     onLaunch(sim, b, req);
     if (kind === 'missile') b.motorTime = burnTimeOf(b);

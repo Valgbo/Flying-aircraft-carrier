@@ -1,17 +1,16 @@
 /**
  * What a display page is drawn from: the simulation, which display and page, whether it is the
- * sensor of interest, the sensor picture, the stores page's data and the message log. Plus
- * defensive readers of the page settings the avionics module adds in wave 2 (TAD range and
- * centre, laser latch and code, selective jettison…): a field it has not added (yet) reads as
- * its default, so the displays work with the avionics as it is at any time.
+ * sensor of interest, the sensor picture, the stores page's data and the message log. The page
+ * settings the avionics keeps (TAD range and centre, selective jettison, laser-code cursors, MSG
+ * clear time) are read from `sim.avionics.pages`.
  */
+import type { Display } from '../../core/avionics';
 import type { DsmsView, MfdPage } from '../../core/avionics/types';
 import type { Sim, SimEvent } from '../../core/types';
 import type { SensorPictureInfo } from '../sensors/pictures';
-import { TAD } from './mfdLayout';
 
 /** The two displays, as the avionics names them ('L' left, 'R' right). */
-export type MfdDisplay = 'L' | 'R';
+export type MfdDisplay = Display;
 
 export interface PageContext {
   sim: Sim;
@@ -26,73 +25,6 @@ export interface PageContext {
   /** The stores page's data (avionics' buildDsmsView), refreshed when the DSMS is drawn. */
   dsms: DsmsView;
   messages: MessageLog;
-}
-
-/** The page settings the avionics module keeps (wave 2; `AvionicsState.pages`). */
-export interface PageSettings {
-  tadRange: number;
-  tadCenter: 'OWN' | 'SPI';
-  jettisonStation: number;
-  dsmsCodeDigit: number;
-  tgpCodeDigit: number;
-  msgClearTime: number;
-}
-
-const DEFAULT_PAGES: PageSettings = {
-  tadRange: TAD.defaultRange,
-  tadCenter: 'OWN',
-  jettisonStation: 0,
-  dsmsCodeDigit: -1,
-  tgpCodeDigit: -1,
-  msgClearTime: -1,
-};
-
-type Partially<T> = { [K in keyof T]?: T[K] };
-
-/** The avionics' page settings, field by field, with defaults for what it does not keep. */
-export function pageSettings(sim: Sim, out: PageSettings): PageSettings {
-  const p = (sim.avionics as unknown as { pages?: Partially<PageSettings> }).pages;
-  out.tadRange = p?.tadRange ?? DEFAULT_PAGES.tadRange;
-  out.tadCenter = p?.tadCenter ?? DEFAULT_PAGES.tadCenter;
-  out.jettisonStation = p?.jettisonStation ?? DEFAULT_PAGES.jettisonStation;
-  out.dsmsCodeDigit = p?.dsmsCodeDigit ?? DEFAULT_PAGES.dsmsCodeDigit;
-  out.tgpCodeDigit = p?.tgpCodeDigit ?? DEFAULT_PAGES.tgpCodeDigit;
-  out.msgClearTime = p?.msgClearTime ?? DEFAULT_PAGES.msgClearTime;
-  return out;
-}
-
-export function createPageSettings(): PageSettings {
-  return { ...DEFAULT_PAGES };
-}
-
-/** Avionics switches added in wave 2 (laser latch and code, Maverick power, next station). */
-export interface AvionicsExtras {
-  laserLatch?: boolean;
-  laserCode?: number;
-  mavPower?: boolean;
-  selectedStation?: number;
-}
-
-export function avionicsExtras(sim: Sim): AvionicsExtras {
-  return sim.avionics as unknown as AvionicsExtras;
-}
-
-/** Wave-2 fields of the DSMS rows (avionics' buildDsmsView). */
-export interface DsmsStationExtras {
-  rockets?: number;
-  next?: boolean;
-  jettisonable?: boolean;
-  jettisonSelected?: boolean;
-}
-export interface DsmsProfileExtras {
-  drag?: 'LD' | 'HD';
-  laserCode?: number;
-}
-
-/** Maverick seeker fields the sensors module adds (variant and band). */
-export interface SeekerExtras {
-  type?: string;
-  band?: string;
 }
 
 // ---------------------------------------------------------------------------------------------

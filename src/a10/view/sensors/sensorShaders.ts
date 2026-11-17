@@ -5,9 +5,10 @@
  *
  *   SIGNAL   (effective resolution) scene colour + depth → the sensor's signal per detector
  *            pixel: infrared = apparent temperature in kelvin above the ambient air (the haze of
- *            radiometry.ts from each pixel's depth, the cold sky, smoke and flames over the sky),
- *            television = luminance; plus the detector's noise (temporal, fixed pattern, photon
- *            shot noise).
+ *            radiometry.ts from each sample's depth, the cold sky, smoke and flames over the sky),
+ *            television = luminance, each averaged over the pixel's SS × SS scene samples (the
+ *            detector integrates its area: no moiré from detail finer than a pixel); plus the
+ *            detector's noise (temporal, fixed pattern, photon shot noise).
  *   DISPLAY  (picture resolution) the signal upsampled with a cubic B-spline (the electronic
  *            zoom's blur when the detector has fewer pixels than the picture), the AGC (infrared:
  *            its transfer curve over [lo, hi]; television: exposure, black level and gamma), the
@@ -58,13 +59,18 @@ float gaussian(uvec3 key) {
 }
 `;
 
-const SIGNAL_FRAGMENT = /* glsl */ `
+/** The signal pass for `ss` × `ss` scene samples per detector pixel. */
+const signalFragment = (ss: number): string => /* glsl */ `
 precision highp float;
 #include <packing>
 ${NOISE}
+#define SS ${Math.max(1, Math.round(ss))}
+#define TAPS ${2 * Math.max(1, Math.round(ss))}
 uniform sampler2D tScene;
 uniform sampler2D tDepth;
 uniform vec2 uRect;
+uniform vec2 uSceneTexel;
+uniform float uPsf;
 uniform vec2 uPixels;
 uniform int uBand;
 uniform int uState;
@@ -96,6 +102,37 @@ float skyKelvin(float s) {
   return uSkyHorizon + w * (uSkyZenith - uSkyHorizon);
 }
 
+/** Apparent temperature (K above the air) of the scene sample at st. */
+float sampleKelvin(vec2 st, float rayLen, float sky) {
+  vec4 c = texture2D(tScene, st);
+  float z = texture2D(tDepth, st).r;
+  if (z >= 0.999999) {
+    // no surface: the cold sky, with smoke and flames drawn over it
+    float a = clamp(c.a, 0.0, 1.0);
+    float part = a > 1e-3 ? (c.r / a - uAmbient) * uKPerUnit : sky;
+    return mix(sky, part, a);
+  }
+  // the surface's temperature behind the haze of its distance (radiometry.apparentKelvin)
+  float viewZ = perspectiveDepthToViewZ(z, uNear, uFar);
+  float x = uHazeRho * (-viewZ * rayLen);
+  float k = uHazeShare * (1.0 - exp(-x * x));
+  return (c.r - uAmbient) * uKPerUnit * (1.0 - k) + uSkyHorizon * k;
+}
+
+/**
+ * Tap (i, j) of the TAPS × TAPS scene samples around a detector pixel (its own SS × SS and
+ * half a pixel of its neighbours'): xy = the sample in the scene texture (clamped into the
+ * rendered rectangle), z = its weight — the point-spread function, a Gaussian of uPsf detector
+ * pixels (the optics, the line of sight's jitter, the pixel's own area).
+ */
+vec3 tap(vec2 st, int i, int j) {
+  vec2 o = vec2(float(i), float(j)) - 0.5 * float(TAPS - 1);
+  vec2 od = o / float(SS);
+  float w = exp(-dot(od, od) / (2.0 * uPsf * uPsf));
+  vec2 s = clamp(st + o * uSceneTexel, 0.5 * uSceneTexel, uRect - 0.5 * uSceneTexel);
+  return vec3(s, w);
+}
+
 void main() {
   if (uState == 0) {
     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
@@ -107,6 +144,8 @@ void main() {
   vec3 dirW = uCamRot * (dirCam / rayLen);
   uvec2 pix = uvec2(vUv * uPixels);
   uvec3 key = uvec3(pix, uint(uFrame));
+  // the detector pixel's centre in the scene texture, whose SS × SS samples it integrates
+  vec2 st = vUv * uRect;
   float signal;
   if (uBand == 1) {
     float dT;
@@ -114,22 +153,17 @@ void main() {
       // the airframe a few metres away, far out of focus: a smooth field
       dT = uMaskK + 0.6 * ndc.y;
     } else {
-      vec2 st = vUv * uRect;
-      vec4 c = texture2D(tScene, st);
-      float z = texture2D(tDepth, st).r;
-      if (z >= 0.999999) {
-        // no surface: the cold sky, with smoke and flames drawn over it
-        float sky = skyKelvin(dirW.y);
-        float a = clamp(c.a, 0.0, 1.0);
-        float part = a > 1e-3 ? (c.r / a - uAmbient) * uKPerUnit : sky;
-        dT = mix(sky, part, a);
-      } else {
-        // the surface's temperature behind the haze of its distance (radiometry.apparentKelvin)
-        float viewZ = perspectiveDepthToViewZ(z, uNear, uFar);
-        float x = uHazeRho * (-viewZ * rayLen);
-        float k = uHazeShare * (1.0 - exp(-x * x));
-        dT = (c.r - uAmbient) * uKPerUnit * (1.0 - k) + uSkyHorizon * k;
+      float sky = skyKelvin(dirW.y);
+      dT = 0.0;
+      float wsum = 0.0;
+      for (int j = 0; j < TAPS; j++) {
+        for (int i = 0; i < TAPS; i++) {
+          vec3 t = tap(st, i, j);
+          dT += t.z * sampleKelvin(t.xy, rayLen, sky);
+          wsum += t.z;
+        }
       }
+      dT /= wsum;
     }
     // detector noise: temporal, and the array's residual fixed pattern (columns of a staring
     // array, rows of a scanned one)
@@ -141,8 +175,17 @@ void main() {
     if (uState == 1) {
       L = uMaskLum * (1.0 + 0.15 * ndc.y);
     } else {
-      vec3 c = texture2D(tScene, vUv * uRect).rgb;
-      L = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
+      L = 0.0;
+      float wsum = 0.0;
+      for (int j = 0; j < TAPS; j++) {
+        for (int i = 0; i < TAPS; i++) {
+          vec3 t = tap(st, i, j);
+          vec3 c = texture2D(tScene, t.xy).rgb;
+          L += t.z * max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
+          wsum += t.z;
+        }
+      }
+      L /= wsum;
     }
     // photon shot noise and read noise (electrons per unit luminance: uElectrons)
     float n = L * uElectrons;
@@ -268,6 +311,8 @@ export interface SignalUniforms {
   tScene: { value: Texture | null };
   tDepth: { value: Texture | null };
   uRect: { value: Vector2 };
+  uSceneTexel: { value: Vector2 };
+  uPsf: { value: number };
   uPixels: { value: Vector2 };
   uBand: { value: number };
   uState: { value: number };
@@ -341,13 +386,16 @@ function material<U extends Record<string, { value: unknown }>>(
   return m as ShaderMaterial & { uniforms: U };
 }
 
-export function createSignalMaterial(): ShaderMaterial & { uniforms: SignalUniforms } {
+/** The signal pass's material for `ss` × `ss` scene samples per detector pixel. */
+export function createSignalMaterial(ss: number): ShaderMaterial & { uniforms: SignalUniforms } {
   return material<SignalUniforms>(
-    'a10-sensor-signal',
+    `a10-sensor-signal-${ss}`,
     {
       tScene: { value: null },
       tDepth: { value: null },
       uRect: { value: new Vector2(1, 1) },
+      uSceneTexel: { value: new Vector2(1 / 512, 1 / 512) },
+      uPsf: { value: 0.5 },
       uPixels: { value: new Vector2(256, 256) },
       uBand: { value: 1 },
       uState: { value: 0 },
@@ -372,7 +420,7 @@ export function createSignalMaterial(): ShaderMaterial & { uniforms: SignalUnifo
       uRead: { value: 20 },
       uFrame: { value: 0 },
     },
-    SIGNAL_FRAGMENT,
+    signalFragment(ss),
   );
 }
 

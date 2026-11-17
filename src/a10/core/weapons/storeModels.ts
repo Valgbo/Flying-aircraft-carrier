@@ -169,7 +169,6 @@ function tubeExit(m: RocketMotor, travel: number): { time: number; speed: number
       const f = (travel - x) / dx;
       t += f * h;
       v += f * (v1 - v);
-      x = travel;
       break;
     }
     x += dx;
@@ -264,7 +263,8 @@ export function ejectionVelocity(
   pitch: number,
   out: Vector3,
 ): Vector3 {
-  if (launch === 'ejector') return out.set(0, -Math.cos(pitch), -Math.sin(pitch)).multiplyScalar(speed);
+  if (launch === 'ejector')
+    return out.set(0, -Math.cos(pitch), -Math.sin(pitch)).multiplyScalar(speed);
   if (launch === 'tube') return out.set(0, Math.sin(pitch), -Math.cos(pitch)).multiplyScalar(speed);
   return out.set(0, 0, 0);
 }
@@ -320,7 +320,12 @@ function motorAt(m: RocketMotor, tm: number, burning: boolean): void {
   _motor.thrust = burning ? f0 + slope * h : 0;
 }
 
-/** The state one evaluation is made at (written by heun; doubles kept unboxed in fields). */
+/**
+ * The state one evaluation is made at, written by heun. Passed through these double fields, not
+ * as arguments: V8 boxes a double argument of a call it does not inline, and `accelerate` is too
+ * big to inline — as arguments the integrator allocated 80 B (bomb) to 96 B (rocket) per call;
+ * this way, nothing.
+ */
 const _ev = { t: 0.5, y: 0.5, vx: 0.5, vy: 0.5, vz: 0.5, isa: 0.5 };
 
 /**
@@ -362,7 +367,8 @@ function accelerate(
     if (!(x > 0)) cd = table[0];
     else {
       const i = Math.floor(x);
-      cd = i >= CD_POINTS - 1 ? table[CD_POINTS - 1] : table[i] + (table[i + 1] - table[i]) * (x - i);
+      cd =
+        i >= CD_POINTS - 1 ? table[CD_POINTS - 1] : table[i] + (table[i + 1] - table[i]) * (x - i);
     }
     if (burning && motor) cd *= motor.plumeDrag;
     let cda = cd * spec.area + spec.extraDragArea;

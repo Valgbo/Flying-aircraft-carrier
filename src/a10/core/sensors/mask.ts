@@ -1,24 +1,32 @@
 /**
  * The pod's view blocked by its own aircraft (PLAN §8: "masking by the aircraft's own wing and
  * fuselage"). The aircraft is a set of BODY-frame boxes (fuselage sections, main-gear pods,
- * nacelles, the wing's centre section, tailplane and fins, and an envelope around what hangs on
- * each other station) plus the two outer wing panels as planes with their dihedral; all measured
- * on the converted FlightGear model (data/sensors.ts MASK_*). A line of sight is masked when the
- * ray from the pod's head meets any of them within a few tens of metres.
+ * nacelles, the wing's centre section, tailplane and fins, the pylons, and on each other station
+ * the rack and every store body still on it) plus the two outer wing panels as planes with their
+ * dihedral; all measured on the converted FlightGear model (data/sensors.ts MASK_*). A line of
+ * sight is masked when the ray from the pod's head meets any of them within a few tens of metres.
+ * The mask follows the loadout: a launched missile or a dropped bomb no longer hides anything.
  *
  * The pod hangs under the outer wing: everything above the wing aft of the leading edge is hidden,
  * and straight up its own pylon stands over the head; the belly side is shadowed by the gear pod,
  * the fuselage and the next station's stores. Because the head reaches ≈0.2 m ahead of the
  * leading edge, the sky up and to the sides just in front of the wing stays visible.
  */
-import { MASK_BOXES, MASK_PYLONS, MASK_STORES, MASK_WING } from '../../data/sensors';
+import {
+  MASK_BOXES,
+  MASK_PYLONS,
+  MASK_RACKS,
+  MASK_STORES,
+  MASK_WING,
+  type MaskOffsetBox,
+} from '../../data/sensors';
 import type { Sim } from '../types';
-import type { StationState } from '../weapons/types';
 import { stationPoint } from './geometry';
+import { firstMount, stationLoadCode } from './loads';
 import { Vector3 } from 'three';
 
-/** Most boxes the mask holds (airframe + stores). */
-export const MASK_CAPACITY = 48;
+/** Most boxes the mask holds: the airframe (≈26) and up to four per loaded station. */
+export const MASK_CAPACITY = 80;
 
 const _s = new Vector3();
 
@@ -43,6 +51,20 @@ function pushBox(
   return n + 1;
 }
 
+/** Push a box given about the suspension point `_s`. */
+function pushOffset(boxes: Float64Array, n: number, b: MaskOffsetBox): number {
+  return pushBox(
+    boxes,
+    n,
+    _s.x + b.min[0],
+    _s.y + b.min[1],
+    _s.z + b.min[2],
+    _s.x + b.max[0],
+    _s.y + b.max[1],
+    _s.z + b.max[2],
+  );
+}
+
 /** Height of the wing's lower surface at span |x|, BODY y (centre section flat, then dihedral). */
 export function wingLowerY(x: number): number {
   const ax = Math.abs(x);
@@ -50,15 +72,27 @@ export function wingLowerY(x: number): number {
   return ax <= w.rootX ? w.rootY : w.rootY + w.slope * (ax - w.rootX);
 }
 
-/** What hangs on a station as one mask envelope, or null when nothing masks there. */
-function stationEnvelope(st: StationState) {
-  if (st.rack) return st.stores.length > 0 ? (MASK_STORES[st.rack] ?? null) : null;
-  return st.stores.length > 0 ? (MASK_STORES[st.stores[0]] ?? null) : null;
+/**
+ * Does the mask need a rebuild for a pod on `podStation`: a new pod station, or a station whose
+ * load changed since the build (a release, a jettison, a rearm)? Allocation-free.
+ */
+export function maskStale(sim: Sim, podStation: number): boolean {
+  const internal = sim.sensors.internal;
+  if (internal.maskDirty || internal.maskStation !== podStation) return true;
+  const built = internal.maskLoads;
+  const stations = sim.stores.stations;
+  for (let i = 0; i < stations.length; i++) {
+    const s = stations[i].station;
+    if (s > 0 && s < built.length && built[s] !== stationLoadCode(sim, s)) return true;
+  }
+  return false;
 }
 
 /**
- * Rebuild the mask for the loadout: the airframe boxes and one envelope per loaded station other
- * than the pod's own (`podStation`). Called when the stores change.
+ * Rebuild the mask for the loadout: the airframe boxes, the pylons, and on every other station
+ * than the pod's own (`podStation`) the stores still there — a rack's structure and the bodies on
+ * its occupied mounts (loads.ts: a store keeps its mount when the ones before it leave), or a store
+ * hung directly. Called when the stores change (`maskStale`).
  */
 export function buildMask(sim: Sim, podStation: number): void {
   const internal = sim.sensors.internal;
@@ -66,30 +100,42 @@ export function buildMask(sim: Sim, podStation: number): void {
   let n = 0;
   for (const b of MASK_BOXES) {
     n = pushBox(boxes, n, b.min[0], b.min[1], b.min[2], b.max[0], b.max[1], b.max[2]);
-    if (b.mirror) n = pushBox(boxes, n, -b.max[0], b.min[1], b.min[2], -b.min[0], b.max[1], b.max[2]);
+    if (b.mirror)
+      n = pushBox(boxes, n, -b.max[0], b.min[1], b.min[2], -b.min[0], b.max[1], b.max[2]);
   }
   for (let station = 1; station < MASK_PYLONS.length; station++) {
     const py = MASK_PYLONS[station];
     if (!py) continue;
     stationPoint(station, _s);
     // the bottom slopes ≈3° nose-down with the station: 4 cm lower at the front
-    n = pushBox(boxes, n, _s.x - py.halfWidth, _s.y - 0.05, py.front, _s.x + py.halfWidth, wingLowerY(_s.x), py.rear);
-  }
-  for (const st of sim.stores.stations) {
-    if (st.station === podStation) continue;
-    const env = stationEnvelope(st);
-    if (!env) continue;
-    stationPoint(st.station, _s);
     n = pushBox(
       boxes,
       n,
-      _s.x - env.halfWidth,
-      _s.y - env.depth,
-      _s.z + env.front,
-      _s.x + env.halfWidth,
-      _s.y,
-      _s.z + env.rear,
+      _s.x - py.halfWidth,
+      _s.y - 0.05,
+      py.front,
+      _s.x + py.halfWidth,
+      wingLowerY(_s.x),
+      py.rear,
     );
+  }
+  for (const st of sim.stores.stations) {
+    const s = st.station;
+    if (s > 0 && s < internal.maskLoads.length) internal.maskLoads[s] = stationLoadCode(sim, s);
+    if (s === podStation) continue;
+    stationPoint(s, _s);
+    const rack = st.rack ? MASK_RACKS[st.rack] : undefined;
+    if (rack) {
+      n = pushOffset(boxes, n, rack.structure);
+      const first = firstMount(sim, s);
+      for (let k = 0; k < st.stores.length; k++) {
+        const mount = rack.mounts[first + k];
+        if (mount) n = pushOffset(boxes, n, mount);
+      }
+    } else if (st.stores.length > 0) {
+      const b = MASK_STORES[st.stores[0]];
+      if (b) n = pushOffset(boxes, n, b);
+    }
   }
   internal.maskCount = n;
   internal.maskStation = podStation;

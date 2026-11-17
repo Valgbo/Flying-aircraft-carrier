@@ -7,8 +7,17 @@
  * symbology that stays fixed to the world. The red ring on the ground is the predicted gun
  * impact point (avionics fire control on a flat world); the pipper must sit on it.
  *
- * URL (all optional): preset=cruise|dive|shallow|turn|pullup|ccip|ccrp|night  head=x,y,z (cm)
- *   look=yaw,pitch (deg)  fov=<deg>  mode=NAV|GUNS|CCIP|CCRP  clip=stencil|analytic  ui=0
+ * Stores (wave 2): the avionics' own fire control computes the release solution for the
+ * selected profile (Mk-82 ballistics, rockets, GBU-12…) against the steerpoint/SPI, and its
+ * delivery logic answers the pickle (consent designation, CCRP arming); release requests are
+ * dropped (nothing flies here). Presets show each store state: CCIP fall line and minimum-range
+ * staple, the delay cue below the glass, the consent designation and steering, rockets, CCRP
+ * steering at a chosen time to release (the falling release cue in the last seconds), the time
+ * of fall of a bomb in the air, CCRP INVALID, and the SPI, pod and Maverick marks.
+ *
+ * URL (all optional): preset=cruise|dive|shallow|turn|pullup|ccip|delay|consent|rockets|ccrp|
+ *   ccrpcue|tof|passed|invalid|sensors|night  head=x,y,z (cm)  look=yaw,pitch (deg)  fov=<deg>
+ *   mode=NAV|GUNS|CCIP|CCRP  clip=stencil|analytic  ui=0
  *   stpt=<name>             steerpoint name (any text: checks the stroke font)
  *   post=stencil|nostencil  draw through an offscreen HDR target with a tone-mapping pass, as
  *                           the High preset's post-processing does (with or without stencil)
@@ -36,13 +45,9 @@ import {
   OrthographicCamera,
   WebGLRenderTarget,
 } from 'three';
-import { stepFireControl } from '../../core/avionics';
-import {
-  bodyDirFromHudAngles,
-  hudAnglesFromBodyDir,
-  quaternionFromAttitude,
-  worldToBody,
-} from '../../core/frames';
+import { spiToSteerpoint, stepFireControl } from '../../core/avionics';
+import { stepSensors } from '../../core/sensors';
+import { bodyDirFromHudAngles, quaternionFromAttitude } from '../../core/frames';
 import { createSim } from '../../core/sim';
 import type { Sim } from '../../core/types';
 import { DEG, FT, KT } from '../../core/units';
@@ -56,8 +61,6 @@ import { a10Env } from '../../view/environment/env';
 import { A10_PRIORITY } from '../../view/frame';
 import { registerRenderPass } from '../../view/pipeline';
 import RenderPipeline from '../../view/RenderPipeline';
-import { belowGlass } from '../../view/hud/hudMath';
-import { HUD_GLASS } from '../../view/hud/hudLayout';
 import { hudHandle, useHudPass } from '../../view/hud/HudView';
 
 // ---------------------------------------------------------------------------------------------
@@ -96,6 +99,24 @@ interface Params {
   rounds: number;
   daylight: number;
   analyticClip: boolean;
+  // ---- stores (wave 2) ----
+  /** Selected weapon profile (the avionics' profile id). */
+  store: string;
+  /** The pickle (weapon release) held. */
+  pickle: boolean;
+  /** Fly along the ground track (the countdowns run); altitude stays at the slider's. */
+  fly: boolean;
+  /**
+   * CCRP target placed for this time to release, s (negative: that long past the release
+   * point; 0: the target 4 km ahead, `targetDeg` right).
+   */
+  ccrpLead: number;
+  /** Bearing of the target from the ground track, deg (+ right). */
+  targetDeg: number;
+  /** A bomb in the air: its time to impact when the preset starts, s (0 none). */
+  tof: number;
+  /** Targeting pod tracking the target and the SPI; a Maverick locked on another tank. */
+  sensors: boolean;
 }
 
 const DEFAULTS: Params = {
@@ -130,6 +151,13 @@ const DEFAULTS: Params = {
   rounds: 1150,
   daylight: 1,
   analyticClip: false,
+  store: 'MK82LD',
+  pickle: false,
+  fly: false,
+  ccrpLead: 0,
+  targetDeg: 15,
+  tof: 0,
+  sensors: false,
 };
 
 const PRESETS: Record<string, Partial<Params>> = {
@@ -165,8 +193,97 @@ const PRESETS: Record<string, Partial<Params>> = {
     pullUp: true,
     altAlert: true,
   },
-  ccip: { mode: 'CCIP', arm: 'ARM', pitchDeg: -30, alphaDeg: 2.5, iasKt: 300, altFt: 4500 },
-  ccrp: { mode: 'CCRP', arm: 'ARM', pitchDeg: 2, alphaDeg: 4, iasKt: 300, altFt: 6000 },
+  // Mk-82 CCIP in a 45° dive: the pipper on the glass, the fall line from the velocity vector
+  // through it, the minimum-range staple on it.
+  ccip: { mode: 'CCIP', arm: 'ARM', pitchDeg: -45, alphaDeg: 2, iasKt: 350, altFt: 3000 },
+  // Shallow: the pipper is below the glass — dashed fall line and the delay cue.
+  delay: { mode: 'CCIP', arm: 'ARM', pitchDeg: -5, alphaDeg: 3, iasKt: 300, altFt: 3000 },
+  // The same with the pickle held: the designated target, steering and the time to release.
+  consent: {
+    mode: 'CCIP',
+    arm: 'ARM',
+    pitchDeg: -5,
+    alphaDeg: 3,
+    iasKt: 300,
+    altFt: 3000,
+    pickle: true,
+  },
+  rockets: {
+    mode: 'CCIP',
+    arm: 'ARM',
+    store: 'M156-131',
+    pitchDeg: -15,
+    alphaDeg: 2.5,
+    iasKt: 300,
+    altFt: 2500,
+  },
+  // CCRP on the SPI: 12 s to release, the target 8° right of the track.
+  ccrp: {
+    mode: 'CCRP',
+    arm: 'ARM',
+    pitchDeg: 2,
+    alphaDeg: 4,
+    iasKt: 300,
+    altFt: 6000,
+    ccrpLead: 12,
+    targetDeg: 8,
+  },
+  // The last seconds: the solution cue falls to the velocity vector.
+  ccrpcue: {
+    mode: 'CCRP',
+    arm: 'ARM',
+    pitchDeg: 2,
+    alphaDeg: 4,
+    iasKt: 300,
+    altFt: 6000,
+    ccrpLead: 3,
+    targetDeg: 0,
+  },
+  // A GBU-12 falling: its time of fall counts down (to time the laser).
+  tof: {
+    mode: 'CCRP',
+    arm: 'ARM',
+    store: 'GBU12',
+    pitchDeg: 2,
+    alphaDeg: 4,
+    iasKt: 300,
+    altFt: 8000,
+    ccrpLead: 20,
+    targetDeg: 0,
+    tof: 24,
+    sensors: true,
+  },
+  // Past the release point: the cue below the velocity vector, no countdown.
+  passed: {
+    mode: 'CCRP',
+    arm: 'ARM',
+    pitchDeg: 2,
+    alphaDeg: 4,
+    iasKt: 300,
+    altFt: 6000,
+    ccrpLead: -4,
+    targetDeg: 0,
+  },
+  // CCRP with a weapon that has no CCRP (rockets): CCRP INVALID.
+  invalid: {
+    mode: 'CCRP',
+    arm: 'ARM',
+    store: 'M156-131',
+    pitchDeg: 2,
+    alphaDeg: 4,
+    iasKt: 300,
+    altFt: 6000,
+  },
+  // The pod tracks the target (SPI generator: diamond with a tail), a Maverick locked nearby.
+  sensors: {
+    mode: 'NAV',
+    pitchDeg: -12,
+    alphaDeg: 3,
+    iasKt: 280,
+    altFt: 5000,
+    targetDeg: 4,
+    sensors: true,
+  },
   night: { daylight: 0.05 },
 };
 
@@ -199,17 +316,24 @@ function getFakeSim(): Sim | null {
 }
 
 const _dir = new Vector3();
-const _rel = new Vector3();
-const _eyeW = new Vector3();
 const _headQ = new Quaternion();
 const _euler = new Euler(0, 0, 0, 'YXZ');
-const _ang = { az: 0, el: 0 };
+
+/** Where the sandbox's aircraft has flown (fly on), m. */
+const flown = { x: 0, z: 0, tofStart: 0 };
+/** The tanks around the target (offsets from the steerpoint, m), as SandboxWorld draws them. */
+const TANKS = [0, 1, 2, 3].map((i) => new Vector3((i - 1.5) * 22, 1.2, (i % 2) * 15 - 7));
+/** The last error thrown by the avionics' fire control (modules are written in parallel). */
+let fireControlError = '';
 
 function createFakeSim(): Sim {
+  // The tank hunter's loadout: rockets, GBU-12s, Mk-82s, Mavericks and the pod; the avionics
+  // makes one profile per store type (MK82LD, GBU12, M156-131, AGM65D, AGM65H).
   const sim = createSim({
     terrain: TERRAIN,
     scenario: 'empty',
     seed: 7,
+    loadoutId: 'tankHunter',
     start: { x: 0, z: 0, agl: 2400, heading: 0, speed: 130 },
   });
   const sp = sim.avionics.steerpoints;
@@ -220,29 +344,71 @@ function createFakeSim(): Sim {
   sp.push({ id: 1, name: name ?? 'TGT1', position: new Vector3(0, 0, 0) });
   sp.push({ id: 2, name: 'IP', position: new Vector3(0, 0, 0) });
   sim.avionics.activeSteerpoint = 0;
-  sim.avionics.profiles.length = 0;
-  sim.avionics.profiles.push({
-    id: 'mk82-ccip',
-    store: 'MK-82',
-    mode: 'CCIP',
-    release: 'SGL',
-    rippleQty: 1,
-    rippleSpacing: 0,
-    fuze: 'NOSE',
-    minAltitude: 300,
-    armingTime: 4,
-  });
-  sim.avionics.selectedProfile = 'mk82-ccip';
+  // One step of the sensors module makes the Maverick seekers of the loaded missiles (the
+  // sandbox then sets their state by hand; the module is not stepped again).
+  try {
+    stepSensors(sim, 1 / 120);
+  } catch (e) {
+    fireControlError = `sensors: ${e instanceof Error ? e.message : String(e)}`;
+  }
   return sim;
 }
 
+/** Select the profile `id` (its delivery set to the master mode when it can do that). */
+function selectProfile(sim: Sim, id: string): void {
+  const av = sim.avionics;
+  const p = av.profiles.find((q) => q.id === id) ?? av.profiles[0];
+  if (!p) return;
+  av.selectedProfile = p.id;
+  if ((P.mode === 'CCIP' || P.mode === 'CCRP') && p.mode !== 'NONE') {
+    const store = p.store;
+    // Bombs do both; rockets are CCIP only, laser-guided bombs CCRP only (the avionics knows).
+    if (P.mode === 'CCRP' && !store.startsWith('LAU')) p.mode = 'CCRP';
+    else if (P.mode === 'CCIP' && store !== 'GBU-12') p.mode = 'CCIP';
+  }
+}
+
+/**
+ * The pod tracking the target (point track, the SPI generator) and the selected Maverick locked
+ * on another tank — set by hand (the sensors module is not stepped here), or both off.
+ */
+function applySensors(sim: Sim): void {
+  const av = sim.avionics;
+  const tgp = sim.sensors.tgp;
+  const target = av.steerpoints[0].position;
+  const eye = _dir
+    .set(A10_GEOMETRY.eye.x, A10_GEOMETRY.eye.y, A10_GEOMETRY.eye.z)
+    .applyQuaternion(sim.aircraft.orientation)
+    .add(sim.aircraft.position);
+  av.tgpPower = P.sensors;
+  tgp.powered = P.sensors;
+  tgp.warmup = 0;
+  tgp.mode = 'POINT';
+  tgp.point.copy(target).add(TANKS[1]);
+  tgp.pointValid = P.sensors;
+  tgp.los.subVectors(tgp.point, eye).normalize();
+  const mav = sim.sensors.mavericks[0];
+  if (mav) {
+    sim.sensors.selectedMaverick = P.sensors ? 0 : -1;
+    mav.powered = P.sensors;
+    mav.align = 0;
+    mav.locked = P.sensors;
+    mav.lockPoint.copy(target).add(TANKS[3]);
+    mav.los.subVectors(mav.lockPoint, eye).normalize();
+  }
+  if (P.sensors) {
+    av.spi.valid = true;
+    av.spi.source = 'TGP';
+    av.spi.position.copy(tgp.point);
+  } else spiToSteerpoint(sim);
+}
+
 /** Write the panel's state into the fake simulation (no stepping: the HUD only reads it). */
-function applyParams(sim: Sim, time: number): void {
+function applyParams(sim: Sim, time: number, dt = 0): void {
   const ac = sim.aircraft;
   const av = sim.avionics;
   sim.time = time;
   const alt = P.altFt * FT;
-  ac.position.set(0, alt, 0);
   quaternionFromAttitude(P.headingDeg * DEG, P.pitchDeg * DEG, P.bankDeg * DEG, ac.orientation);
   ac.heading = (((P.headingDeg % 360) + 360) % 360) * DEG;
   ac.pitch = P.pitchDeg * DEG;
@@ -251,11 +417,19 @@ function applyParams(sim: Sim, time: number): void {
   // The velocity vector sits alpha below the nose and `drift` to the side.
   bodyDirFromHudAngles(P.driftDeg * DEG, -P.alphaDeg * DEG, _dir).applyQuaternion(ac.orientation);
   ac.velocity.copy(_dir).multiplyScalar(tas);
+  if (P.fly) {
+    flown.x += ac.velocity.x * dt;
+    flown.z += ac.velocity.z * dt;
+  }
+  ac.position.set(flown.x, alt, flown.z);
+  ac.prevPosition.copy(ac.position);
+  ac.prevOrientation.copy(ac.orientation);
+  ac.prevVelocity.copy(ac.velocity);
   ac.tas = tas;
   ac.ias = P.iasKt * KT;
   ac.alpha = P.alphaDeg * DEG;
   ac.altitude = alt;
-  ac.agl = alt - TERRAIN.heightAt(0, 0);
+  ac.agl = alt - TERRAIN.heightAt(ac.position.x, ac.position.z);
   ac.verticalSpeed = ac.velocity.y;
   ac.groundSpeed = Math.hypot(ac.velocity.x, ac.velocity.z);
   ac.gLoad = P.g;
@@ -268,11 +442,21 @@ function applyParams(sim: Sim, time: number): void {
   av.masterArm = P.arm;
   av.gunPac = P.gunPac;
   sim.gun.rounds = P.rounds;
+  selectProfile(sim, P.store);
+  sim.input.weaponRelease = P.pickle;
+  applySensors(sim);
 
-  // Gun solution: the fire-control computer on the flat world, or the manual sliders.
+  // Fire control: the avionics' own (gun, stores and the pickle), then the manual gun sliders.
+  try {
+    stepFireControl(sim, 1 / 120);
+    fireControlError = '';
+  } catch (e) {
+    fireControlError = e instanceof Error ? e.message : String(e);
+  }
+  // Nothing executes releases in the sandbox.
+  sim.stores.releaseQueue.length = 0;
   const g = av.gun;
   if (P.pipperAuto) {
-    stepFireControl(sim, 1 / 120);
     if (!P.gunValid) g.valid = false;
   } else {
     g.valid = P.gunValid;
@@ -284,55 +468,52 @@ function applyParams(sim: Sim, time: number): void {
   }
   if (P.tooClose) g.tooClose = true;
   if (P.tooFar) g.tooFar = true;
+  // A bomb in the air (the computer's time to impact, counting down from the preset's start).
+  if (P.tof > 0) av.release.timeToImpact = Math.max(0, P.tof - (time - flown.tofStart));
+}
 
-  // A simple bomb solution for the CCIP/CCRP symbology (sandbox only: vacuum drop).
-  const rel = av.release;
-  const vy = ac.velocity.y;
-  const tFall = (vy + Math.sqrt(vy * vy + 2 * 9.81 * Math.max(1, ac.agl))) / 9.81;
-  const cockpitEye = A10_GEOMETRY.eye;
-  _eyeW
-    .set(cockpitEye.x, cockpitEye.y, cockpitEye.z)
-    .applyQuaternion(ac.orientation)
-    .add(ac.position);
-  if (P.mode === 'CCIP') {
-    rel.impact.set(ac.position.x + ac.velocity.x * tFall, 0, ac.position.z + ac.velocity.z * tFall);
-    _rel.subVectors(rel.impact, _eyeW);
-    worldToBody(ac.orientation, _rel, _rel);
-    hudAnglesFromBodyDir(_rel, _ang);
-    rel.az = _ang.az;
-    rel.el = _ang.el;
-    rel.valid = true;
-    rel.timeOfFall = tFall;
-    rel.timeToRelease = 0;
-    rel.belowMinimum = ac.agl < 300;
-    rel.belowGlass = belowGlass(A10_GEOMETRY.eye, _rel, HUD_GLASS);
-  } else if (P.mode === 'CCRP') {
-    const tgt = av.steerpoints[0].position;
-    rel.impact.copy(tgt);
-    _rel.subVectors(tgt, _eyeW);
-    worldToBody(ac.orientation, _rel, _rel);
-    hudAnglesFromBodyDir(_rel, _ang);
-    rel.az = _ang.az;
-    rel.el = _ang.el;
-    rel.valid = true;
-    const dist = Math.hypot(tgt.x - ac.position.x, tgt.z - ac.position.z);
-    rel.timeOfFall = tFall;
-    rel.timeToRelease = Math.max(0, (dist - ac.groundSpeed * tFall) / Math.max(1, ac.groundSpeed));
+/**
+ * Place the target `lead` seconds of flight before the CCRP release point, `targetDeg` off the
+ * ground track: start from a vacuum estimate and correct with the computer's own time to
+ * release (a few passes of the real fire control).
+ */
+function placeCcrpTarget(sim: Sim, lead: number, time: number): void {
+  const av = sim.avionics;
+  const ac = sim.aircraft;
+  const sp = av.steerpoints[0].position;
+  const gs = Math.max(1, ac.groundSpeed);
+  const track = Math.atan2(ac.velocity.x, -ac.velocity.z);
+  const brg = track + P.targetDeg * DEG;
+  const fall = Math.sqrt((2 * Math.max(1, ac.agl)) / 9.81);
+  let d = gs * (fall + lead);
+  for (let k = 0; k < 6; k++) {
+    sp.set(ac.position.x + Math.sin(brg) * d, 0, ac.position.z - Math.cos(brg) * d);
+    applyParams(sim, time);
+    const rel = av.release;
+    if (!rel.valid) break;
+    // Too long to the release: the target comes closer by the difference flown.
+    d -= (rel.timeToRelease - lead) * gs;
   }
 }
 
 /**
  * Place the steerpoints: the target where the gun would hit now (so a gun preset starts with
- * the pipper on it), or 4 km ahead and 15° right when there is no gun solution; the IP behind.
+ * the pipper on it), placed for the CCRP lead, or 4 km ahead `targetDeg` right of the track
+ * (behind it for 180°); the IP behind.
  */
-function placeTargets(sim: Sim): void {
-  applyParams(sim, 0);
+function placeTargets(sim: Sim, time = 0): void {
+  flown.x = 0;
+  flown.z = 0;
+  flown.tofStart = time;
+  applyParams(sim, time);
   const sp = sim.avionics.steerpoints;
   const g = sim.avionics.gun;
-  const brg = (P.headingDeg + 15) * DEG;
+  const brg = (P.headingDeg + P.targetDeg) * DEG;
   if (g.valid && P.mode === 'GUNS') sp[0].position.copy(g.impact).setY(0);
+  else if (P.mode === 'CCRP' && P.ccrpLead !== 0) placeCcrpTarget(sim, P.ccrpLead, time);
   else sp[0].position.set(Math.sin(brg) * 4000, 0, -Math.cos(brg) * 4000);
   sp[1].position.set(-Math.sin(brg) * 9000, 0, Math.cos(brg) * 9000);
+  applyParams(sim, time);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -528,10 +709,10 @@ function SandboxCockpit() {
 /** Writes the fake flight and places the world and cockpit cameras (priority camera). */
 function SandboxDriver() {
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const sim = fakeSim;
     if (!sim) return;
-    applyParams(sim, state.clock.elapsedTime);
+    applyParams(sim, state.clock.elapsedTime, Math.min(delta, 0.1));
     hudHandleClip();
     const ac = sim.aircraft;
     const e = A10_GEOMETRY.eye;
@@ -727,6 +908,38 @@ function Check(props: { label: string; k: keyof Params }) {
   );
 }
 
+/** The release solution as the avionics computed it (live). */
+function ReleaseReadout() {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => tick((v) => v + 1), 250);
+    return () => window.clearInterval(id);
+  }, []);
+  const sim = fakeSim;
+  if (!sim) return null;
+  const av = sim.avionics;
+  const r = av.release;
+  const f = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '—');
+  return (
+    <div style={{ font: '11px/1.4 ui-monospace, monospace', color: '#b8c4b8' }}>
+      <div>
+        sight {av.sight} · {r.valid ? 'valid' : 'invalid'} · {av.delivery.phase}
+      </div>
+      <div>
+        REL {f(r.timeToRelease)} s · fall {f(r.timeOfFall)} s · TTI {f(r.timeToImpact)}
+      </div>
+      <div>
+        {r.belowGlass ? 'below glass · ' : ''}
+        {r.delayCueValid ? 'delay cue · ' : ''}
+        {r.designatedValid ? 'designated · ' : ''}
+        {r.belowMinimum ? 'below min · ' : ''}
+        {r.releaseNow ? 'RELEASE' : ''}
+      </div>
+      {fireControlError && <div style={{ color: '#ff8a7a' }}>{fireControlError}</div>}
+    </div>
+  );
+}
+
 function Section(props: { title: string; children: ReactNode }) {
   return (
     <fieldset style={{ border: '1px solid #33403a', borderRadius: 4, margin: '6px 0', padding: 6 }}>
@@ -739,10 +952,21 @@ function Section(props: { title: string; children: ReactNode }) {
 function Panel() {
   const [version, setVersion] = useState(0);
   const preset = (name: string) => {
-    Object.assign(P, DEFAULTS, PRESETS[name]);
-    if (fakeSim) placeTargets(fakeSim);
+    // A preset sets the flight and weapons; the view (head, field of view, clip) stays.
+    const view = {
+      headX: P.headX,
+      headY: P.headY,
+      headZ: P.headZ,
+      headYaw: P.headYaw,
+      headPitch: P.headPitch,
+      fov: P.fov,
+      analyticClip: P.analyticClip,
+    };
+    Object.assign(P, DEFAULTS, PRESETS[name], view);
+    if (fakeSim) placeTargets(fakeSim, fakeSim.time);
     setVersion((v) => v + 1);
   };
+  const profiles = fakeSim ? fakeSim.avionics.profiles.map((p) => p.id) : [P.store];
   return (
     <div style={PANEL} key={version}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
@@ -795,6 +1019,26 @@ function Panel() {
           <Check label="too far" k="tooFar" />
         </div>
       </Section>
+      <Section title="Stores">
+        <Choice label="profile" k="store" options={profiles} />
+        <div>
+          <Check label="pickle" k="pickle" />
+          <Check label="fly" k="fly" />
+          <Check label="pod + MAV" k="sensors" />
+        </div>
+        <Slider label="CCRP lead s" k="ccrpLead" min={-20} max={40} />
+        <Slider label="target brg °" k="targetDeg" min={-60} max={180} />
+        <Slider label="TOF s" k="tof" min={0} max={40} />
+        <button
+          type="button"
+          onClick={() => {
+            if (fakeSim) placeTargets(fakeSim, fakeSim.time);
+          }}
+        >
+          place target
+        </button>
+        <ReleaseReadout />
+      </Section>
     </div>
   );
 }
@@ -807,8 +1051,16 @@ export default function HudSandbox() {
     fakeSim = createFakeSim();
     placeTargets(fakeSim);
     setReady(true);
+    // Test hook: the fake flight, the panel's parameters and what the HUD drew last.
+    const w = window as unknown as { __HUD_SANDBOX__?: unknown };
+    w.__HUD_SANDBOX__ = {
+      sim: fakeSim,
+      params: P,
+      info: () => hudHandle.current?.symbology.info ?? null,
+    };
     return () => {
       fakeSim = null;
+      delete w.__HUD_SANDBOX__;
     };
   }, []);
   return (

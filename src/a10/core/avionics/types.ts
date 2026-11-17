@@ -293,6 +293,12 @@ export interface PageState {
   tgpCodeDigit: number;
   /** MSG page: messages older than this sim time are cleared (CLR), s; −1 none. */
   msgClearTime: number;
+  /**
+   * The up-front controller's scratchpad (ufc.ts): digits typed on the UFC, entered into the
+   * field beside an OSB by pressing it (the laser codes: CODE on the DSMS and TGP pages); ''
+   * when empty.
+   */
+  scratchpad: string;
 }
 
 /**

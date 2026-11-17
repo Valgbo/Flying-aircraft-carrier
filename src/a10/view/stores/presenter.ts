@@ -9,6 +9,7 @@
  *   (assets `storeMount`) into its own path, so the hand-off is seamless whatever point the
  *   weapons module releases it from;
  * - a Mk 82 AIR's BSU-49 ballute when `body.highDrag` turns on, filling out;
+ * - a GBU-12's canards, bang-bang toward the point its guidance has (neutral without one);
  * - a rocket or missile motor while it burns (`body.motorTime`): the flame jet at the nozzle and
  *   the smoke trail left in the air, puff by puff along the exact path flown during the frame;
  *   the flash and the cloud at the launcher on `motorIgnition`;
@@ -22,11 +23,13 @@
  */
 import { Group, Mesh, Quaternion, Vector3, type Object3D } from 'three';
 import {
+  canardPivotsOf,
   createLoadedRack,
   createStoreInstance,
   getAircraftTemplates,
   podRocketMount,
   podTubesOf,
+  setCanardsLive,
   storeModelId,
   storeMount,
   type AircraftTemplates,
@@ -39,7 +42,14 @@ import { fxRandom as R } from '../effects/noise';
 import { PK } from '../effects/particleKinds';
 import type { FxContext } from '../effects/recipes';
 import { drawPose, frameInfo, type FrameInfo } from '../frame';
-import { BALLUTE_FILL, HANDOFF_BLEND, HANDOFF_MAX, MOTOR_LOOK, type MotorLook } from './look';
+import {
+  BALLUTE_FILL,
+  CANARD,
+  HANDOFF_BLEND,
+  HANDOFF_MAX,
+  MOTOR_LOOK,
+  type MotorLook,
+} from './look';
 
 /** Stations are numbered 1 … 11. */
 const STATIONS = 11;
@@ -66,6 +76,10 @@ interface DrawnBody {
   chute: Object3D | null;
   chuteScale: Vector3;
   chuteSince: number;
+  /** A GBU-12's canard pivots (index = fin; none for other stores), their axes and deflections. */
+  canards: Object3D[];
+  canardAxes: Vector3[];
+  canardDefl: number[];
   /** Body length (m): the nozzle is half of it behind the centre. */
   length: number;
   /** Drawn at least once; its detonation arrived. */
@@ -100,6 +114,9 @@ const _mq = new Quaternion();
 const _axis = new Vector3();
 const _noz = new Vector3();
 const _seg = new Vector3();
+const _los = new Vector3();
+const _err = new Vector3();
+const _qi = new Quaternion();
 
 /** Extra fields the weapons module may give a body (read defensively: not in the contract). */
 interface BodyExtras {
@@ -138,6 +155,10 @@ export function bodyDrawPose(
     outOrientation.copy(b.orientation);
   }
   return true;
+}
+
+function clamp1(x: number): number {
+  return x < -1 ? -1 : x > 1 ? 1 : x;
 }
 
 function smoothstep01(x: number): number {
@@ -196,7 +217,8 @@ export class StoresPresenter {
 
   /** The drawn body with this id, or null. */
   find(id: number): DrawnBody | null {
-    for (let i = 0; i < this.active.length; i++) if (this.active[i].id === id) return this.active[i];
+    for (let i = 0; i < this.active.length; i++)
+      if (this.active[i].id === id) return this.active[i];
     return null;
   }
 
@@ -222,6 +244,9 @@ export class StoresPresenter {
         chute: null,
         chuteScale: new Vector3(1, 1, 1),
         chuteSince: -1,
+        canards: [],
+        canardAxes: [new Vector3(), new Vector3(), new Vector3(), new Vector3()],
+        canardDefl: [0, 0, 0, 0],
         length: 1,
         drawn: false,
         dead: false,
@@ -241,6 +266,7 @@ export class StoresPresenter {
     d.pooled = false;
     d.chute = null;
     d.chuteSince = -1;
+    d.canards.length = 0;
     d.length = 1;
     d.drawn = false;
     d.dead = false;
@@ -272,6 +298,9 @@ export class StoresPresenter {
       d.chute.scale.copy(d.chuteScale);
       d.chute.visible = false;
     }
+    // canards back to neutral and merged: the model goes back to the pool
+    if (d.canards.length > 0) setCanardsLive(obj, false);
+    d.canards.length = 0;
     if (d.pooled) {
       let list = this.models.get(d.key);
       if (!list) this.models.set(d.key, (list = []));
@@ -373,7 +402,18 @@ export class StoresPresenter {
     else _p.copy(b.position).addScaledVector(b.velocity, -Math.max(0, sim.time - t));
     _axis.set(0, 0, -1).applyQuaternion(b.orientation);
     ps.groundY = ctx.groundAt(_p.x, _p.z);
-    const f = ps.spawn(PK.flash, _p.x, _p.y, _p.z, 0, 0, 0, look.launchFlash * 0.5, look.launchFlash, 0.08);
+    const f = ps.spawn(
+      PK.flash,
+      _p.x,
+      _p.y,
+      _p.z,
+      0,
+      0,
+      0,
+      look.launchFlash * 0.5,
+      look.launchFlash,
+      0.08,
+    );
     ps.emissive(f, 1.1);
     const v = sim.aircraft.velocity;
     const n = Math.max(1, Math.round(look.launchPuffs * Math.min(1.2, ctx.detail)));
@@ -451,6 +491,7 @@ export class StoresPresenter {
       }
       this.ballute(d, b, drawTime);
       this.motor(d, b, dt, ctx);
+      if (d.canards.length > 0) this.steer(d, b, dt);
     }
     for (let i = this.active.length - 1; i >= 0; i--) {
       if (this.active[i].stamp !== this.frame) this.release(i);
@@ -463,7 +504,7 @@ export class StoresPresenter {
   private attach(d: DrawnBody, b: StoreBody, t: AircraftTemplates): void {
     const x = b as StoreBody & BodyExtras;
     const carried = Array.isArray(x.carried) ? x.carried : null;
-    let obj: Group | null = null;
+    let obj: Group | null;
     if (b.kind !== 'rocket' && carried && carried.length > 0 && isRack(b.type)) {
       // a jettisoned rack with what it still carries: built for it, not pooled
       const load = b.station >= 1 && b.station <= STATIONS ? this.loads[b.station] : null;
@@ -498,6 +539,15 @@ export class StoresPresenter {
         c.visible = false;
       }
     }
+    // a GBU-12's canards, turned by its guidance (split from the kit only while it flies)
+    if (canardPivotsOf(obj, d.canards) > 0) setCanardsLive(obj, true);
+    if (d.canards.length > d.canardAxes.length) d.canards.length = d.canardAxes.length;
+    for (let k = 0; k < d.canards.length; k++) {
+      const a = d.canards[k].userData.axis as number[] | undefined;
+      d.canardAxes[k].set(a?.[0] ?? 1, a?.[1] ?? 0, a?.[2] ?? 0).normalize();
+      d.canardDefl[k] = 0;
+      d.canards[k].quaternion.identity();
+    }
     // a jettisoned rocket pod: the rockets still in it
     if (d.key && isPod(b.type)) {
       const left = typeof x.rockets === 'number' ? x.rockets : null;
@@ -526,6 +576,47 @@ export class StoresPresenter {
     c.visible = true;
     const s = 0.25 + 0.75 * fill;
     c.scale.set(d.chuteScale.x * s, d.chuteScale.y * s, d.chuteScale.z * (0.4 + 0.6 * fill));
+  }
+
+  /**
+   * A GBU-12's canards (PLAN §6.6): bang-bang — on each axis of the store, full deflection toward
+   * the point its guidance has (the spot its seeker sees) off the flight path, neutral while it
+   * has none; moving at the actuators' rate. Uses the drawn pose (_p, _q).
+   */
+  private steer(d: DrawnBody, b: StoreBody, dt: number): void {
+    let fx = 0;
+    let fy = 0;
+    const g = b.guidance;
+    const v = b.velocity.length();
+    if (g.valid && v > 1e-3) {
+      // the line of sight off the flight path, in the store's frame (x right, y up, −z forward)
+      _los.subVectors(g.point, _p);
+      const r = _los.length();
+      if (r > 1e-3) {
+        _los.multiplyScalar(1 / r);
+        _err.copy(b.velocity).multiplyScalar(1 / v);
+        _err.multiplyScalar(-_los.dot(_err)).add(_los);
+        _err.applyQuaternion(_qi.copy(_q).invert());
+        fx = Math.abs(_err.x) > CANARD.deadband ? Math.sign(_err.x) : 0;
+        fy = Math.abs(_err.y) > CANARD.deadband ? Math.sign(_err.y) : 0;
+        const n = Math.hypot(fx, fy);
+        if (n > 0) {
+          fx /= n;
+          fy /= n;
+        }
+      }
+    }
+    const step = CANARD.rate * Math.max(0, dt);
+    for (let k = 0; k < d.canards.length; k++) {
+      const a = d.canardAxes[k];
+      // a positive turn about the span raises the leading edge toward (−a.y, a.x): the canard
+      // lifts that way and the nose follows
+      const want = CANARD.max * clamp1(Math.SQRT2 * (fx * -a.y + fy * a.x));
+      const cur = d.canardDefl[k];
+      const next = cur + Math.max(-step, Math.min(step, want - cur));
+      d.canardDefl[k] = next;
+      d.canards[k].quaternion.setFromAxisAngle(a, next);
+    }
   }
 
   /** A burning motor: the flame jet and the smoke trail along this frame's path. */
@@ -566,7 +657,18 @@ export class StoresPresenter {
         );
         ps.emissive(i, R.range(0.85, 1.1) * (1 - 0.22 * k));
       }
-      const g = ps.spawn(PK.glint, _noz.x, _noz.y, _noz.z, v.x, v.y, v.z, look.glowSize, look.glowSize, Math.max(0.03, dt * 1.6));
+      const g = ps.spawn(
+        PK.glint,
+        _noz.x,
+        _noz.y,
+        _noz.z,
+        v.x,
+        v.y,
+        v.z,
+        look.glowSize,
+        look.glowSize,
+        Math.max(0.03, dt * 1.6),
+      );
       ps.emissive(g, 0.12);
       ps.color(g, 1, 0.82, 0.55);
       // the trail: puffs spread along the path flown this frame, each born when the nozzle passed

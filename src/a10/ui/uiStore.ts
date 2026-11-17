@@ -7,12 +7,27 @@
  * `store.loadoutId` (the preset) and `store.ammoLoad` (the gun load, SimOptions.ammoLoad). The
  * UI remembers them under `a10-ui-v1` ({ loadoutId, gunLoad }): persistLoadoutChoices()
  * restores them into the store when the app starts and saves every later change, whoever makes
- * it. A saved preset the weapons module no longer offers is ignored.
+ * it. A saved preset the weapons module no longer offers is ignored. The loadout screen's free
+ * choice ('custom', customLoadout.ts) and the weapons-range options (rangeOptions.ts) are
+ * remembered under keys of their own ('a10-loadout-v1', 'a10-range-v1'); 'custom' is restored as
+ * the preset only while a legal custom load is saved.
  */
 import { create } from 'zustand';
 import type { AmmoLoad } from '../core/weapons/types';
 import { useA10Store } from '../state/store';
+import {
+  CUSTOM_ID,
+  loadCustomStations,
+  saveCustomStations,
+  type CustomStations,
+} from './customLoadout';
 import { loadoutPresets } from './loadout';
+import {
+  loadRangeOptions,
+  saveRangeOptions,
+  sanitizeRangeOptions,
+  type RangeOptions,
+} from './rangeOptions';
 
 export const UI_STORAGE_KEY = 'a10-ui-v1';
 
@@ -91,7 +106,9 @@ let choicesPersisted = false;
 export function persistLoadoutChoices(): void {
   if (choicesPersisted) return;
   choicesPersisted = true;
-  const saved = loadLoadoutChoices();
+  const offered = loadoutPresets().map((p) => p.id);
+  if (loadCustomStations()) offered.push(CUSTOM_ID);
+  const saved = loadLoadoutChoices(offered);
   const store = useA10Store.getState();
   if (saved.loadoutId && saved.loadoutId !== store.loadoutId) store.setLoadout(saved.loadoutId);
   if (saved.gunLoad && saved.gunLoad !== store.ammoLoad) store.setAmmoLoad(saved.gunLoad);
@@ -109,13 +126,35 @@ export interface A10UiState {
   pauseView: PauseView;
   /** Section the settings dialog scrolls to when it opens (its element id), or null. */
   settingsSection: string | null;
+  /** The weapons-range options dialog of the main menu is open. */
+  rangeOptionsOpen: boolean;
+  /** Conditions of the next range flight (saved under 'a10-range-v1'). */
+  rangeOptions: RangeOptions;
+  /** The loadout screen's free choice (saved under 'a10-loadout-v1'; flown when loadoutId is 'custom'). */
+  customStations: CustomStations;
   setPauseView(view: PauseView): void;
   setSettingsSection(id: string | null): void;
+  setRangeOptionsOpen(open: boolean): void;
+  setRangeOptions(patch: Partial<RangeOptions>): void;
+  setCustomStations(stations: CustomStations): void;
 }
 
-export const useA10Ui = create<A10UiState>((set) => ({
+export const useA10Ui = create<A10UiState>((set, get) => ({
   pauseView: 'main',
   settingsSection: null,
+  rangeOptionsOpen: false,
+  rangeOptions: loadRangeOptions(),
+  customStations: loadCustomStations() ?? {},
   setPauseView: (pauseView) => set({ pauseView }),
   setSettingsSection: (settingsSection) => set({ settingsSection }),
+  setRangeOptionsOpen: (rangeOptionsOpen) => set({ rangeOptionsOpen }),
+  setRangeOptions: (patch) => {
+    const rangeOptions = sanitizeRangeOptions({ ...get().rangeOptions, ...patch });
+    saveRangeOptions(rangeOptions);
+    set({ rangeOptions });
+  },
+  setCustomStations: (customStations) => {
+    saveCustomStations(customStations);
+    set({ customStations });
+  },
 }));

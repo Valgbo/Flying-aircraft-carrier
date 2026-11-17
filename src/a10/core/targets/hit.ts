@@ -29,13 +29,16 @@ import type { ArmourPart, ArmourPlate, Vehicle, VehicleClassModel, VehicleHit } 
 /** A struck point may lie this far below the ground before the earth is taken to stop it, m. */
 const EARTH_TOLERANCE = 0.03;
 
-let clipPlate: ArmourPlate | null = null;
-let clipExit = 0;
+/**
+ * What the last clipPart found: the entry plate and the exit parameter. A scratch object, not two
+ * module variables: a number stored in a module variable is boxed on every store.
+ */
+const clip: { plate: ArmourPlate | null; exit: number } = { plate: null, exit: 0 };
 
 /**
  * Clip p0 + t·d, t ∈ [tMin, tMax], against a convex part (all in the part's frame). Returns the
  * entry parameter, or Infinity if the segment misses or starts inside the part. Leaves the
- * entry plate in `clipPlate` and the exit parameter in `clipExit`.
+ * entry plate in `clip.plate` and the exit parameter in `clip.exit`.
  */
 export function clipPart(
   part: ArmourPart,
@@ -95,8 +98,8 @@ export function clipPart(
     if (tIn > tOut) return Infinity;
   }
   if (!enter) return Infinity;
-  clipPlate = enter;
-  clipExit = tOut;
+  clip.plate = enter;
+  clip.exit = tOut;
   return tIn;
 }
 
@@ -161,8 +164,8 @@ export function rayVehicle(
     best = t;
     out.t = t;
     out.part = i;
-    out.plate = clipPlate;
-    out.exit = clipExit;
+    out.plate = clip.plate;
+    out.exit = clip.exit;
   }
   return best < Infinity;
 }
@@ -185,22 +188,38 @@ export function plateNormalWorld(
 const _ph: PartHit = { t: 0, part: -1, plate: null, exit: 0 };
 const _n: V3 = { x: 0, y: 0, z: 0 };
 
-// query state for the module-level visitor (no closure per call)
-let qSim: Sim | null = null;
-let qx = 0;
-let qy = 0;
-let qz = 0;
-let qdx = 0;
-let qdy = 0;
-let qdz = 0;
-let qLen2 = 0;
-let qBest = Infinity;
-let qVehicle = -1;
-let qPart = -1;
-let qPlate: ArmourPlate | null = null;
+// query state for the module-level visitor (no closure per call; fields of one scratch object,
+// so storing a number does not box it)
+const q: {
+  sim: Sim | null;
+  x: number;
+  y: number;
+  z: number;
+  dx: number;
+  dy: number;
+  dz: number;
+  len2: number;
+  best: number;
+  vehicle: number;
+  part: number;
+  plate: ArmourPlate | null;
+} = {
+  sim: null,
+  x: 0.5,
+  y: 0.5,
+  z: 0.5,
+  dx: 0.5,
+  dy: 0.5,
+  dz: 0.5,
+  len2: 0.5,
+  best: Infinity,
+  vehicle: -1,
+  part: -1,
+  plate: null,
+};
 
 function visitSegment(i: number): boolean {
-  const sim = qSim as Sim;
+  const sim = q.sim as Sim;
   const v = sim.targets.vehicles[i];
   const model: VehicleClassModel = VEHICLE_MODELS[v.kind];
   // bounding sphere (centre above the ground point; margin for pitch and roll)
@@ -208,25 +227,25 @@ function visitSegment(i: number): boolean {
   const cy = v.position.y + model.sphereY;
   const cz = v.position.z;
   const r = model.sphereR + 0.5;
-  const ox = qx - cx;
-  const oy = qy - cy;
-  const oz = qz - cz;
-  let s = -(ox * qdx + oy * qdy + oz * qdz) / qLen2;
+  const ox = q.x - cx;
+  const oy = q.y - cy;
+  const oz = q.z - cz;
+  let s = -(ox * q.dx + oy * q.dy + oz * q.dz) / q.len2;
   s = s < 0 ? 0 : s > 1 ? 1 : s;
-  const ex = ox + qdx * s;
-  const ey = oy + qdy * s;
-  const ez = oz + qdz * s;
+  const ex = ox + q.dx * s;
+  const ey = oy + q.dy * s;
+  const ez = oz + q.dz * s;
   if (ex * ex + ey * ey + ez * ez > r * r) return true;
   const pose = vehiclePose(v, model.turretZ);
-  if (rayVehicle(sim, v, pose, qx, qy, qz, qdx, qdy, qdz, 0, Math.min(1, qBest), -1, _ph)) {
+  if (rayVehicle(sim, v, pose, q.x, q.y, q.z, q.dx, q.dy, q.dz, 0, Math.min(1, q.best), -1, _ph)) {
     if (
-      _ph.t < qBest ||
-      (_ph.t === qBest && qVehicle >= 0 && v.id < sim.targets.vehicles[qVehicle].id)
+      _ph.t < q.best ||
+      (_ph.t === q.best && q.vehicle >= 0 && v.id < sim.targets.vehicles[q.vehicle].id)
     ) {
-      qBest = _ph.t;
-      qVehicle = i;
-      qPart = _ph.part;
-      qPlate = _ph.plate;
+      q.best = _ph.t;
+      q.vehicle = i;
+      q.part = _ph.part;
+      q.plate = _ph.plate;
     }
   }
   return true;
@@ -239,19 +258,19 @@ function visitSegment(i: number): boolean {
 export function segmentHitVehicle(sim: Sim, p0: Vector3, p1: Vector3, out: VehicleHit): boolean {
   const t = sim.targets;
   if (t.vehicles.length === 0) return false;
-  qSim = sim;
-  qx = p0.x;
-  qy = p0.y;
-  qz = p0.z;
-  qdx = p1.x - p0.x;
-  qdy = p1.y - p0.y;
-  qdz = p1.z - p0.z;
-  qLen2 = qdx * qdx + qdy * qdy + qdz * qdz;
-  if (qLen2 < 1e-12) return false;
-  qBest = Infinity;
-  qVehicle = -1;
-  qPart = -1;
-  qPlate = null;
+  q.sim = sim;
+  q.x = p0.x;
+  q.y = p0.y;
+  q.z = p0.z;
+  q.dx = p1.x - p0.x;
+  q.dy = p1.y - p0.y;
+  q.dz = p1.z - p0.z;
+  q.len2 = q.dx * q.dx + q.dy * q.dy + q.dz * q.dz;
+  if (q.len2 < 1e-12) return false;
+  q.best = Infinity;
+  q.vehicle = -1;
+  q.part = -1;
+  q.plate = null;
   forEachNear(
     t,
     Math.min(p0.x, p1.x),
@@ -260,7 +279,7 @@ export function segmentHitVehicle(sim: Sim, p0: Vector3, p1: Vector3, out: Vehic
     Math.max(p0.z, p1.z),
     visitSegment,
   );
-  qSim = null;
+  q.sim = null;
   return finishHit(sim, p0, out);
 }
 
@@ -268,22 +287,22 @@ export function segmentHitVehicle(sim: Sim, p0: Vector3, p1: Vector3, out: Vehic
 function finishHit(sim: Sim, p0: Vector3, out: VehicleHit): boolean {
   const t = sim.targets;
   // (the visitor sets these; TypeScript cannot see that through the callback)
-  const plate = qPlate as ArmourPlate | null;
-  const vi = qVehicle as number;
+  const plate = q.plate as ArmourPlate | null;
+  const vi = q.vehicle as number;
   if (vi < 0 || !plate) return false;
   const v = t.vehicles[vi];
   const model = VEHICLE_MODELS[v.kind];
-  const part = model.parts[qPart];
+  const part = model.parts[q.part];
   plateNormalWorld(vehiclePose(v, model.turretZ), part, plate, _n);
   out.vehicleId = v.id;
-  out.t = qBest;
-  out.point.set(p0.x + qdx * qBest, p0.y + qdy * qBest, p0.z + qdz * qBest);
+  out.t = q.best;
+  out.point.set(p0.x + q.dx * q.best, p0.y + q.dy * q.best, p0.z + q.dz * q.best);
   out.normal.set(_n.x, _n.y, _n.z);
   out.thicknessMm = plate.thicknessMm;
   out.part = part.part;
   out.face = plate.face;
   out.plate = plate.index;
-  out.partIndex = qPart;
+  out.partIndex = q.part;
   return true;
 }
 
@@ -293,21 +312,21 @@ function finishHit(sim: Sim, p0: Vector3, out: VehicleHit): boolean {
  */
 export function segmentHitVehicleAll(sim: Sim, p0: Vector3, p1: Vector3, out: VehicleHit): boolean {
   const t = sim.targets;
-  qSim = sim;
-  qx = p0.x;
-  qy = p0.y;
-  qz = p0.z;
-  qdx = p1.x - p0.x;
-  qdy = p1.y - p0.y;
-  qdz = p1.z - p0.z;
-  qLen2 = qdx * qdx + qdy * qdy + qdz * qdz;
-  if (qLen2 < 1e-12 || t.vehicles.length === 0) return false;
-  qBest = Infinity;
-  qVehicle = -1;
-  qPart = -1;
-  qPlate = null;
+  q.sim = sim;
+  q.x = p0.x;
+  q.y = p0.y;
+  q.z = p0.z;
+  q.dx = p1.x - p0.x;
+  q.dy = p1.y - p0.y;
+  q.dz = p1.z - p0.z;
+  q.len2 = q.dx * q.dx + q.dy * q.dy + q.dz * q.dz;
+  if (q.len2 < 1e-12 || t.vehicles.length === 0) return false;
+  q.best = Infinity;
+  q.vehicle = -1;
+  q.part = -1;
+  q.plate = null;
   for (let i = 0; i < t.vehicles.length; i++) visitSegment(i);
-  qSim = null;
+  q.sim = null;
   return finishHit(sim, p0, out);
 }
 

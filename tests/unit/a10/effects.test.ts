@@ -128,7 +128,11 @@ describe('detonations: each kind has its recipe', () => {
   camera.position.set(0, 400, 500);
   camera.lookAt(0, 0, 0);
 
-  function run(events: SimEvent[], seconds: number, step = 1 / 30): { fx: Fx; sim: ReturnType<typeof createSim> } {
+  function run(
+    events: SimEvent[],
+    seconds: number,
+    step = 1 / 30,
+  ): { fx: Fx; sim: ReturnType<typeof createSim> } {
     const sim = createSim({ terrain: createFlatTerrain(0), scenario: 'empty', seed: 1 });
     sim.world.surfaceWind.set(4, 0, 0);
     setViewSimSource(() => sim);

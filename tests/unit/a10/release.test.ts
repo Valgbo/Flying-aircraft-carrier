@@ -68,7 +68,10 @@ function accel(p: Vector3, v: Vector3, w: Vector3, out: Vector3): Vector3 {
   const s = _air.length();
   const rho = densityAt(p.y);
   const k = (0.5 * rho * cdOf(s / speedOfSoundAt(p.y)) * AREA * s) / MASS;
-  return out.copy(_air).multiplyScalar(-k).setY(out.y - G0);
+  return out
+    .copy(_air)
+    .multiplyScalar(-k)
+    .setY(out.y - G0);
 }
 const _a0 = new Vector3();
 const _a1 = new Vector3();
@@ -127,7 +130,11 @@ function makePath(
   const h = headingDeg * DEG;
   const g = pathDeg * DEG;
   const s = tasKt * KT;
-  const v = new Vector3(Math.sin(h) * Math.cos(g) * s, Math.sin(g) * s, -Math.cos(h) * Math.cos(g) * s);
+  const v = new Vector3(
+    Math.sin(h) * Math.cos(g) * s,
+    Math.sin(g) * s,
+    -Math.cos(h) * Math.cos(g) * s,
+  );
   v.add(windAt(sim.world, ref, new Vector3()));
   const q = quaternionFromAttitude(h, g + aoaDeg * DEG, 0, new Quaternion());
   return { p0: new Vector3(), v, q };
@@ -186,7 +193,10 @@ const _th: TerrainHit = {
 function executeAndFly(sim: Sim, path: Path, req: ReleaseRequest, model: StoreBallistics): Flown {
   const st = A10_GEOMETRY.stations[req.station]!;
   const r = new Vector3(st.x, st.y, st.z);
-  const pos = r.clone().applyQuaternion(path.q).add(pathPos(path, req.time, new Vector3()));
+  const pos = r
+    .clone()
+    .applyQuaternion(path.q)
+    .add(pathPos(path, req.time, new Vector3()));
   const e = model.ejection;
   const vel = new Vector3(e.x, e.y, e.z).applyQuaternion(path.q).add(path.v);
   const origin = pos.clone();
@@ -203,7 +213,8 @@ function executeAndFly(sim: Sim, path: Path, req: ReleaseRequest, model: StoreBa
     prev.copy(pos);
     model.integrate(pos, vel, wind, h, since);
     since += h;
-    if (terrain.segmentHit(prev, pos, _th)) return { req, origin, velocity, impact: _th.point.clone() };
+    if (terrain.segmentHit(prev, pos, _th))
+      return { req, origin, velocity, impact: _th.point.clone() };
     t = next;
   }
   return { req, origin, velocity, impact: null };
@@ -235,7 +246,12 @@ interface RunOptions {
  * Step a kinematic flight for `seconds`: the aircraft on the path, the release requests executed
  * (self or the weapons module), the fire control. Returns the requests and what they did.
  */
-function fly(sim: Sim, path: Path, seconds: number, opts: RunOptions): { flown: Flown[]; events: SimEvent[] } {
+function fly(
+  sim: Sim,
+  path: Path,
+  seconds: number,
+  opts: RunOptions,
+): { flown: Flown[]; events: SimEvent[] } {
   const flown: Flown[] = [];
   const events: SimEvent[] = [];
   const n = Math.round(seconds / SIM_DT);
@@ -245,11 +261,12 @@ function fly(sim: Sim, path: Path, seconds: number, opts: RunOptions): { flown: 
     holdOnPath(sim, path, t0 + SIM_DT);
     if (opts.executor !== 'weapons') {
       const q = sim.stores.releaseQueue;
-      for (let k = 0; k < q.length; ) {
+      for (let k = 0; k < q.length;) {
         if (q[k].time < t0 + SIM_DT) {
           const req = q.splice(k, 1)[0];
           leaveStation(sim, req);
-          if (opts.executor === 'self') flown.push(executeAndFly(sim, path, req, opts.model ?? testBomb));
+          if (opts.executor === 'self')
+            flown.push(executeAndFly(sim, path, req, opts.model ?? testBomb));
           else flown.push({ req, origin: new Vector3(), velocity: new Vector3(), impact: null });
         } else k++;
       }
@@ -275,7 +292,12 @@ function bombSim(terrain: Terrain, loadoutId = 'rangeTraining', seed = 5): Sim {
 }
 
 /** Select the profile of a store, a master mode, Master Arm. */
-function setUp(sim: Sim, store: string, mode: 'CCIP' | 'CCRP', arm: 'ARM' | 'TRAIN' | 'SAFE' = 'ARM'): void {
+function setUp(
+  sim: Sim,
+  store: string,
+  mode: 'CCIP' | 'CCRP',
+  arm: 'ARM' | 'TRAIN' | 'SAFE' = 'ARM',
+): void {
   const av = sim.avionics;
   const p = av.profiles.find((x) => x.store === store);
   if (!p) throw new Error(`no profile for ${store}`);
@@ -302,7 +324,12 @@ const _rv = new Vector3();
  * Where the computer's CCIP pipper was at the instant a request leaves: the impact predicted for
  * the exact release state (the wind measured at the aircraft), i.e. the pipper's ground point.
  */
-function pipperAtRelease(sim: Sim, path: Path, req: ReleaseRequest, model: StoreBallistics): Vector3 {
+function pipperAtRelease(
+  sim: Sim,
+  path: Path,
+  req: ReleaseRequest,
+  model: StoreBallistics,
+): Vector3 {
   const t = sim.time;
   // Place the aircraft at the release instant to read its state the way the computer does.
   holdOnPath(sim, path, req.time);
@@ -314,7 +341,10 @@ function pipperAtRelease(sim: Sim, path: Path, req: ReleaseRequest, model: Store
   return _pred.point.clone();
 }
 
-function horiz(a: Vector3 | { x: number; z: number }, b: Vector3 | { x: number; z: number }): number {
+function horiz(
+  a: Vector3 | { x: number; z: number },
+  b: Vector3 | { x: number; z: number },
+): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
 
@@ -435,7 +465,11 @@ describe('Bomb CCIP (PLAN §16): 30° dive, 300 kn, released 1,500 m above the t
 // ---------------------------------------------------------------------------------------------
 
 /** Along-track distance (on the path's ground track) from a to b, m. */
-function alongTrack(path: Path, a: Vector3 | { x: number; z: number }, b: Vector3 | { x: number; z: number }): number {
+function alongTrack(
+  path: Path,
+  a: Vector3 | { x: number; z: number },
+  b: Vector3 | { x: number; z: number },
+): number {
   const vg = Math.hypot(path.v.x, path.v.z);
   return ((b.x - a.x) * path.v.x + (b.z - a.z) * path.v.z) / vg;
 }
@@ -579,7 +613,14 @@ function ccrpRun(
     each(s, t) {
       s.input.weaponRelease = true;
       const rel = s.avionics.release;
-      if (rel.valid) track.push({ t, ttr: rel.timeToRelease, cue: rel.cueEl, az: rel.azimuthError, tof: rel.timeToImpact });
+      if (rel.valid)
+        track.push({
+          t,
+          ttr: rel.timeToRelease,
+          cue: rel.cueEl,
+          az: rel.azimuthError,
+          tof: rel.timeToImpact,
+        });
     },
   });
   return { sim, path, run, target, track };
@@ -676,7 +717,11 @@ describe('GBU-12 (PLAN §6.6)', () => {
           model,
           each(s, t) {
             s.input.weaponRelease = true;
-            track.push({ t, tti: s.avionics.release.timeToImpact, tof: s.avionics.release.timeOfFall });
+            track.push({
+              t,
+              tti: s.avionics.release.timeToImpact,
+              tof: s.avionics.release.timeOfFall,
+            });
           },
         });
         return { run, track, target };
@@ -738,7 +783,8 @@ function recordedImpact(sim: Sim, events: SimEvent[]): { req: number; impact: Ve
   for (const e of events) {
     if (e.type !== 'storeReleased') continue;
     const r = sim.debrief.weapons.find((w) => w.bodyId === e.bodyId);
-    if (r && Number.isFinite(r.impact.x)) out.push({ req: e.bodyId, impact: new Vector3(r.impact.x, r.impact.y, r.impact.z) });
+    if (r && Number.isFinite(r.impact.x))
+      out.push({ req: e.bodyId, impact: new Vector3(r.impact.x, r.impact.y, r.impact.z) });
   }
   return out;
 }
@@ -821,7 +867,9 @@ describe('pairs and ripples (PLAN §6.5): timing and station order', () => {
     expect(a[0].station).toBe(first);
     expect(b[0].station).toBe(first === 3 ? 9 : 3);
     expect(c[0].station).toBe(first);
-    console.log(`[release] single releases from stations ${a[0].station}, ${b[0].station}, ${c[0].station} (moment rule)`);
+    console.log(
+      `[release] single releases from stations ${a[0].station}, ${b[0].station}, ${c[0].station} (moment rule)`,
+    );
     for (const r of [a[0], b[0], c[0]]) {
       expect(r.delivery).toBe('CCIP');
       expect(r.fuze).toBe('NOSE');
@@ -903,7 +951,10 @@ describe('pairs and ripples (PLAN §6.5): timing and station order', () => {
       anchorPath(path2, start, 0);
       setUp(s2, 'MK-82', 'CCRP');
       setSpi(s2, target);
-      const run = fly(s2, path2, 70, { executor: 'self', each: (x) => (x.input.weaponRelease = true) });
+      const run = fly(s2, path2, 70, {
+        executor: 'self',
+        each: (x) => (x.input.weaponRelease = true),
+      });
       expect(run.flown).toHaveLength(4);
       const along = run.flown.map((f) => alongTrack(path2, target, f.impact!));
       const centre = along.reduce((a, b) => a + b, 0) / 4;
@@ -1108,7 +1159,11 @@ describe('determinism', () => {
   it('the same flight gives the same release requests, times, aims and HUD solution', () => {
     const snap = () => {
       const { sim, run } = withModel('MK-82', testBomb, () => consentDive('self', 15, testBomb));
-      return JSON.stringify({ reqs: run.flown.map((f) => f.req), rel: sim.avionics.release, d: sim.avionics.delivery });
+      return JSON.stringify({
+        reqs: run.flown.map((f) => f.req),
+        rel: sim.avionics.release,
+        d: sim.avionics.delivery,
+      });
     };
     const a = snap();
     const b = snap();

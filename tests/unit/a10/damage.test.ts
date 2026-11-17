@@ -25,12 +25,25 @@ import {
   type VehicleHit,
   type VehicleKind,
 } from '../../../src/a10/core/targets';
+import {
+  evaluateCondition,
+  explode,
+  updateComponentHealth,
+} from '../../../src/a10/core/targets/state';
 import type { Sim, SimEvent } from '../../../src/a10/core/types';
 import { RoundType } from '../../../src/a10/core/weapons';
 import { createFlatTerrain } from '../../../src/a10/core/world';
-import { BLAST, BLAST_THRESHOLDS, FRAGMENTS, VEHICLE_SHAPES } from '../../../src/a10/data/vehicles';
+import {
+  BLAST,
+  BLAST_THRESHOLDS,
+  COMPONENT_VULNERABILITY,
+  FRAGMENTS,
+  ROUND_EFFECTS,
+  VEHICLE_SHAPES,
+} from '../../../src/a10/data/vehicles';
 
 const DT = 1 / 120;
+const DEG = Math.PI / 180;
 /** Timeout for the tests that simulate minutes of fire (slow on a loaded machine). */
 const SLOW = 60_000;
 
@@ -507,8 +520,250 @@ describe('fragments (statistical model)', () => {
     applyBlast(sim, r!.hit.point, 0.055, 0.28, 'HEI');
     expect(v.hits).toBe(1);
     expect(sim.debrief.hits.filter((h) => h.vehicleId === v.id).length).toBe(1);
-    // a burst elsewhere still counts
-    applyBlast(sim, new Vector3(0, 0.3, 5), 0.055, 0.28, 'HEI');
-    expect(sim.debrief.hits.length).toBeGreaterThanOrEqual(1);
+    // a burst elsewhere (a round on the ground beside the truck) still counts (review TE-4: this
+    // used to assert only hits.length ≥ 1, already true before the second burst)
+    const before = sim.debrief.hits.length;
+    applyBlast(sim, new Vector3(0, 0.3, 2), 0.055, 0.28, 'HEI');
+    expect(sim.debrief.hits.length).toBe(before + 1);
+    expect(v.hits).toBe(2);
   });
+});
+
+/**
+ * Review TE-4: the weapons module bursts every HEI round that strikes a vehicle and applies its
+ * blast at the hit point, whatever resolveRoundHit answered. A round that met a plate at a grazing
+ * angle (once a 'ricochet') or a strafe panel was then logged twice.
+ */
+describe('HEI counted once whatever the outcome (review TE-4)', () => {
+  it('a grazing HEI round bursts on the plate and counts once', () => {
+    const s = VEHICLE_SHAPES.mbt;
+    const top = s.hullClearance + s.hullHeight;
+    // onto the engine deck from behind, 8° below the horizontal (beyond the 70° ricochet angle)
+    const vel = new Vector3(0, -Math.sin(8 * DEG), -Math.cos(8 * DEG)).multiplyScalar(800);
+    let rounds = 0;
+    for (let i = 0; i < 40; i++) {
+      const sim = freshSim(500 + i);
+      const v = createVehicle(sim, 'mbt', 0, 0, 0, 1);
+      const r = fire(sim, v, [0.3 + 0.01 * i, top, s.hullLength / 2 - 1.0], vel, RoundType.HEI);
+      expect(r).not.toBeNull();
+      expect(r!.res.obliquity).toBeGreaterThan(ROUND_EFFECTS.ricochetObliquity);
+      expect(r!.res.outcome).toBe('burst');
+      // what projectiles.ts does next: the burst's blast and fragments at the same point
+      applyBlast(sim, r!.hit.point, 0.055, 0.28, 'HEI', 42);
+      expect(sim.debrief.hits.filter((h) => h.vehicleId === v.id).length).toBe(1);
+      expect(v.hits).toBe(1);
+      rounds++;
+    }
+    expect(rounds).toBe(40);
+  });
+
+  it('an HEI round through a strafe panel counts once', () => {
+    // (contract check: review TE-4 saw 3 of 50 live HEI rounds logged twice on a panel)
+    let records = 0;
+    let hits = 0;
+    for (let i = 0; i < 100; i++) {
+      const sim = freshSim(600 + i);
+      const panel = createVehicle(sim, 'panel', 0, 0, Math.PI, 1);
+      const r = fire(sim, panel, [0.02 * i - 1, 3, 0], new Vector3(0, -220, 820), RoundType.HEI);
+      expect(r!.res.outcome).toBe('passedThrough');
+      applyBlast(sim, r!.hit.point, 0.055, 0.28, 'HEI', 42);
+      records += sim.debrief.hits.filter((h) => h.vehicleId === panel.id).length;
+      hits += panel.hits;
+    }
+    expect(records).toBe(100);
+    expect(hits).toBe(100);
+  });
+});
+
+/**
+ * Review TE-3: a round crossing stacked spaced layers (fender fuel cells → fender → track top,
+ * rear drums → rear plate) used to roll the damage of the same external part once per layer.
+ * The chance that one API round hurts the part must be one roll: pHit × kineticExternalFactor.
+ */
+describe('each external part struck at most once per round (review TE-3)', () => {
+  const model = VEHICLE_MODELS.mbt;
+  const one = COMPONENT_VULNERABILITY.fuel.pHit * ROUND_EFFECTS.kineticExternalFactor;
+
+  function chanceHurt(
+    box: string,
+    aim: [number, number, number],
+    vel: Vector3,
+    n: number,
+    seed0: number,
+  ): { p: number; layers: number } {
+    const i = model.components.findIndex((b) => b.name === box);
+    let hurt = 0;
+    let layers = 0;
+    for (let k = 0; k < n; k++) {
+      const sim = freshSim(seed0 + k);
+      const v = createVehicle(sim, 'mbt', 0, 0, 0, 1);
+      const r = fire(sim, v, aim, vel);
+      expect(r).not.toBeNull();
+      if (r!.res.plate !== r!.hit.plate) layers++;
+      if (v.internal.boxHealth[i] < 1) hurt++;
+    }
+    return { p: hurt / n, layers: layers / n };
+  }
+
+  it('fender fuel cells over the track: one roll per round, not one per layer', () => {
+    const xTrack = 1.42;
+    const c = Math.cos(30 * DEG);
+    const s30 = Math.sin(30 * DEG);
+    const r = chanceHurt(
+      'fender fuel cells',
+      [xTrack, 1.0, 0.5],
+      new Vector3(-c, -s30, 0).multiplyScalar(850),
+      1500,
+      7000,
+    );
+    // every round crossed the cells and stopped on a layer below them
+    expect(r.layers).toBe(1);
+    expect(r.p).toBeGreaterThan(one - 0.06);
+    expect(r.p).toBeLessThan(one + 0.06);
+  });
+
+  it('rear fuel drums over the rear plate: one roll per round', () => {
+    const c = Math.cos(30 * DEG);
+    const s30 = Math.sin(30 * DEG);
+    const r = chanceHurt(
+      'rear fuel drums',
+      [0.3, 1.45, 3.9],
+      new Vector3(0, -s30, -c).multiplyScalar(850),
+      1500,
+      9000,
+    );
+    expect(r.layers).toBeGreaterThan(0.9);
+    expect(r.p).toBeLessThan(one + 0.06);
+  });
+});
+
+/**
+ * Review TE-2 / TE-missed-1: a track is broken, not worn down. Strikes beside it (HEI bursts on
+ * the glacis, rounds stopped on the fenders) do not break it; only a penetrator that defeats the
+ * track run can. A tracked vehicle is immobilised by a broken track, never by the mean of two
+ * damaged ones (the running-gear mean rule is for wheels).
+ */
+describe('tracks break only when their run is defeated (review TE-2, TE-missed-1)', () => {
+  it('HEI bursts on the glacis and fenders and API stopped on the track top leave the tracks whole', () => {
+    const sim = freshSim(820);
+    const v = createVehicle(sim, 'mbt', 0, 0, 0, 1);
+    const tracks = VEHICLE_MODELS.mbt.components
+      .map((b, i) => (b.breakChance !== undefined ? i : -1))
+      .filter((i) => i >= 0);
+    expect(tracks.length).toBe(2);
+    // 40 HEI rounds onto the upper glacis and the front of the fenders, a 10° pass from the front
+    const front = new Vector3(0, -Math.sin(10 * DEG), Math.cos(10 * DEG)).multiplyScalar(900);
+    for (let k = 0; k < 40; k++) fire(sim, v, [-1.6 + 0.08 * k, 1.3, -3.2], front, RoundType.HEI);
+    // 40 API rounds from the side stopped by the fender stowage and the track top
+    const side = new Vector3(-Math.cos(30 * DEG), -Math.sin(30 * DEG), 0).multiplyScalar(850);
+    for (let k = 0; k < 40; k++) fire(sim, v, [1.42, 1.0, -2 + 0.1 * k], side);
+    for (const i of tracks) expect(v.internal.boxHealth[i]).toBe(1);
+    expect(v.mobilityKill).toBe(false);
+  });
+
+  it('API through the track run from the side breaks it', () => {
+    let broken = 0;
+    for (let seed = 0; seed < 10; seed++) {
+      const sim = freshSim(840 + seed);
+      const v = createVehicle(sim, 'mbt', 0, 0, 0, 1);
+      for (let k = 0; k < 40 && !v.mobilityKill; k++)
+        fire(sim, v, [1.7, 0.5, 0.15 * k - 3], new Vector3(-950, -250, 0), RoundType.API);
+      if (v.mobilityKill) broken++;
+    }
+    expect(broken).toBeGreaterThanOrEqual(9);
+  });
+
+  it('two damaged tracks, neither broken, do not immobilise a tracked vehicle; worn wheels do', () => {
+    for (const kind of ['mbt', 'ifv', 'apc', 'truckCargo'] as VehicleKind[]) {
+      const sim = freshSim(860);
+      const v = createVehicle(sim, kind, 0, 0, 0, 1);
+      VEHICLE_MODELS[kind].components.forEach((c, i) => {
+        if (c.id === 'runningGear') v.internal.boxHealth[i] = 0.54;
+      });
+      updateComponentHealth(v);
+      evaluateCondition(sim, v, 'HEI');
+      const wheels = VEHICLE_SHAPES[kind].running.type === 'wheels';
+      expect(v.mobilityKill, kind).toBe(wheels);
+      expect(v.condition, kind).toBe(wheels ? 'damaged' : 'intact');
+    }
+  });
+});
+
+/**
+ * Review TE-1: a vehicle that goes up is a real explosion. Its blast and fragments reach the
+ * neighbours through the same table as a bomb (a 70 kg ammunition truck destroys a truck within
+ * ≈29 m), the hit records are named 'secondary', and the kills go to the weapon that started it.
+ */
+describe('secondary explosions reach the neighbours (review TE-1)', () => {
+  it('an ammunition truck going up destroys a truck 20 m away but not a T-72 20 m away', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const sim = freshSim(900 + seed);
+      const ammo = createVehicle(sim, 'truckAmmo', 0, 0, 0, 1);
+      const truck = createVehicle(sim, 'truckCargo', 20, 0, 0, 2);
+      const tank = createVehicle(sim, 'mbt', -20, 0, 0, 3);
+      explode(sim, ammo, 'API');
+      step(sim, 0.1);
+      expect(truck.condition === 'destroyed' || truck.condition === 'catastrophic').toBe(true);
+      expect(tank.condition === 'destroyed' || tank.condition === 'catastrophic').toBe(false);
+      const rec = sim.debrief.hits.filter((h) => h.vehicleId === truck.id);
+      expect(rec.length).toBe(1);
+      expect(rec[0].weapon).toBe('secondary');
+      expect(rec[0].outcome).toBe('blast');
+      expect(rec[0].sourceId).toBe(0);
+      // the kill goes to the weapon that started the chain; the source is not hit by itself
+      expect(sim.debrief.kills.find((k) => k.vehicleId === truck.id)!.weapon).toBe('API');
+      expect(sim.debrief.hits.some((h) => h.vehicleId === ammo.id)).toBe(false);
+    }
+  });
+
+  it('a fuel truck destroys a truck 15 m away; a T-72 going up, one 12 m away', () => {
+    for (const [kind, dist] of [
+      ['truckFuel', 15],
+      ['mbt', 12],
+    ] as const) {
+      const sim = freshSim(950);
+      const source = createVehicle(sim, kind, 0, 0, 0, 1);
+      const truck = createVehicle(sim, 'truckCargo', dist, 0, 0, 2);
+      explode(sim, source, 'MK-82');
+      step(sim, 0.1);
+      expect(truck.condition, kind).toBe('destroyed');
+      expect(sim.debrief.kills.find((k) => k.vehicleId === truck.id)!.weapon).toBe('MK-82');
+    }
+  });
+
+  it('a chain reaction ripples: a close neighbour goes up a moment later, not at once', () => {
+    const sim = freshSim(960);
+    const a = createVehicle(sim, 'truckAmmo', 0, 0, 0, 1);
+    const b = createVehicle(sim, 'truckAmmo', 4, 0, 0, 1);
+    explode(sim, a, 'HEI');
+    step(sim, DT);
+    expect(b.condition).toBe('destroyed');
+    expect(b.internal.explodeTime).toBeGreaterThan(sim.time);
+    expect(b.internal.explodeTime).toBeLessThanOrEqual(sim.time + 1.0);
+    step(sim, 1.1);
+    expect(b.condition).toBe('catastrophic');
+    expect(sim.debrief.kills.find((k) => k.vehicleId === b.id)!.weapon).toBe('HEI');
+    expect(sim.targets.killed).toBe(2);
+  });
+
+  it(
+    'the pops that follow are real too: they keep striking what is close',
+    { timeout: SLOW },
+    () => {
+      const sim = freshSim(970);
+      const ammo = createVehicle(sim, 'truckAmmo', 0, 0, 0, 1);
+      const hulk = createVehicle(sim, 'hulk', 7, 0, 0, 2);
+      explode(sim, ammo, 'API');
+      step(sim, 0.1);
+      const first = hulk.hits;
+      step(sim, 100);
+      expect(ammo.internal.popsLeft).toBe(0);
+      expect(hulk.hits).toBeGreaterThan(first);
+      expect(
+        sim.debrief.hits
+          .filter((h) => h.vehicleId === hulk.id)
+          .every((h) => h.weapon === 'secondary'),
+      ).toBe(true);
+    },
+  );
 });
