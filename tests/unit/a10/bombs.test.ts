@@ -4,7 +4,7 @@
  * pipper's ground point), the CCRP release point, the Mk 82 AIR's ballute, fuze arming and duds,
  * and the blast table reproduced through the bombs' own detonation path. Fixtures: the weapons
  * kinematic test bed over flat ground. Two tests use the avionics module's real solution and are
- * marked (integration); they skip while its solution is invalid (a stand-in).
+ * marked (integration); an invalid solution fails them (it no longer skips: both modules are real).
  */
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
@@ -113,7 +113,7 @@ describe('Bomb CCIP (PLAN §16): the live Mk 82 lands on the pipper', () => {
     expect(miss).toBeLessThan(0.2 * drift);
   });
 
-  it('CCIP with the avionics module’s own solution (integration)', (ctx) => {
+  it('CCIP with the avionics module’s own solution (integration)', () => {
     const sim = bed({ height: 1500, speedKt: 300, diveDeg: 30 });
     crosswindAtAircraft(sim, 15);
     const av = sim.avionics;
@@ -124,7 +124,8 @@ describe('Bomb CCIP (PLAN §16): the live Mk 82 lands on the pipper', () => {
       cycleProfile(sim, 1);
     }
     stepFireControl(sim, SIM_DT);
-    if (!av.release.valid || av.sight !== 'CCIP') ctx.skip();
+    expect(av.sight).toBe('CCIP');
+    expect(av.release.valid).toBe(true);
     const pipper = av.release.impact.clone();
     queueRelease(sim, 5, 'MK-82', { aim: pipper, aimValid: true, armingTime: 4 });
     runUntilLanded(sim);
@@ -197,13 +198,13 @@ describe('Bomb CCRP (PLAN §16): released at the computed release point', () => 
     expect(rec.missDistance).toBeLessThan(10);
   });
 
-  it('CCRP with the avionics module’s release (integration)', (ctx) => {
+  it('CCRP with the avionics module’s release (integration)', () => {
     const sim = bed({ height: HEIGHT, speedKt: 300, diveDeg: 0 });
     const av = sim.avionics;
     // The target 3 km ahead on the run-in, as the SPI (the active steerpoint).
     const target = new Vector3(0, 0, sim.aircraft.position.z - 3000);
     const sp = av.steerpoints[av.activeSteerpoint];
-    if (!sp) ctx.skip();
+    expect(sp).toBeDefined();
     sp.position.copy(target);
     av.spi.position.copy(target);
     av.spi.valid = true;
@@ -214,7 +215,8 @@ describe('Bomb CCRP (PLAN §16): released at the computed release point', () => 
       cycleProfile(sim, 1);
     }
     stepFireControl(sim, SIM_DT);
-    if (!av.release.valid || av.sight !== 'CCRP') ctx.skip();
+    expect(av.sight).toBe('CCRP');
+    expect(av.release.valid).toBe(true);
     let released = false;
     for (let k = 0; k < Math.round(40 / SIM_DT); k++) {
       sim.input.weaponRelease = true;

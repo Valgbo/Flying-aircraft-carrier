@@ -281,7 +281,7 @@ describe('gun sight agreement (PLAN §16): 30° dive, 300 kn, 1,220 m, 10 kn cro
     expect(mixCentre).toBeLessThan(1.5 * MRAD);
   });
 
-  it('the centre of a burst from the gun lands within 1.5 mrad of the pipper (integration)', (ctx) => {
+  it('the centre of a burst from the gun lands within 1.5 mrad of the pipper (integration)', () => {
     // Integration: needs the weapons module's real stepGun / stepProjectiles.
     const sim = gunSim(createFlatTerrain(250), 'combatMix', 21);
     const probe = new Vector3(0, 250 + 650, 0);
@@ -334,7 +334,7 @@ describe('gun sight agreement (PLAN §16): 30° dive, 300 kn, 1,220 m, 10 kn cro
       sim.time += SIM_DT;
       sim.stepCount++;
     }
-    if (fired === 0) ctx.skip('the weapons module stepGun fired no rounds (stand-in)');
+    expect(fired).toBeGreaterThan(0);
     expect(impacts).toBe(fired);
     const meanPipper = pipperSum.multiplyScalar(1 / fired);
     const meanImpact = impactSum.multiplyScalar(1 / impacts);

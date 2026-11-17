@@ -10,8 +10,8 @@
  * themselves, the way ARCHITECTURE §12.1 says the weapons module does (the store leaves its
  * station at the request's exact time, the pose interpolated, with the model's ejection) and fly
  * the store as a live body (the wind AT the body, SIM_DT steps). The '(integration)' tests use
- * the weapons module's registered model and its own stepStores / stepProjectiles, and skip
- * themselves while those are stand-ins.
+ * the weapons module's registered model and its own stepStores / stepProjectiles (both real
+ * now: a missing model or a release the weapons module does not execute fails them).
  */
 import { Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
@@ -442,8 +442,8 @@ describe('Bomb CCIP (PLAN §16): 30° dive, 300 kn, released 1,500 m above the t
     });
   });
 
-  it('with the weapons module’s Mk-82 model, flown by this test (integration)', (ctx) => {
-    if (!storeBallistics('MK-82')) ctx.skip();
+  it('with the weapons module’s Mk-82 model, flown by this test (integration)', () => {
+    expect(storeBallistics('MK-82')).toBeTruthy();
     const model = storeBallistics('MK-82')!;
     for (const kt of [0, 15]) {
       const { sim, path, run, target } = consentDive('self', kt, model);
@@ -657,8 +657,8 @@ describe('Bomb CCRP (PLAN §16): level at 5,000 ft above the target, 300 kn', ()
     });
   });
 
-  it('in a 15 kn crosswind and with the weapons module’s model (integration)', (ctx) => {
-    if (!storeBallistics('MK-82')) ctx.skip();
+  it('in a 15 kn crosswind and with the weapons module’s model (integration)', () => {
+    expect(storeBallistics('MK-82')).toBeTruthy();
     const real = storeBallistics('MK-82')!;
     const rows: string[] = [];
     for (const [label, model, kt] of [
@@ -790,8 +790,9 @@ function recordedImpact(sim: Sim, events: SimEvent[]): { req: number; impact: Ve
 }
 
 describe('releases executed by the weapons module (integration)', () => {
-  it('CCIP consent (30° dive) and CCRP (level 5,000 ft): the live Mk-82 lands on the solution', (ctx) => {
-    if (!storeBallistics('MK-82') || !weaponsExecute()) ctx.skip();
+  it('CCIP consent (30° dive) and CCRP (level 5,000 ft): the live Mk-82 lands on the solution', () => {
+    expect(storeBallistics('MK-82')).toBeTruthy();
+    expect(weaponsExecute()).toBe(true);
     const model = storeBallistics('MK-82')!;
     // CCIP: the release decided by the avionics, executed and flown by the weapons module.
     const dive = consentDive('weapons', 0, model);
@@ -982,8 +983,8 @@ function rocketPass() {
 }
 
 describe('rockets (PLAN §6.7)', () => {
-  it('single: one rocket per press from alternate pods, delivery ROCKET, aimed at the rocket pipper', (ctx) => {
-    if (!storeBallistics('LAU-131-M151')) ctx.skip();
+  it('single: one rocket per press from alternate pods, delivery ROCKET, aimed at the rocket pipper', () => {
+    expect(storeBallistics('LAU-131-M151')).toBeTruthy();
     const { sim, path } = rocketPass();
     const rel = sim.avionics.release;
     expect(rel.valid).toBe(true);
@@ -1001,8 +1002,8 @@ describe('rockets (PLAN §6.7)', () => {
     expect(sim.stores.stations[3].stores).toContain('LAU-131-M151');
   });
 
-  it('ripple: quantity at the launcher interval, alternating pods; the pods empty and stay', (ctx) => {
-    if (!storeBallistics('LAU-131-M151')) ctx.skip();
+  it('ripple: quantity at the launcher interval, alternating pods; the pods empty and stay', () => {
+    expect(storeBallistics('LAU-131-M151')).toBeTruthy();
     const { sim, path } = rocketPass();
     const p = sim.avionics.profiles.find((x) => x.store === 'LAU-131-M151')!;
     p.release = 'RIP_SGL';
