@@ -14846,6 +14846,81 @@
   },
   "note": "gear down, struts uncompressed; centre = wheel centre"
  },
+ "hull": {
+  "note": "gear up, parts always drawn (not the 600-gal tanks); right side, the left mirrors X",
+  "noseTip": [
+   0,
+   -0.2962,
+   -7.6545
+  ],
+  "tailTip": [
+   0,
+   0.2694,
+   8.4074
+  ],
+  "belly": [
+   0.6606,
+   -0.9,
+   -1.85
+  ],
+  "aftBelly": [
+   0,
+   -0.4163,
+   3.0476
+  ],
+  "wingTip": {
+   "outer": [
+    8.9041,
+    0.1815,
+    0.9643
+   ],
+   "leading": [
+    8.8904,
+    0.0375,
+    0.5613
+   ],
+   "trailing": [
+    8.8886,
+    0.0077,
+    1.7964
+   ]
+  },
+  "fin": {
+   "x": 2.8598,
+   "top": [
+    2.8525,
+    2.4545,
+    7.0326
+   ],
+   "bottom": [
+    2.8706,
+    -0.5937,
+    6.4932
+   ]
+  },
+  "gearPod": {
+   "tyre": [
+    2.6781,
+    -1.2856,
+    -1.1738
+   ],
+   "front": [
+    2.4301,
+    -0.9312,
+    -1.4801
+   ],
+   "rear": [
+    2.6304,
+    -0.8014,
+    1.0915
+   ]
+  },
+  "pavePenny": [
+   0.7134,
+   -0.9695,
+   -4.9089
+  ]
+ },
  "engines": [
   {
    "side": "left",
@@ -16171,21 +16246,33 @@
     -0.1733,
     0.0793
    ],
-   "length": 3.4281,
-   "diameter": 1.4188,
+   "length": 2.22,
+   "diameter": 0.3486,
    "bounds": {
     "min": [
-     -0.7094,
-     -0.8827,
+     -0.1391,
+     -0.3124,
      -1.0307
     ],
     "max": [
-     0.7094,
-     0.5361,
-     2.3974
+     0.1391,
+     0.0362,
+     1.1893
     ]
    },
-   "lugObject": "MK-82AIR_Mounts"
+   "lugObject": "MK-82AIR_Mounts",
+   "toggles": [
+    {
+     "node": "MK-82AIR_Chute",
+     "default": false,
+     "conditions": [
+      {
+       "cond": "equals(\"0\", \"1\")",
+       "src": "Models/Stores/Weapons/MK-82AIR/MK-82AIR.xml:10"
+      }
+     ]
+    }
+   ]
   },
   "mk84": {
    "label": "Mk 84 bomb",

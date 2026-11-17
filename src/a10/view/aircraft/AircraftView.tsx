@@ -9,11 +9,13 @@
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useState } from 'react';
+import type { PerspectiveCamera } from 'three';
 import {
   createAircraftInstance,
   disposeAircraftInstance,
   onAircraftTemplates,
   setAircraftShadows,
+  updateAircraftDetail,
   updateAircraftInstance,
   type AircraftInstance,
 } from '../../assets';
@@ -47,7 +49,7 @@ export default function AircraftView() {
     };
   }, [inst, scene]);
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!inst) return;
     const sim = getSim();
     const outside = useA10Store.getState().view !== 'cockpit';
@@ -58,6 +60,9 @@ export default function AircraftView() {
     const q = getA10Quality();
     setAircraftShadows(inst, q.shadows && q.level === 'high');
     updateAircraftInstance(inst, sim, a10Env.daylight);
+    // the camera rig ran before (priority −20): no pilot or cockpit when they would be specks
+    const cam = state.camera as PerspectiveCamera;
+    updateAircraftDetail(inst, cam.position, cam.fov ?? 62, state.size.height);
   });
 
   return null;

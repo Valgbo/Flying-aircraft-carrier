@@ -138,8 +138,7 @@ export function terrainFromHeightFunction(
 
   /** First crossing along p0 + dir·s, s ∈ [s0, length] (dir unit). */
   function march(p0: Vector3, dir: Vector3, length: number, out: TerrainHit, s0 = 0): boolean {
-    const gapAt = (s: number) =>
-      p0.y + dir.y * s - heightAt(p0.x + dir.x * s, p0.z + dir.z * s);
+    const gapAt = (s: number) => p0.y + dir.y * s - heightAt(p0.x + dir.x * s, p0.z + dir.z * s);
     if (p0.y + dir.y * s0 > maxHeight && p0.y + dir.y * length > maxHeight) return false;
     const hx = Math.hypot(dir.x, dir.z);
     const rate = maxSlope * hx - dir.y;

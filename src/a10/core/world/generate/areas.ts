@@ -60,14 +60,20 @@ export const START_DISTANCE = 12000;
 /** Sample points of an area: centre and five rings. */
 const RINGS = [0.2, 0.4, 0.6, 0.8, 1.0];
 const RING_COUNTS = [8, 12, 16, 20, 24];
-function forAreaPoints(x: number, z: number, r: number, fn: (px: number, pz: number, ring: number) => boolean): boolean {
+function forAreaPoints(
+  x: number,
+  z: number,
+  r: number,
+  fn: (px: number, pz: number, ring: number) => boolean,
+): boolean {
   if (!fn(x, z, 0)) return false;
   const rings = RINGS;
   const counts = RING_COUNTS;
   for (let k = 0; k < rings.length; k++) {
     for (let a = 0; a < counts[k]; a++) {
       const ang = ((a + 0.5 * k) / counts[k]) * Math.PI * 2;
-      if (!fn(x + Math.cos(ang) * r * rings[k], z + Math.sin(ang) * r * rings[k], rings[k])) return false;
+      if (!fn(x + Math.cos(ang) * r * rings[k], z + Math.sin(ang) * r * rings[k], rings[k]))
+        return false;
     }
   }
   return true;
@@ -145,7 +151,15 @@ export function placeAreas(
   }
   const upAngle = downValleyAngle(L, toU(L, sx, sz)) + Math.PI;
 
-  const placed: Array<{ x: number; z: number; r: number; kind: TargetAreaKind; heading: number; roadId?: number; roadDistance?: number }> = [];
+  const placed: Array<{
+    x: number;
+    z: number;
+    r: number;
+    kind: TargetAreaKind;
+    heading: number;
+    roadId?: number;
+    roadDistance?: number;
+  }> = [];
   const ab = site.airfield;
   const aex = Math.sin(ab.heading);
   const aez = -Math.cos(ab.heading);
@@ -162,7 +176,12 @@ export function placeAreas(
     return placed.every((p) => Math.hypot(p.x - x, p.z - z) > 3200);
   }
   function valid(kind: TargetAreaKind, x: number, z: number, r: number): boolean {
-    return clearOfSites(x, z, r) && separated(x, z) && areaGroundOk(terrain, x, z, r) && kindOk(terrain, kind, x, z, r);
+    return (
+      clearOfSites(x, z, r) &&
+      separated(x, z) &&
+      areaGroundOk(terrain, x, z, r) &&
+      kindOk(terrain, kind, x, z, r)
+    );
   }
   function headingFor(kind: TargetAreaKind, x: number, z: number): number {
     if (kind === 'treeline') {
@@ -185,8 +204,10 @@ export function placeAreas(
   outer: for (const tol of [0, 1]) {
     for (let k = 0; k <= 30; k++) {
       for (const sgn of [1, -1]) {
-        const ang = upAngle + sgn * k * ((tol ? 2.5 : 1.5) * Math.PI) / 180;
-        for (const d of tol ? [START_DISTANCE - 450, START_DISTANCE + 450] : [START_DISTANCE, START_DISTANCE - 200, START_DISTANCE + 200]) {
+        const ang = upAngle + (sgn * k * ((tol ? 2.5 : 1.5) * Math.PI)) / 180;
+        for (const d of tol
+          ? [START_DISTANCE - 450, START_DISTANCE + 450]
+          : [START_DISTANCE, START_DISTANCE - 200, START_DISTANCE + 200]) {
           const x = sx + Math.cos(ang) * d;
           const z = sz + Math.sin(ang) * d;
           for (const kind of ['open', 'treeline', 'dugIn'] as const) {
@@ -231,7 +252,10 @@ export function placeAreas(
         roadDistance = road.arc[i];
         const j = Math.min(m - 1, i + 1);
         const i0 = j === i ? i - 1 : i;
-        heading = headingOf(road.points[2 * j] - road.points[2 * i0], road.points[2 * j + 1] - road.points[2 * i0 + 1]);
+        heading = headingOf(
+          road.points[2 * j] - road.points[2 * i0],
+          road.points[2 * j + 1] - road.points[2 * i0 + 1],
+        );
       } else if (kind === 'dugIn' && attempt < trackEnds.length * 2 && trackEnds.length > 0) {
         const e = trackEnds[rng.int(0, trackEnds.length - 1)];
         x = e.x + rng.range(-300, 300);
@@ -252,7 +276,15 @@ export function placeAreas(
       }
       if (!farFromStart(x, z)) continue;
       if (!valid(kind, x, z, r)) continue;
-      placed.push({ x, z, r, kind, heading: heading ?? headingFor(kind, x, z), roadId, roadDistance });
+      placed.push({
+        x,
+        z,
+        r,
+        kind,
+        heading: heading ?? headingFor(kind, x, z),
+        roadId,
+        roadDistance,
+      });
       done = true;
     }
   }
@@ -292,6 +324,8 @@ export function placeAreas(
     });
   }
   const first = areas.find((a) => a.kind !== 'range');
-  const heading = first ? headingOf(first.x - sx, first.z - sz) : headingOf(Math.cos(upAngle), Math.sin(upAngle));
+  const heading = first
+    ? headingOf(first.x - sx, first.z - sz)
+    : headingOf(Math.cos(upAngle), Math.sin(upAngle));
   return { areas, start: { x: sx, z: sz, heading } };
 }

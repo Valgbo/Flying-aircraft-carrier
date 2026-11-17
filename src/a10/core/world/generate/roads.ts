@@ -11,9 +11,11 @@
  * given a road-bed profile: the natural ground (micro-relief included) smoothed along the road,
  * limited to the design grade (cut and fill), and raised over the river on a causeway. When the
  * network is complete, every road is pinned to the bed of any higher-ranked road its pavement
- * meets (junctions, crossings) and its profile is rounded into vertical curves.
+ * meets (junctions, crossings) and to the plane of any flat pad whose blend reaches it (the access
+ * road on the airfield), and its profile is rounded into vertical curves.
  */
 import { Rng } from '../../rng';
+import { padPlaneAt, padWeight, type PadSpec } from '../features';
 import { RANGE_WORLD } from '../params';
 import type { RiverPolyline, RoadKind, RoadPolyline } from '../types';
 import { gridBSpline, sampleBilinear, type Grid } from './grid';
@@ -421,6 +423,8 @@ export function buildRoads(
   forestAt: (x: number, z: number) => number,
   /** The natural ground the roads are laid on (B-spline + micro-relief), m. */
   natural: (x: number, z: number) => number,
+  /** The flat pads exactly as the terrain will blend them (padSpecsOf): beds end flush on them. */
+  padSpecs: readonly PadSpec[],
 ): RoadBuild {
   const cg = buildCostGrid(g, rf, site, pads, forestAt);
   const S = createSearch(cg.n);
@@ -440,7 +444,10 @@ export function buildRoads(
       z = fromUVz(L, u, v);
       if (Math.abs(x) > half - 60 || Math.abs(z) > half - 60) break;
     }
-    return { x: Math.max(-half + 60, Math.min(half - 60, x)), z: Math.max(-half + 60, Math.min(half - 60, z)) };
+    return {
+      x: Math.max(-half + 60, Math.min(half - 60, x)),
+      z: Math.max(-half + 60, Math.min(half - 60, z)),
+    };
   }
 
   /** Route, smooth, profile and register one road. Returns it or null. */
@@ -487,7 +494,9 @@ export function buildRoads(
     if (m < 3) return null;
     const arc = new Float64Array(m);
     for (let i = 1; i < m; i++) {
-      arc[i] = arc[i - 1] + Math.hypot(points[2 * i] - points[2 * i - 2], points[2 * i + 1] - points[2 * i - 1]);
+      arc[i] =
+        arc[i - 1] +
+        Math.hypot(points[2 * i] - points[2 * i - 2], points[2 * i + 1] - points[2 * i - 1]);
     }
     const heights = profile(kind, points, arc);
     const road: RoadPolyline = {
@@ -597,7 +606,10 @@ export function buildRoads(
   // 6. Tracks to the range areas.
   for (const p of pads) {
     const toAb = Math.atan2(site.airbase.z - p.z, site.airbase.x - p.x);
-    const gate = { x: p.x + Math.cos(toAb) * (p.radius + 450), z: p.z + Math.sin(toAb) * (p.radius + 450) };
+    const gate = {
+      x: p.x + Math.cos(toAb) * (p.radius + 450),
+      z: p.z + Math.sin(toAb) * (p.radius + 450),
+    };
     const r = addRoad('track', gate, null, -1);
     if (r) trackEnds.push(gate);
   }
@@ -624,7 +636,7 @@ export function buildRoads(
     if (r) trackEnds.push(to);
   }
   void toV;
-  connectProfiles(roads);
+  connectProfiles(roads, padSpecs);
   return { roads, trackEnds };
 }
 
@@ -656,10 +668,13 @@ function rank(r: RoadPolyline): number {
 /**
  * Make the network consistent: wherever a road's pavement meets a higher-ranked road's pavement
  * (junction, crossing), its bed takes that road's height there and ramps away at its design
- * grade; then every profile is rounded with vertical curves (binomial smoothing, pinned points
- * held), so the grade changes gently from one 15 m segment to the next.
+ * grade; wherever a flat pad's blend reaches the centre line (the access road leaving the
+ * apron), the bed takes the pad's plane, because heightAt lets the pads override every road:
+ * the published bed then equals heightAt there and the road ends flush on the pad. Then every
+ * profile is rounded with vertical curves (binomial smoothing, pinned points held), so the grade
+ * changes gently from one 15 m segment to the next.
  */
-function connectProfiles(roads: RoadPolyline[]): void {
+function connectProfiles(roads: RoadPolyline[], pads: readonly PadSpec[]): void {
   // Spatial hash of all segments (200 m cells).
   const CELLH = 200;
   const buckets = new Map<number, number[]>();
@@ -722,6 +737,13 @@ function connectProfiles(roads: RoadPolyline[]): void {
               bestH = o.heights![s] + (o.heights![s + 1] - o.heights![s]) * t;
             }
           }
+        }
+      }
+      // A pad overrides the road in heightAt (the airfield is applied last), so it wins here too.
+      for (const pad of pads) {
+        if (padWeight(pad, x, z) > 0) {
+          bestD = 0;
+          bestH = padPlaneAt(pad, x, z);
         }
       }
       if (bestD < Infinity) {

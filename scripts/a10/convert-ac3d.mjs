@@ -23,11 +23,14 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import {
   FG_TO_BODY,
@@ -39,6 +42,13 @@ import {
   rotateAbout,
 } from './convert-lib-geom.mjs';
 import { buildAltimeter, buildGbu12Kit, buildLau117 } from './convert-lib-build.mjs';
+import {
+  FG_AUTHOR,
+  FG_LICENCE,
+  creditsTable,
+  replaceBlock,
+  writeSoundCredits,
+} from './convert-credits.mjs';
 import { planGLB, round3, safeName, writeGLB } from './convert-lib-emit.mjs';
 import {
   SourceTree,
@@ -56,8 +66,15 @@ import { all, child, num, parseXml, text } from './convert-lib-xml.mjs';
 
 const REPO = resolve(import.meta.dirname, '../..');
 const THIRD = join(REPO, 'third_party/flightgear-a10');
-const OUT_MODELS = join(REPO, 'public/a10/models');
-const OUT_TEX = join(REPO, 'public/a10/textures');
+const PUBLIC_MODELS = join(REPO, 'public/a10/models');
+const PUBLIC_TEX = join(REPO, 'public/a10/textures');
+// Everything is written to a staging folder first, then copied over the published files that
+// changed; unchanged files are not touched and files no longer made are removed. Dev servers
+// that serve public/ meanwhile never see the folders disappear (Vite forgets deleted public
+// files and answers them with index.html until it restarts).
+const STAGE = mkdtempSync(join(tmpdir(), 'a10-convert-'));
+const OUT_MODELS = join(STAGE, 'models');
+const OUT_TEX = join(STAGE, 'textures');
 const GENERATOR = 'scripts/a10/convert-ac3d.mjs (FlightGear A-10 @ 72da115, GPL)';
 const SOURCE = {
   repository: 'https://github.com/l0k1/A-10',
@@ -604,7 +621,7 @@ for (const s of STORES) {
     });
     root.name = s.id;
   }
-  // remove unwanted toggles: MK-82AIR keeps its chute as a hidden part
+  // remove unwanted toggles: MK-82AIR keeps its ballute as a hidden part (meta stores.*.toggles)
   for (const n of walk(root)) n.toggles = n.toggles.filter((t) => !IGNORED_TOGGLE.test(t.cond));
   // geometry bounds (BODY axes, FG store origin)
   const lugObj = [...walk(root)].find(
@@ -639,11 +656,16 @@ for (const s of STORES) {
   plans.push({ plan, file: `stores/${s.id}.glb`, group: 'stores', store: s.id });
 }
 
+/** Bounds of the parts drawn by default (not those a toggle hides, like the Mk 82 AIR ballute). */
 function boundsOf(root) {
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
+  const hidden = (n) => {
+    for (let p = n; p; p = p.parent) if (p.toggles?.some((t) => !t.default)) return true;
+    return false;
+  };
   for (const n of walk(root)) {
-    if (!n.geom || n.excluded || n.geom.triangles === 0) continue;
+    if (!n.geom || n.excluded || n.geom.triangles === 0 || hidden(n)) continue;
     for (let c = 0; c < 3; c++) {
       min[c] = Math.min(min[c], n.geom.bbox.min[c]);
       max[c] = Math.max(max[c], n.geom.bbox.max[c]);
@@ -711,8 +733,6 @@ function texFileOf(id) {
   return `${id}.${png ? 'png' : 'jpg'}`;
 }
 
-rmSync(OUT_MODELS, { recursive: true, force: true });
-rmSync(OUT_TEX, { recursive: true, force: true });
 mkdirSync(join(OUT_MODELS, 'stores'), { recursive: true });
 mkdirSync(OUT_TEX, { recursive: true });
 
@@ -915,6 +935,70 @@ const engines = ['L', 'R'].map((side) => {
     exhaust: round3([c[0], c[1], casing.geom.bbox.max[2]]),
   };
 });
+
+// hull: the points the simulation's ground-contact test needs, with the gear up (the rest pose)
+// and measured on parts that are always drawn (the 600-gal tanks show only when loaded, so they
+// do not count). Right side; the left side mirrors X.
+function pointsNamed(...names) {
+  const out = [];
+  for (const nm of names) for (const n of findByName(extNodes, nm)) out.push(...geomPoints(n));
+  if (!out.length) throw new Error(`hull: no geometry named ${names.join(', ')}`);
+  return out;
+}
+const lowestOf = (pts) => pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+const spanOf = (pts, c) => [Math.min(...pts.map((p) => p[c])), Math.max(...pts.map((p) => p[c]))];
+const hull = (() => {
+  const fuselage = pointsNamed('Fuselage');
+  const nose = fuselage.reduce((a, b) => (b[2] < a[2] ? b : a));
+  const tail = fuselage.reduce((a, b) => (b[2] > a[2] ? b : a));
+  const wing = pointsNamed('R-Wing-T', 'R-Wing-B');
+  const wingTrailingRoot = spanOf(wing, 2)[1];
+  const tipX = spanOf(wing, 0)[1];
+  const tipEdge = wing.filter((p) => p[0] > tipX - 0.02); // the tip chord
+  const outer = wing.reduce((a, b) => (b[0] > a[0] ? b : a));
+  const fin = pointsNamed('R-Fin-L', 'R-Fin-R', 'R-Fin-S', 'RRudder-L', 'RRudder-R');
+  const [finTopY, finBottomY] = [spanOf(fin, 1)[1], spanOf(fin, 1)[0]];
+  const midChord = (pts) => {
+    const [a, b] = spanOf(pts, 2);
+    return (a + b) / 2;
+  };
+  const finTop = fin.filter((p) => p[1] > finTopY - 0.02);
+  const finBottom = fin.filter((p) => p[1] < finBottomY + 0.02);
+  const tyre = pointsNamed('UC-RightTyre');
+  const pod = pointsNamed(
+    'UC-RightWSponson',
+    'UC-RightWHousingSide',
+    'UC-RightWHousingDoor',
+    'UC-RightWHousingDoor-Lower',
+    'UC-Right-DoorLower',
+  );
+  const [podFront, podRear] = spanOf(pod, 2);
+  return {
+    note: 'gear up, parts always drawn (not the 600-gal tanks); right side, the left mirrors X',
+    noseTip: round3(nose),
+    tailTip: round3(tail),
+    // the fuselage's flat belly has two keels; their lowest points are its lowest
+    belly: round3(lowestOf(fuselage.filter((p) => p[0] > 0.1))),
+    aftBelly: round3(lowestOf(fuselage.filter((p) => p[2] > wingTrailingRoot - 0.01))),
+    wingTip: {
+      outer: round3(outer),
+      leading: round3(tipEdge.reduce((a, b) => (b[2] < a[2] ? b : a))),
+      trailing: round3(tipEdge.reduce((a, b) => (b[2] > a[2] ? b : a))),
+    },
+    fin: {
+      x: r3((spanOf(fin, 0)[0] + spanOf(fin, 0)[1]) / 2),
+      top: round3([fin.find((p) => p[1] === finTopY)[0], finTopY, midChord(finTop)]),
+      bottom: round3([fin.find((p) => p[1] === finBottomY)[0], finBottomY, midChord(finBottom)]),
+    },
+    // the retracted main wheels stand out below their pods (as on the real aircraft)
+    gearPod: {
+      tyre: round3(lowestOf(tyre)),
+      front: round3(lowestOf(pod.filter((p) => p[2] < podFront + 0.6))),
+      rear: round3(lowestOf(pod.filter((p) => p[2] > podRear - 0.7))),
+    },
+    pavePenny: round3(lowestOf(pointsNamed('pave-peny-body', 'pave-peny-dome'))),
+  };
+})();
 
 // quad corners (top-left, top-right, bottom-right, bottom-left as the pilot sees them)
 function quadCorners(root, name) {
@@ -1510,6 +1594,7 @@ const meta = {
   displays,
   gun,
   gear: { contacts, note: 'gear down, struts uncompressed; centre = wheel centre' },
+  hull,
   engines,
   lights,
   stations,
@@ -1530,6 +1615,13 @@ function boundsMeta(plan) {
           (max[c] = Math.max(max[c], n.geom.bbox.max[c])));
   return { min: round3(min), max: round3(max) };
 }
+
+// stores: parts hidden by default (the Mk 82 AIR's deployed ballute), for the run-time templates
+for (const { plan, store } of plans)
+  if (store) {
+    const toggles = togglesOf(plan);
+    if (toggles.length) storeMeta[store].toggles = toggles;
+  }
 
 let totalModels = 0;
 for (const [f, s] of Object.entries(fileStats)) {
@@ -1560,11 +1652,49 @@ meta.textures = texList.map((t) => ({
 writeFileSync(join(OUT_MODELS, 'a10-meta.json'), JSON.stringify(meta, null, 1) + '\n');
 const metaBytes = statSync(join(OUT_MODELS, 'a10-meta.json')).size;
 
+/** Files below a folder, as relative POSIX paths. */
+function filesBelow(dir, base = '') {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory()
+      ? filesBelow(join(dir, e.name), posix.join(base, e.name))
+      : [posix.join(base, e.name)],
+  );
+}
+/** Copy the staged files that differ over the published ones; remove the published leftovers. */
+function publish(from, to) {
+  const made = new Set(filesBelow(from));
+  let changed = 0;
+  let removed = 0;
+  for (const rel of made) {
+    const bytes = readFileSync(join(from, rel));
+    const dst = join(to, rel);
+    if (existsSync(dst) && readFileSync(dst).equals(bytes)) continue;
+    mkdirSync(dirname(dst), { recursive: true });
+    writeFileSync(dst, bytes);
+    changed++;
+  }
+  for (const rel of filesBelow(to))
+    if (!made.has(rel)) {
+      rmSync(join(to, rel));
+      removed++;
+    }
+  return { changed, removed };
+}
+{
+  const m = publish(OUT_MODELS, PUBLIC_MODELS);
+  const t = publish(OUT_TEX, PUBLIC_TEX);
+  rmSync(STAGE, { recursive: true, force: true });
+  log(
+    `public/a10: ${m.changed + t.changed} files written, ${m.removed + t.removed} removed, the rest unchanged`,
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // CREDITS.md: one row per generated file (between the markers; the rest is written by hand)
 // ---------------------------------------------------------------------------------------------
-const AUTHOR = 'FlightGear A-10 contributors';
-const LICENCE = 'GPL-2.0 (package COPYING)';
+const AUTHOR = FG_AUTHOR;
+const LICENCE = FG_LICENCE;
 const FILE_NOTES = {
   'a10-exterior.glb':
     'Exterior. Every A-10-model.xml animation as a hinge pivot (control surfaces, split ailerons/speed brakes, flaps, slats, canopy, gear with doors and linkages, fans); spin pivot added for the gun barrels; nose-gear lamp "on" variants left out',
@@ -1607,6 +1737,8 @@ for (const { plan, file, store } of plans) {
   if (store === 'cbu87')
     note += '. Shell only (the 202 modelled bomblets left out); also drawn for the CBU-97';
   if (store === 'lau68') note += '. Also drawn for the LAU-131';
+  if (store === 'mk82air')
+    note += '. The deployed BSU-49 ballute kept as a hidden part (shown after a high-drag release)';
   if (store === 'lau88') note += ". FlightGear's trirack_small, used as the LAU-88";
   credits.push({
     file: `public/a10/models/${file}`,
@@ -1648,27 +1780,23 @@ for (const t of texList) {
   });
 }
 {
+  // the models and textures, then the sounds (scripts/a10/sounds-credits.json, audio module)
   const path = join(REPO, 'CREDITS.md');
-  const BEGIN =
-    '<!-- BEGIN flightgear-a10 (generated by scripts/a10/convert-ac3d.mjs; do not edit by hand) -->';
-  const END = '<!-- END flightgear-a10 -->';
-  const text0 = existsSync(path) ? readFileSync(path, 'utf8') : `${BEGIN}\n${END}\n`;
-  const a = text0.indexOf(BEGIN);
-  const b = text0.indexOf(END);
-  if (a < 0 || b < a) throw new Error('CREDITS.md: generated-section markers missing');
-  const esc = (x) => String(x).replace(/\|/g, '\\|');
-  const rows = [
-    '| File | Source (package path) | Author | Licence | Changes |',
-    '|---|---|---|---|---|',
-    ...credits.map(
-      (c) =>
-        `| ${bt(c.file)} | ${esc(c.source)} | ${esc(c.author)} | ${esc(c.licence)} | ${esc(c.changes)} |`,
-    ),
-  ];
+  if (!existsSync(path))
+    throw new Error('CREDITS.md missing (its hand-written parts hold the markers)');
   writeFileSync(
     path,
-    text0.slice(0, a + BEGIN.length) + '\n\n' + rows.join('\n') + '\n\n' + text0.slice(b),
+    replaceBlock(
+      readFileSync(path, 'utf8'),
+      'flightgear-a10',
+      creditsTable(credits, 'Source (package path)'),
+    ),
   );
+  if (existsSync(join(REPO, 'scripts/a10/sounds-credits.json'))) writeSoundCredits(REPO);
+  else
+    warnings.push(
+      'scripts/a10/sounds-credits.json missing: the Sounds credits were left as they are',
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

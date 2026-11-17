@@ -51,7 +51,9 @@ checkout of the package). The converter is our own code; nothing from the packag
 
 `CREDITS.md` at the repository root lists every generated file with its sources and changes.
 
-Known data quirks of the package, handled or noted by the converter: the right flaps are driven
+Known data quirks of the package, handled or noted by the converter: `MK-82AIR.xml` hides the
+deployed ballute (`MK-82AIR_Chute`) with an always-false select, so it stays a hidden part of
+`stores/mk82air.glb` (listed under `stores.mk82air.toggles` in the meta file); the right flaps are driven
 by `left-flap-pos-norm`; `UC-Right-DoorLower` is missing from the livery list;
 `UC-LeftMainTop-details.001` does not exist; `MXU-648.ac` and `CBU-87.ac` are truncated (fewer kids
 than declared); `lights-external.xml` swaps two halo names and writes an offset as "3,075"

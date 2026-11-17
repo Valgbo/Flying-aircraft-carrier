@@ -70,7 +70,12 @@ export function maskAt(data: TerrainData, mask: Uint8Array, x: number, z: number
 }
 
 /** Nearest-sample surface class from the baked mask at world (x, z). */
-export function surfaceMaskAt(data: TerrainData, extra: WorldExtra, x: number, z: number): SurfaceKind {
+export function surfaceMaskAt(
+  data: TerrainData,
+  extra: WorldExtra,
+  x: number,
+  z: number,
+): SurfaceKind {
   const n = extra.surfaceResolution;
   const half = data.size / 2;
   const inv = (n - 1) / data.size;

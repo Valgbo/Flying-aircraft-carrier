@@ -138,9 +138,17 @@ export interface StoreModelMeta {
   /** The store's own reference point (mid-length on the body axis) relative to the lugs. */
   centre: Vec3T;
   length: number;
+  /** Largest cross-section extent, fins and wings included. */
   diameter: number;
+  /** Of the parts drawn by default (not the hidden ones of `toggles`). */
   bounds: { min: Vec3T; max: Vec3T };
   lugObject: string | null;
+  /**
+   * Parts FlightGear shows only in some states, at their default visibility in the templates:
+   * the Mk 82 AIR's `MK-82AIR_Chute` (its BSU-49 ballute, deployed after a high-drag release) is
+   * hidden; show it on a released bomb with `getObjectByName(node).visible = true`.
+   */
+  toggles?: ToggleMeta[];
 }
 
 export interface LiveryMeta {
@@ -244,6 +252,28 @@ export interface A10Meta {
     contacts: Record<'nose' | 'left' | 'right', { centre: Vec3T; contact: Vec3T; radius: number }>;
     note: string;
   };
+  /**
+   * Hull points for ground contact with the gear up, on the parts that are always drawn (not the
+   * 600-gal tanks). Off-centreline points are the right side's; the left side mirrors X.
+   */
+  hull: {
+    note: string;
+    noseTip: Vec3T;
+    tailTip: Vec3T;
+    /** Lowest fuselage point (one of the belly's two keels). */
+    belly: Vec3T;
+    /** Lowest fuselage point aft of the wing. */
+    aftBelly: Vec3T;
+    /** Outermost point, and the tip chord's leading and trailing ends (lower surface). */
+    wingTip: { outer: Vec3T; leading: Vec3T; trailing: Vec3T };
+    /** Lateral centre; top and bottom at mid-chord. */
+    fin: { x: number; top: Vec3T; bottom: Vec3T };
+    /** Retracted main wheel's lowest point (below the pod), and the pod bottom near its ends. */
+    gearPod: { tyre: Vec3T; front: Vec3T; rear: Vec3T };
+    pavePenny: Vec3T;
+  };
+  /** Fan hub (on the spin axis) and the nozzle exit (aft end of the nacelle). */
+  engines: { side: 'left' | 'right'; fan: Vec3T; exhaust: Vec3T }[];
   lights: LightMeta[];
   stations: StationMeta[];
   racks: Record<string, { mounts: RackMount[]; source: string }>;

@@ -22,7 +22,8 @@ const results: Array<[string, number, number, string]> = [];
 
 /** Process CPU time, ms (Node), or NaN where unavailable. */
 function cpuMs(): number {
-  const proc = (globalThis as { process?: { cpuUsage(): { user: number; system: number } } }).process;
+  const proc = (globalThis as { process?: { cpuUsage(): { user: number; system: number } } })
+    .process;
   if (!proc) return NaN;
   const c = proc.cpuUsage();
   return (c.user + c.system) / 1000;
@@ -65,14 +66,22 @@ function record(name: string, value: number, budget: number, unit: string): void
   results.push([name, value, budget, unit]);
 }
 
-const hit: TerrainHit = { point: new Vector3(), normal: new Vector3(), distance: 0, t: 0, surface: 'grass' };
+const hit: TerrainHit = {
+  point: new Vector3(),
+  normal: new Vector3(),
+  distance: 0,
+  t: 0,
+  surface: 'grass',
+};
 
 describe('world performance budgets', () => {
   it('generateTerrainData < 3 s', () => {
     // On a quiet machine wall time is the cost; under load the process CPU time is.
     const ms = Number.isNaN(genCpuMs) ? genWallMs : Math.min(genWallMs, genCpuMs);
     record('generateTerrainData (min of wall, CPU)', ms, 3000, 'ms');
-    console.log(`generateTerrainData: wall ${genWallMs.toFixed(0)} ms, CPU ${genCpuMs.toFixed(0)} ms`);
+    console.log(
+      `generateTerrainData: wall ${genWallMs.toFixed(0)} ms, CPU ${genCpuMs.toFixed(0)} ms`,
+    );
     expect(ms).toBeLessThan(3000);
   });
 
@@ -98,7 +107,11 @@ describe('world performance budgets', () => {
       // One 30 mm round step (1/120 s at ≈ 1,020 m/s) along a random direction.
       const el = r.range(-0.8, 0.1);
       const az = r.range(0, Math.PI * 2);
-      const d = new Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).multiplyScalar(8.5);
+      const d = new Vector3(
+        Math.cos(el) * Math.sin(az),
+        Math.sin(el),
+        Math.cos(el) * Math.cos(az),
+      ).multiplyScalar(8.5);
       const a = new Vector3(x, g + r.range(300, 2500), z);
       far.push(a, a.clone().add(d));
       // Near the ground: the last steps before impact (some hit, some pass over).
@@ -106,7 +119,9 @@ describe('world performance budgets', () => {
       near.push(b, b.clone().add(d));
     }
     const usFar = bench(N, 5, (i) => (terrain.segmentHit(far[2 * i], far[2 * i + 1], hit) ? 1 : 0));
-    const usNear = bench(N, 5, (i) => (terrain.segmentHit(near[2 * i], near[2 * i + 1], hit) ? 1 : 0));
+    const usNear = bench(N, 5, (i) =>
+      terrain.segmentHit(near[2 * i], near[2 * i + 1], hit) ? 1 : 0,
+    );
     record('segmentHit 8.5 m, far above ground', usFar, 0.5, 'µs');
     record('segmentHit 8.5 m, near ground (incl. hit details)', usNear, 15, 'µs');
     expect(usFar).toBeLessThan(0.5);
@@ -125,14 +140,28 @@ describe('world performance budgets', () => {
       const tx = Math.max(-31000, Math.min(31000, x + Math.cos(ang) * 10000));
       const tz = Math.max(-31000, Math.min(31000, z + Math.sin(ang) * 10000));
       // Aircraft at 1,000–3,000 m looking at a vehicle on the ground (sensors, eyes).
-      air.push(new Vector3(x, r.range(1000, 3000), z), new Vector3(tx, terrain.heightAt(tx, tz) + 1.5, tz));
+      air.push(
+        new Vector3(x, r.range(1000, 3000), z),
+        new Vector3(tx, terrain.heightAt(tx, tz) + 1.5, tz),
+      );
       // Ground to ground, 2 m up at both ends (the hardest: the whole line is low).
-      ground.push(new Vector3(x, terrain.heightAt(x, z) + 2, z), new Vector3(tx, terrain.heightAt(tx, tz) + 2, tz));
+      ground.push(
+        new Vector3(x, terrain.heightAt(x, z) + 2, z),
+        new Vector3(tx, terrain.heightAt(tx, tz) + 2, tz),
+      );
     }
-    const usAir = bench(N, 5, (i) => (terrain.lineOfSight(air[2 * i], air[2 * i + 1], false) ? 1 : 0));
-    const usAirTrees = bench(N, 5, (i) => (terrain.lineOfSight(air[2 * i], air[2 * i + 1], true) ? 1 : 0));
-    const usGround = bench(N, 5, (i) => (terrain.lineOfSight(ground[2 * i], ground[2 * i + 1], false) ? 1 : 0));
-    const usGroundTrees = bench(N, 5, (i) => (terrain.lineOfSight(ground[2 * i], ground[2 * i + 1], true) ? 1 : 0));
+    const usAir = bench(N, 5, (i) =>
+      terrain.lineOfSight(air[2 * i], air[2 * i + 1], false) ? 1 : 0,
+    );
+    const usAirTrees = bench(N, 5, (i) =>
+      terrain.lineOfSight(air[2 * i], air[2 * i + 1], true) ? 1 : 0,
+    );
+    const usGround = bench(N, 5, (i) =>
+      terrain.lineOfSight(ground[2 * i], ground[2 * i + 1], false) ? 1 : 0,
+    );
+    const usGroundTrees = bench(N, 5, (i) =>
+      terrain.lineOfSight(ground[2 * i], ground[2 * i + 1], true) ? 1 : 0,
+    );
     record('lineOfSight 10 km, air to ground', usAir, 300, 'µs');
     record('lineOfSight 10 km, air to ground, trees', usAirTrees, 300, 'µs');
     record('lineOfSight 10 km, ground to ground', usGround, 300, 'µs');

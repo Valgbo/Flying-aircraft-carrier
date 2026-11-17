@@ -36,7 +36,8 @@ function arcOf(road: RoadPolyline): Float64Array {
     const p = road.points;
     const n = p.length / 2;
     a = new Float64Array(n);
-    for (let i = 1; i < n; i++) a[i] = a[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
+    for (let i = 1; i < n; i++)
+      a[i] = a[i - 1] + Math.hypot(p[2 * i] - p[2 * i - 2], p[2 * i + 1] - p[2 * i - 1]);
     arcCache.set(road, a);
   }
   return a;

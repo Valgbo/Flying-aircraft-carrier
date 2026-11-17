@@ -10,6 +10,7 @@
 import { WORLD_SIZE } from '../../constants';
 import { Rng, hashSeed } from '../../rng';
 import { SURFACE_INDEX } from '../extra';
+import { padSpecsOf } from '../features';
 import { buildFieldSystem } from '../fields';
 import { MICRO_PEAK, MICRO_ROUGH_GAIN, microRelief, microSeeds } from '../micro';
 import { RANGE_WORLD } from '../params';
@@ -18,9 +19,7 @@ import type { TerrainData, WorldExtra } from '../types';
 import { placeAreas } from './areas';
 import { makeCover } from './cover';
 import { createGrid, gridBSpline, sampleBilinear, upsample } from './grid';
-import { erode } from './erosion';
-import { downValleyAngle, macroHeight, makeLayout, toU, valleyT } from './layout';
-import { smoothstep } from '../noise';
+import { downValleyAngle, macroHeight, makeLayout, toU } from './layout';
 import { carveFloodPlain, makeRiver, riverField } from './river';
 import { buildRoads } from './roads';
 import { placeAirbase, placeRange } from './sites';
@@ -63,16 +62,10 @@ function generate(seed: number): TerrainData {
   const coarse = new Float32Array(nc * nc);
   const cs = size / (nc - 1);
   for (let j = 0; j < nc; j++) {
-    for (let i = 0; i < nc; i++) coarse[j * nc + i] = macroHeight(L, -size / 2 + i * cs, -size / 2 + j * cs);
-  }
-  // Hydraulic erosion cuts drainage into the mountains (the valley floor is left alone).
-  const mountains = new Float32Array(nc * nc);
-  for (let j = 0; j < nc; j++) {
     for (let i = 0; i < nc; i++) {
-      mountains[j * nc + i] = smoothstep(0.8, 1.25, valleyT(L, -size / 2 + i * cs, -size / 2 + j * cs));
+      coarse[j * nc + i] = macroHeight(L, -size / 2 + i * cs, -size / 2 + j * cs);
     }
   }
-  erode(coarse, nc, cs, mountains, stream('erosion'));
   const g = createGrid(n, size);
   upsample(coarse, nc, g);
 
@@ -86,10 +79,22 @@ function generate(seed: number): TerrainData {
   const site = placeAirbase(L, g, rf, sitesRng);
   const pads = placeRange(L, g, rf, site, sitesRng);
 
+  // The range pads as stored in the data (flat discs blending into the terrain over 80 m).
+  const padRecords: WorldExtra['pads'] = pads.map((p) => ({
+    x: p.x,
+    z: p.z,
+    radius: p.radius,
+    blend: 80,
+    elevation: p.plane.elevation,
+    gx: p.plane.gx,
+    gz: p.plane.gz,
+  }));
+
   // Land cover.
   const cover = makeCover(L, g, rf, site, pads, noiseSeed ^ 0x77);
 
-  // Roads, laid on the natural ground the terrain will show (grid surface + micro-relief).
+  // Roads, laid on the natural ground the terrain will show (grid surface + micro-relief) and
+  // flush with the pads where they reach them (the same pad blends heightAt applies).
   const ms = microSeeds(noiseSeed);
   const natural = (x: number, z: number) =>
     gridBSpline(g, x, z) +
@@ -105,6 +110,7 @@ function generate(seed: number): TerrainData {
     stream('roads'),
     (x, z) => sampleBilinear(g, cover.forest, x, z) / 255,
     natural,
+    padSpecsOf(padRecords, site.airfield),
   );
 
   // Field patchwork regions, rows roughly along the valley.
@@ -125,15 +131,7 @@ function generate(seed: number): TerrainData {
     roads,
     rivers: [river],
     airbase: site.airbase,
-    pads: pads.map((p) => ({
-      x: p.x,
-      z: p.z,
-      radius: p.radius,
-      blend: 80,
-      elevation: p.plane.elevation,
-      gx: p.plane.gx,
-      gz: p.plane.gz,
-    })),
+    pads: padRecords,
     airfield: site.airfield,
     targetAreas: [],
     start: { x: 0, z: 0, heading: 0 },

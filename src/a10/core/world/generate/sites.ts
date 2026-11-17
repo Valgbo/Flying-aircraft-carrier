@@ -24,7 +24,13 @@ export interface Plane {
 }
 
 /** Least-squares plane through grid heights at points (x, z), with the gradient clamped. */
-function fitPlane(g: Grid, pts: Array<[number, number]>, cx: number, cz: number, maxGrad: number): Plane & { rms: number; grad: number } {
+function fitPlane(
+  g: Grid,
+  pts: Array<[number, number]>,
+  cx: number,
+  cz: number,
+  maxGrad: number,
+): Plane & { rms: number; grad: number } {
   let sx = 0;
   let sz = 0;
   let sxx = 0;
@@ -139,7 +145,14 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
   const half = L.half;
   const halfLength = RANGE_WORLD.runwayLength / 2 + 320;
   const footHalfWidth = 470;
-  let best: { cost: number; x: number; z: number; heading: number; side: number; plane: Plane } | null = null;
+  let best: {
+    cost: number;
+    x: number;
+    z: number;
+    heading: number;
+    side: number;
+    plane: Plane;
+  } | null = null;
   const uOffset = rng.range(-0.25, 0.25) * half;
   for (let a = -10; a <= 10; a++) {
     const u = uOffset + a * 1500;
@@ -181,7 +194,14 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
     const v = axisV(L, u) + 0.4 * halfWidth(L, u);
     const x = fromUVx(L, u, v);
     const z = fromUVz(L, u, v);
-    best = { cost: 0, x, z, heading: headingOf(L.ca, L.sa), side: 1, plane: { cx: x, cz: z, elevation: gridHeight(g, x, z), gx: 0, gz: 0 } };
+    best = {
+      cost: 0,
+      x,
+      z,
+      heading: headingOf(L.ca, L.sa),
+      side: 1,
+      plane: { cx: x, cz: z, elevation: gridHeight(g, x, z), gx: 0, gz: 0 },
+    };
   }
   const { x, z, heading, plane } = best;
   const ex = Math.sin(heading);
@@ -196,7 +216,12 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
   flattenGrid(
     g,
     plane,
-    [x - halfLength - footHalfWidth, z - halfLength - footHalfWidth, x + halfLength + footHalfWidth, z + halfLength + footHalfWidth],
+    [
+      x - halfLength - footHalfWidth,
+      z - halfLength - footHalfWidth,
+      x + halfLength + footHalfWidth,
+      z + halfLength + footHalfWidth,
+    ],
     (px, pz) => rectDistance(px, pz, x, z, ex, ez, halfLength, footHalfWidth),
     650,
   );
@@ -208,7 +233,14 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
   const taxiOff = 190;
   const apronOff = 345;
   const paved: PavedArea[] = [];
-  const add = (kind: PavedArea['kind'], along: number, across: number, length: number, width: number, hdg: number) => {
+  const add = (
+    kind: PavedArea['kind'],
+    along: number,
+    across: number,
+    length: number,
+    width: number,
+    hdg: number,
+  ) => {
     const p = at(along, across);
     paved.push({ kind, x: p.x, z: p.z, heading: hdg, length, width });
   };
@@ -219,7 +251,14 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
     add('taxiway', along, taxiOff / 2, taxiOff, RANGE_WORLD.taxiwayWidth, cross);
   }
   add('apron', 0, apronOff, RANGE_WORLD.apronLength, RANGE_WORLD.apronWidth, heading);
-  add('taxiway', 0, (taxiOff + apronOff) / 2, apronOff - taxiOff, RANGE_WORLD.taxiwayWidth * 1.4, cross);
+  add(
+    'taxiway',
+    0,
+    (taxiOff + apronOff) / 2,
+    apronOff - taxiOff,
+    RANGE_WORLD.taxiwayWidth * 1.4,
+    cross,
+  );
   // The access road starts at the outer edge of the apron, on its centre line.
   const gatePos = at(0, apronOff + RANGE_WORLD.apronWidth / 2);
   const airbase: Airbase = {
@@ -289,7 +328,20 @@ export function placeRange(
       const t = Math.abs(-x * L.sa + z * L.ca - axisV(L, u)) / halfWidth(L, u);
       if (t > 0.78) continue;
       // Clear of the airfield and of the other range areas.
-      if (rectDistance(x, z, ab.x, ab.z, aex, aez, site.airfield.halfLength, site.airfield.halfWidth) < r + 1400) continue;
+      if (
+        rectDistance(
+          x,
+          z,
+          ab.x,
+          ab.z,
+          aex,
+          aez,
+          site.airfield.halfLength,
+          site.airfield.halfWidth,
+        ) <
+        r + 1400
+      )
+        continue;
       if (out.some((o) => Math.hypot(o.x - x, o.z - z) < o.radius + r + 1300)) continue;
       // No river within the pad and its blend.
       const pts: Array<[number, number]> = [[x, z]];
@@ -315,7 +367,13 @@ export function placeRange(
     if (!best) continue;
     const { x, z, plane } = best;
     const r = spec.radius;
-    flattenGrid(g, plane, [x - r, z - r, x + r, z + r], (px, pz) => Math.max(0, Math.hypot(px - x, pz - z) - r), 380);
+    flattenGrid(
+      g,
+      plane,
+      [x - r, z - r, x + r, z + r],
+      (px, pz) => Math.max(0, Math.hypot(px - x, pz - z) - r),
+      380,
+    );
     // Run-in heading: along the valley, from the side with the lower approach.
     const u = toU(L, x, z);
     const a0 = downValleyAngle(L, u);
@@ -325,7 +383,8 @@ export function placeRange(
       const dx = Math.cos(a);
       const dz = Math.sin(a);
       let top = -Infinity;
-      for (let s = 1000; s <= 7000; s += 500) top = Math.max(top, gridHeight(g, x - dx * s, z - dz * s));
+      for (let s = 1000; s <= 7000; s += 500)
+        top = Math.max(top, gridHeight(g, x - dx * s, z - dz * s));
       if (top < bestTop) {
         bestTop = top;
         bestH = headingOf(dx, dz);

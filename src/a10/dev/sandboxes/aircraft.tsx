@@ -3,10 +3,10 @@
  * orbit camera, with a slider for every animated channel, a loadout selector and the liveries.
  *
  * URL (all optional, for screenshots):
- *   cam=front|rear|left|right|below|top|nose|gear|tail|cockpit   orbit start (cockpit: the
- *       forCockpit instance from the eye point)
+ *   cam=front|rear|left|right|below|top|nose|gear|tail|far|leftWing|rightWing|leftInboard|cockpit: orbit
+ *       start (cockpit: the forCockpit instance from the eye point)
  *   elev, ail, rud (−1..1) · flaps (deg) · slats, sb, gear, n1, canopy (0..1) · gun (rad/s)
- *   loadout=clean|tankHunter|bombs|racks|pods · livery=default|usaf-low-vis|acc
+ *   loadout=<a core/weapons LOADOUTS id>|clean|bombs|racks|pods · livery=default|usaf-low-vis|acc
  *   time=<hours> (lights below dusk) · ui=0 (no panel) · ground=0
  */
 import { OrbitControls } from '@react-three/drei';
@@ -14,6 +14,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Color, Fog, Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { LOADOUTS as SIM_LOADOUTS } from '../../core/weapons';
 import type { StationState, StoreType } from '../../core/weapons/types';
 import {
   applyAircraftVisualState,
@@ -24,6 +25,7 @@ import {
   loadAircraftModels,
   setAircraftLivery,
   setAircraftShadows,
+  updateAircraftDetail,
   type AircraftInstance,
   type AircraftTemplates,
 } from '../../assets';
@@ -35,51 +37,51 @@ const num = (k: string, d: number) => {
   return q.has(k) && Number.isFinite(v) ? v : d;
 };
 
-type Loadout = Record<number, { rack?: StoreType; stores: StoreType[] }>;
-const LOADOUTS: Record<string, Loadout> = {
+/** Station lists, rack or launcher first, like the simulation's presets (core/weapons LOADOUTS). */
+type Loadout = Record<number, StoreType[]>;
+/** More store types than the simulation's presets carry. */
+const EXTRA_LOADOUTS: Record<string, Loadout> = {
   clean: {},
-  tankHunter: {
-    1: { stores: ['AN/ALQ-184'] },
-    3: { rack: 'LAU-88', stores: ['AGM-65D', 'AGM-65D'] },
-    4: { stores: ['GBU-12'] },
-    5: { stores: ['MK-82'] },
-    7: { stores: ['MK-82'] },
-    8: { stores: ['GBU-12'] },
-    9: { rack: 'LAU-117', stores: ['AGM-65H'] },
-    10: { stores: ['LAU-131-M156'] },
-    11: { stores: ['AN/AAQ-28'] },
-  },
   bombs: {
-    3: { stores: ['MK-82'] },
-    4: { stores: ['MK-82AIR'] },
-    5: { stores: ['GBU-12'] },
-    7: { stores: ['GBU-12'] },
-    8: { stores: ['MK-82AIR'] },
-    9: { stores: ['MK-82'] },
+    3: ['MK-82'],
+    4: ['MK-82AIR'],
+    5: ['GBU-12'],
+    7: ['GBU-12'],
+    8: ['MK-82AIR'],
+    9: ['MK-82'],
   },
   racks: {
-    1: { stores: ['AIM-9M', 'AIM-9M'] },
-    3: { rack: 'TER-9A', stores: ['MK-82', 'MK-82', 'MK-82'] },
-    4: { stores: ['CBU-97'] },
-    8: { stores: ['CBU-97'] },
-    9: { rack: 'LAU-88', stores: ['AGM-65D', 'AGM-65H', 'AGM-65D'] },
-    11: { stores: ['AIM-9M', 'AIM-9M'] },
+    1: ['LAU-114', 'AIM-9M', 'AIM-9M'],
+    3: ['TER-9A', 'MK-82', 'MK-82', 'MK-82'],
+    4: ['CBU-97'],
+    8: ['CBU-97'],
+    9: ['LAU-88', 'AGM-65D', 'AGM-65H', 'AGM-65D'],
+    11: ['LAU-114', 'AIM-9M', 'AIM-9M'],
   },
   pods: {
-    2: { stores: ['LAU-68-M151'] },
-    3: { stores: ['AN/AAQ-28'] },
-    4: { stores: ['LAU-131-M156'] },
-    8: { stores: ['LAU-131-M156'] },
-    9: { rack: 'LAU-117', stores: ['AGM-65K'] },
-    10: { stores: ['LAU-68-M151'] },
-    11: { stores: ['AN/ALQ-184'] },
+    2: ['LAU-68-M151'],
+    3: ['AN/AAQ-28'],
+    4: ['LAU-131-M156'],
+    8: ['LAU-131-M156'],
+    9: ['LAU-117', 'AGM-65K'],
+    10: ['LAU-68-M151'],
+    11: ['AN/ALQ-184'],
   },
 };
+const LOADOUTS: Record<string, Loadout> = {
+  ...Object.fromEntries(Object.entries(SIM_LOADOUTS).map(([id, l]) => [id, l.stations])),
+  ...EXTRA_LOADOUTS,
+};
+const RACKS = new Set<string>(['TER-9A', 'LAU-88', 'LAU-117', 'LAU-114']);
 
+/** The simulation's station state for a loadout (the rack, then what it carries). */
 function stationsOf(l: Loadout): StationState[] {
   const out: StationState[] = [];
-  for (let s = 1; s <= 11; s++)
-    out.push({ station: s, rack: l[s]?.rack ?? null, stores: [...(l[s]?.stores ?? [])] });
+  for (let s = 1; s <= 11; s++) {
+    const list = l[s] ?? [];
+    const rack = list.length > 0 && RACKS.has(list[0]) ? list[0] : null;
+    out.push({ station: s, rack, stores: rack ? list.slice(1) : [...list] });
+  }
   return out;
 }
 
@@ -128,6 +130,10 @@ const CAMS: Record<
   nose: { pos: [-3.2, -0.6, -11], target: [0, -0.4, -6.5], fov: 40 },
   gear: { pos: [-6.5, -1.6, -3.5], target: [-2.4, -1.6, 0.4], fov: 45 },
   tail: { pos: [-6, 3.5, 15.5], target: [0, 1.0, 7.5], fov: 45 },
+  far: { pos: [-70, 25, -120], target: [0, 0, 0], fov: 35 },
+  rightWing: { pos: [9.5, -1.6, -9], target: [5.2, -0.8, -0.5], fov: 45 },
+  leftWing: { pos: [-9.5, -1.6, -9], target: [-5.2, -0.8, -0.5], fov: 45 },
+  leftInboard: { pos: [-7.5, -3.2, 2.5], target: [-2.2, -1.1, 0.2], fov: 40 },
   cockpit: {
     pos: [A10_GEOMETRY.eye.x, A10_GEOMETRY.eye.y, A10_GEOMETRY.eye.z],
     target: [0, 0.6, -20],
@@ -166,7 +172,7 @@ function Aircraft({ templates }: { templates: AircraftTemplates }) {
   useEffect(() => void setAircraftLivery(params.livery), [templates]);
   const state = useMemo(() => createVisualState(), []);
   const stations = useRef<{ key: string; list: StationState[] }>({ key: '', list: [] });
-  useFrame((_, delta) => {
+  useFrame((frame, delta) => {
     const dt = Math.min(0.1, delta);
     time.current += dt;
     barrel.current += params.gunRate * dt;
@@ -186,6 +192,8 @@ function Aircraft({ templates }: { templates: AircraftTemplates }) {
     state.daylight = dayLight(params.hour);
     state.time = time.current;
     applyAircraftVisualState(inst, state, dt);
+    const cam = frame.camera as PerspectiveCamera;
+    updateAircraftDetail(inst, cam.position, cam.fov, frame.size.height);
   });
   return null;
 }
@@ -228,6 +236,20 @@ function CameraSetup() {
   return null;
 }
 
+/** Draw calls and triangles of the last frame (whole scene), into the panel and for scripts. */
+const drawStats = { calls: 0, triangles: 0 };
+function DrawStats({ out }: { out: { current: HTMLSpanElement | null } }) {
+  const gl = useThree((s) => s.gl);
+  useFrame(() => {
+    // read before this frame's render: the numbers of the previous frame
+    drawStats.calls = gl.info.render.calls;
+    drawStats.triangles = gl.info.render.triangles;
+    if (out.current)
+      out.current.textContent = `scene ${drawStats.calls} draws · ${drawStats.triangles.toLocaleString('en')} triangles`;
+  });
+  return null;
+}
+
 function Controls() {
   const ref = useRef<OrbitControlsImpl>(null);
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
@@ -238,6 +260,7 @@ function Controls() {
     (window as unknown as { __aircraftSandbox: unknown }).__aircraftSandbox = {
       params,
       set: (patch: Partial<Params>) => Object.assign(params, patch),
+      info: () => ({ ...drawStats }),
       camera: (name: string) => {
         const c = CAMS[name];
         if (!c || !ref.current) return false;
@@ -257,6 +280,7 @@ export default function AircraftSandbox() {
   const [templates, setTemplates] = useState<AircraftTemplates | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, force] = useState(0);
+  const statsRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     loadAircraftModels().then(setTemplates, (e: unknown) => setError(String(e)));
   }, []);
@@ -289,6 +313,7 @@ export default function AircraftSandbox() {
         )}
         {templates && <Aircraft templates={templates} />}
         <Controls />
+        <DrawStats out={statsRef} />
       </Canvas>
       {error && <div style={{ ...panel, color: '#f88' }}>{error}</div>}
       {!templates && !error && (
@@ -327,8 +352,7 @@ export default function AircraftSandbox() {
             </select>
           </label>
           <div style={{ opacity: 0.7, marginTop: 6 }}>
-            exterior {templates.meta.budget['a10-exterior.glb']?.triangles} tris ·{' '}
-            {templates.meta.budget['a10-exterior.glb']?.drawCalls} draws
+            <span ref={statsRef} />
           </div>
         </div>
       )}

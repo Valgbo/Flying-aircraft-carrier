@@ -56,8 +56,7 @@ function upsampleTo8(src: Float32Array, nh: number, dst: Uint8Array, n: number):
       const i0 = i >> 1;
       const i1 = i & 1 ? i0 + 1 : i0;
       const v =
-        0.25 *
-        (src[j0 * nh + i0] + src[j0 * nh + i1] + src[j1 * nh + i0] + src[j1 * nh + i1]);
+        0.25 * (src[j0 * nh + i0] + src[j0 * nh + i1] + src[j1 * nh + i0] + src[j1 * nh + i1]);
       dst[j * n + i] = v <= 0 ? 0 : v >= 1 ? 255 : Math.round(v * 255);
     }
   }
@@ -160,14 +159,20 @@ export function makeCover(
       const i1 = i < n - 2 ? i + 2 : n - 1;
       const j0 = j > 1 ? j - 2 : 0;
       const j1 = j < n - 2 ? j + 2 : n - 1;
-      const lap = (h[j * n + i0] + h[j * n + i1] + h[j0 * n + i] + h[j1 * n + i] - 4 * hh) / (4 * spacing * spacing);
+      const lap =
+        (h[j * n + i0] + h[j * n + i1] + h[j0 * n + i] + h[j1 * n + i] - 4 * hh) /
+        (4 * spacing * spacing);
       const curv = lap * 900 < -0.3 ? -0.3 : lap * 900 > 0.3 ? 0.3 : lap * 900;
 
       const mountain = smoothstep(0.78, 1.2, t);
       const woods = smoothstep(0.14, 0.3, lerp4(lat, o, rowStride, CH_WOODS)) * (1 - mountain);
       let f =
         mountain *
-        (0.58 + 0.9 * lerp4(lat, o, rowStride, CH_VAR) + 0.28 * smoothstep(7, 18, slopeDeg) - 0.18 * (1 - smoothstep(3, 8, slopeDeg)) + curv);
+        (0.58 +
+          0.9 * lerp4(lat, o, rowStride, CH_VAR) +
+          0.28 * smoothstep(7, 18, slopeDeg) -
+          0.18 * (1 - smoothstep(3, 8, slopeDeg)) +
+          curv);
       f -= 0.7 * smoothstep(740, 860, hh);
       f -= 0.75 * smoothstep(30, 40, slopeDeg);
       if (woods > f) f = woods;
@@ -189,7 +194,11 @@ export function makeCover(
       wet = wet < 0 ? 0 : wet > 1 ? 1 : wet;
 
       let r =
-        0.12 + 0.3 * Math.max(0, f) + 0.75 * smoothstep(16, 36, slopeDeg) + 0.12 * mountain - 0.1 * fa;
+        0.12 +
+        0.3 * Math.max(0, f) +
+        0.75 * smoothstep(16, 36, slopeDeg) +
+        0.12 * mountain -
+        0.1 * fa;
       r *= smoothstep(0, 200, dA) * smoothstep(0, 150, dP);
 
       const kh = jh * nh + ih;

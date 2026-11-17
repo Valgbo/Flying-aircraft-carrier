@@ -88,7 +88,9 @@ function check(t: Terrain, p0: Vector3, p1: Vector3, step: number): boolean {
   expect(h.distance).toBeLessThanOrEqual(b.s + 0.05);
   // Earlier than the sampled crossing only where the sampling stepped over a thin dip.
   if (h.distance < b.s - 0.05) {
-    expect(Math.abs(ray - t.heightAt(p0.x + d.x * h.distance, p0.z + d.z * h.distance))).toBeLessThan(0.005);
+    expect(
+      Math.abs(ray - t.heightAt(p0.x + d.x * h.distance, p0.z + d.z * h.distance)),
+    ).toBeLessThan(0.005);
   }
   expect(h.t).toBeCloseTo(h.distance / len, 9);
   return true;
@@ -141,10 +143,12 @@ describe('segmentHit', () => {
     const r = new Rng(23);
     const spots: Array<[number, number]> = [];
     for (const road of terrain.roads) {
-      for (let k = 0; k < road.points.length / 2; k += 97) spots.push([road.points[2 * k], road.points[2 * k + 1]]);
+      for (let k = 0; k < road.points.length / 2; k += 97)
+        spots.push([road.points[2 * k], road.points[2 * k + 1]]);
     }
     const river = terrain.rivers![0];
-    for (let k = 0; k < river.points.length / 2; k += 61) spots.push([river.points[2 * k], river.points[2 * k + 1]]);
+    for (let k = 0; k < river.points.length / 2; k += 61)
+      spots.push([river.points[2 * k], river.points[2 * k + 1]]);
     for (const a of terrain.targetAreas) if (a.kind === 'range') spots.push([a.x + a.radius, a.z]);
     const ab = terrain.airbase!;
     spots.push([ab.x, ab.z], [ab.x + 300, ab.z + 300]);
@@ -171,9 +175,13 @@ describe('segmentHit', () => {
     const x = 1234;
     const z = -4321;
     const g = terrain.heightAt(x, z);
-    expect(terrain.segmentHit(new Vector3(x, g - 0.5, z), new Vector3(x + 10, g + 50, z), h)).toBe(true);
+    expect(terrain.segmentHit(new Vector3(x, g - 0.5, z), new Vector3(x + 10, g + 50, z), h)).toBe(
+      true,
+    );
     expect(h.distance).toBe(0);
-    expect(terrain.segmentHit(new Vector3(x, 2000, z), new Vector3(x + 8, 1999, z + 3), h)).toBe(false);
+    expect(terrain.segmentHit(new Vector3(x, 2000, z), new Vector3(x + 8, 1999, z + 3), h)).toBe(
+      false,
+    );
   });
 
   it('works outside the map, where the edge height continues', () => {
@@ -183,7 +191,12 @@ describe('segmentHit', () => {
     const p1 = new Vector3(half + 600, -100, 150);
     expect(terrain.segmentHit(p0, p1, h)).toBe(true);
     expect(Math.abs(h.point.y - terrain.heightAt(h.point.x, h.point.z))).toBeLessThan(0.05);
-    check(terrain, new Vector3(half - 40, terrain.heightAt(half, 0) + 3, 0), new Vector3(half + 60, terrain.heightAt(half, 0) - 2, 5), 0.01);
+    check(
+      terrain,
+      new Vector3(half - 40, terrain.heightAt(half, 0) + 3, 0),
+      new Vector3(half + 60, terrain.heightAt(half, 0) - 2, 5),
+      0.01,
+    );
   });
 });
 
@@ -194,7 +207,11 @@ describe('raycast', () => {
       const o = new Vector3(r.range(-30000, 30000), 3000, r.range(-30000, 30000));
       const el = r.range(-Math.PI / 2, -0.12);
       const az = r.range(0, Math.PI * 2);
-      const dir = new Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      const dir = new Vector3(
+        Math.cos(el) * Math.sin(az),
+        Math.sin(el),
+        Math.cos(el) * Math.cos(az),
+      );
       const h = hit();
       const got = terrain.raycast(o, dir.clone().multiplyScalar(7), 40000, h);
       // Brute force from where the ray first reaches the terrain's height range.

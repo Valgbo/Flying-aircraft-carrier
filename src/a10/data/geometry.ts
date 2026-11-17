@@ -7,8 +7,9 @@
  * and XML files (see docs/a10/REFERENCE_DATA.md). Mapping from the AC3D file axes (+x aft, +y up,
  * +z left): X = -z_ac, Y = y_ac - 0.30, Z = x_ac - 7.65.
  *
- * Owned by the AIRCRAFT (asset pipeline) module, which regenerates these values from
- * public/a10/models/a10-meta.json when the converter runs.
+ * Owned by the AIRCRAFT (asset pipeline) module. The values are copied from
+ * public/a10/models/a10-meta.json, which scripts/a10/convert-ac3d.mjs writes;
+ * tests/unit/a10/assets.node.test.ts fails when the two disagree.
  */
 export const A10_GEOMETRY = {
   /**
@@ -62,8 +63,11 @@ export const A10_GEOMETRY = {
   noseZ: -7.655,
   tailZ: 8.407,
   wingTipX: 8.904,
-  /** Lowest point of the fuselage with the gear up (belly), Y, m. */
-  bellyY: -1.64,
+  /**
+   * Lowest point of the fuselage with the gear up (belly), Y, m: its two keels (`hull.belly`).
+   * Was −1.64, the bottom of the 600-gal tanks, which the model shows only when they are loaded.
+   */
+  bellyY: -0.9,
   /** Fin tip height, Y, m. */
   finTopY: 2.455,
   /**
@@ -100,4 +104,49 @@ export const A10_GEOMETRY = {
   ],
   /** Gun barrel cluster: a point on its spin axis (the front clamp ring), body frame. */
   gunClusterAxisPoint: { x: -0.0489, y: -0.597, z: -7.783 },
+  /**
+   * Hull points for ground contact with the gear UP, measured on the parts that are always drawn
+   * (a10-meta.json `hull`). Points off the centreline are given for the RIGHT side; the left side
+   * mirrors X.
+   */
+  hull: {
+    /** Nose tip and tail-cone tip (centreline). */
+    noseTip: { x: 0, y: -0.296, z: -7.655 },
+    tailTip: { x: 0, y: 0.269, z: 8.407 },
+    /** The two keels of the flat belly: the lowest fuselage points (they run aft to z −1.05). */
+    belly: { x: 0.661, y: -0.9, z: -1.85 },
+    /** Lowest fuselage point aft of the wing (centreline, at the wing-root trailing edge). */
+    aftBelly: { x: 0, y: -0.416, z: 3.048 },
+    /**
+     * Wing tip: the wing's outermost point (beside the nav light; the strobe lens reaches
+     * x 8.952), and the tip chord's leading and trailing ends on the lower surface. The trailing
+     * end is the lowest point of the tip.
+     */
+    wingTip: {
+      outer: { x: 8.904, y: 0.182, z: 0.964 },
+      leading: { x: 8.89, y: 0.038, z: 0.561 },
+      trailing: { x: 8.889, y: 0.008, z: 1.796 },
+    },
+    /**
+     * Fin (one of the twin fins): lateral centre, and the top and bottom of the fin at the middle
+     * of their chords (the fins reach below the tailplane; the bottom is the lowest aft point).
+     */
+    fin: {
+      x: 2.86,
+      top: { x: 2.853, y: 2.455, z: 7.033 },
+      bottom: { x: 2.871, y: -0.594, z: 6.493 },
+    },
+    /**
+     * Main-gear pod with the gear up: the retracted wheel stands out below the pod (as on the
+     * real aircraft) and is the lowest point of the clean aircraft; the pod's bottom near its
+     * front and rear ends.
+     */
+    gearPod: {
+      tyre: { x: 2.678, y: -1.286, z: -1.174 },
+      front: { x: 2.43, y: -0.931, z: -1.48 },
+      rear: { x: 2.63, y: -0.801, z: 1.092 },
+    },
+    /** Pave Penny pod under the nose, right of the centreline only (lowest point). */
+    pavePenny: { x: 0.713, y: -0.97, z: -4.909 },
+  },
 } as const;

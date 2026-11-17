@@ -17,6 +17,7 @@ export {
 } from './models';
 export {
   GEAR_TRAVEL_TIME,
+  INTERIOR_MIN_PIXELS_PER_METRE,
   applyAircraftVisualState,
   createAircraftInstance,
   createVisualState,
@@ -24,6 +25,7 @@ export {
   getAircraftLivery,
   setAircraftLivery,
   setAircraftShadows,
+  updateAircraftDetail,
   updateAircraftInstance,
   type AircraftInstance,
   type AircraftInstanceOptions,

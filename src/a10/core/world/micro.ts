@@ -33,7 +33,11 @@ export interface MicroSeeds {
 }
 
 export function microSeeds(noiseSeed: number): MicroSeeds {
-  return { s0: hash2(1, 0, noiseSeed) | 0, s1: hash2(2, 0, noiseSeed) | 0, s2: hash2(3, 0, noiseSeed) | 0 };
+  return {
+    s0: hash2(1, 0, noiseSeed) | 0,
+    s1: hash2(2, 0, noiseSeed) | 0,
+    s2: hash2(3, 0, noiseSeed) | 0,
+  };
 }
 
 /** Micro-relief at (x, z) before the roughness gain, m (≈ ±MICRO_PEAK). */

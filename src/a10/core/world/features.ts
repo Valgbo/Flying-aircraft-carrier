@@ -16,7 +16,7 @@
  * A uniform grid of 125 m cells lists, in priority order, every feature whose blend zone touches
  * the cell. Most cells are empty, so heightAt pays one array read for the feature layer there.
  */
-import type { RiverPolyline, RoadKind, RoadPolyline } from './types';
+import type { RiverPolyline, RoadKind, RoadPolyline, WorldExtra } from './types';
 
 /** Feature group kinds (priority order). */
 export const KIND_RIVER = 0;
@@ -209,7 +209,10 @@ export function buildFeatureSet(
   }
 
   // Pads: range discs first, the airfield last (highest priority).
-  const orderedPads = [...pads.filter((q) => q.role === 'range'), ...pads.filter((q) => q.role === 'airfield')];
+  const orderedPads = [
+    ...pads.filter((q) => q.role === 'range'),
+    ...pads.filter((q) => q.role === 'airfield'),
+  ];
   const pad = new Float64Array(Math.max(1, orderedPads.length) * PAD);
   const padRole = new Int8Array(orderedPads.length);
   orderedPads.forEach((q, i) => {
@@ -406,21 +409,102 @@ export function blendFeatures(fs: FeatureSet, x: number, z: number, h: number): 
   return h;
 }
 
-/** Signed-free distance outside a pad's flat area (0 inside). */
-function padDistance(pad: Float64Array, o: number, x: number, z: number): number {
-  const px = x - pad[o + P_CX];
-  const pz = z - pad[o + P_CZ];
-  if (pad[o + P_SHAPE] === 0) {
-    const d = Math.sqrt(px * px + pz * pz) - pad[o + P_HL];
+/**
+ * Distance outside a pad's flat area (0 inside) for a point (px, pz) relative to the pad centre:
+ * a disc of radius hl, or a rectangle of half sides hl (along the unit axis (ex, ez)) and hw.
+ */
+function shapeDistance(
+  disc: boolean,
+  px: number,
+  pz: number,
+  ex: number,
+  ez: number,
+  hl: number,
+  hw: number,
+): number {
+  if (disc) {
+    const d = Math.sqrt(px * px + pz * pz) - hl;
     return d > 0 ? d : 0;
   }
-  const ex = pad[o + P_EX];
-  const ez = pad[o + P_EZ];
-  const along = Math.abs(px * ex + pz * ez) - pad[o + P_HL];
-  const across = Math.abs(-px * ez + pz * ex) - pad[o + P_HW];
+  const along = Math.abs(px * ex + pz * ez) - hl;
+  const across = Math.abs(-px * ez + pz * ex) - hw;
   const ax = along > 0 ? along : 0;
   const az = across > 0 ? across : 0;
   return Math.sqrt(ax * ax + az * az);
+}
+
+/** Signed-free distance outside a pad's flat area (0 inside). */
+function padDistance(pad: Float64Array, o: number, x: number, z: number): number {
+  return shapeDistance(
+    pad[o + P_SHAPE] === 0,
+    x - pad[o + P_CX],
+    z - pad[o + P_CZ],
+    pad[o + P_EX],
+    pad[o + P_EZ],
+    pad[o + P_HL],
+    pad[o + P_HW],
+  );
+}
+
+/**
+ * The flat pads of a generated world as PadSpecs, in the order blendFeatures applies them
+ * (range discs, then the airfield). The terrain and the generator (which lays road beds flush
+ * with the pads) both build them here, so they agree to the bit.
+ */
+export function padSpecsOf(pads: WorldExtra['pads'], airfield: WorldExtra['airfield']): PadSpec[] {
+  const out: PadSpec[] = pads.map((p) => ({
+    shape: 'disc',
+    x: p.x,
+    z: p.z,
+    ex: 1,
+    ez: 0,
+    halfLength: p.radius,
+    halfWidth: p.radius,
+    blend: p.blend,
+    elevation: p.elevation,
+    gx: p.gx,
+    gz: p.gz,
+    role: 'range',
+  }));
+  if (airfield) {
+    out.push({
+      shape: 'rect',
+      x: airfield.x,
+      z: airfield.z,
+      ex: Math.sin(airfield.heading),
+      ez: -Math.cos(airfield.heading),
+      halfLength: airfield.halfLength,
+      halfWidth: airfield.halfWidth,
+      blend: airfield.blend,
+      elevation: airfield.elevation,
+      gx: airfield.gx,
+      gz: airfield.gz,
+      role: 'airfield',
+    });
+  }
+  return out;
+}
+
+/**
+ * Blend weight of a pad at (x, z): 1 on its flat area, falling smoothly to 0 at `blend` metres
+ * outside it (the weight blendFeatures gives the pad's plane there).
+ */
+export function padWeight(p: PadSpec, x: number, z: number): number {
+  const d = shapeDistance(
+    p.shape === 'disc',
+    x - p.x,
+    z - p.z,
+    p.ex,
+    p.ez,
+    p.halfLength,
+    p.halfWidth,
+  );
+  return d >= p.blend ? 0 : 1 - smooth01(d / p.blend);
+}
+
+/** Height of a pad's plane at (x, z), m. */
+export function padPlaneAt(p: PadSpec, x: number, z: number): number {
+  return p.elevation + p.gx * (x - p.x) + p.gz * (z - p.z);
 }
 
 function blendPad(pad: Float64Array, k: number, x: number, z: number, h: number): number {
@@ -429,7 +513,8 @@ function blendPad(pad: Float64Array, k: number, x: number, z: number, h: number)
   const bl = pad[o + P_BL];
   if (d >= bl) return h;
   const w = 1 - smooth01(d / bl);
-  const hf = pad[o + P_H0] + pad[o + P_GX] * (x - pad[o + P_CX]) + pad[o + P_GZ] * (z - pad[o + P_CZ]);
+  const hf =
+    pad[o + P_H0] + pad[o + P_GX] * (x - pad[o + P_CX]) + pad[o + P_GZ] * (z - pad[o + P_CZ]);
   return h + w * (hf - h);
 }
 
@@ -605,7 +690,10 @@ export function cellFeatureBounds(
       group = -1;
       const p = -1 - item;
       const o = p * PAD;
-      const r = fs.pad[o + P_SHAPE] === 0 ? fs.pad[o + P_HL] : Math.hypot(fs.pad[o + P_HL], fs.pad[o + P_HW]);
+      const r =
+        fs.pad[o + P_SHAPE] === 0
+          ? fs.pad[o + P_HL]
+          : Math.hypot(fs.pad[o + P_HL], fs.pad[o + P_HW]);
       const reach = r + fs.pad[o + P_BL];
       const grad = Math.hypot(fs.pad[o + P_GX], fs.pad[o + P_GZ]);
       const h0 = fs.pad[o + P_H0];
@@ -642,7 +730,8 @@ export function padPlane(
   const o = k * PAD;
   out.x = fs.pad[o + P_CX];
   out.z = fs.pad[o + P_CZ];
-  const r = fs.pad[o + P_SHAPE] === 0 ? fs.pad[o + P_HL] : Math.hypot(fs.pad[o + P_HL], fs.pad[o + P_HW]);
+  const r =
+    fs.pad[o + P_SHAPE] === 0 ? fs.pad[o + P_HL] : Math.hypot(fs.pad[o + P_HL], fs.pad[o + P_HW]);
   out.reach = r + fs.pad[o + P_BL];
   out.h0 = fs.pad[o + P_H0];
   out.gx = fs.pad[o + P_GX];

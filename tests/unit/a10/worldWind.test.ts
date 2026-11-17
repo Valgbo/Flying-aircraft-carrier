@@ -75,7 +75,10 @@ describe('wind', () => {
     }
     // Log law near the ground: half the 10 m wind at about 0.6 m over open ground.
     windAt(world, new Vector3(0, 100.6, 0), out);
-    expect(out.x / 5).toBeCloseTo(Math.log(0.6 / WIND.roughnessOpen) / Math.log(10 / WIND.roughnessOpen), 6);
+    expect(out.x / 5).toBeCloseTo(
+      Math.log(0.6 / WIND.roughnessOpen) / Math.log(10 / WIND.roughnessOpen),
+      6,
+    );
     // At the top of the boundary layer, about twice the surface wind; constant above.
     windAt(world, new Vector3(0, 100 + 1000, 0), out);
     expect(out.x / 5).toBeGreaterThan(1.7);

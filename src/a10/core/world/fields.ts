@@ -280,7 +280,12 @@ export function locateField(fs: FieldSystem, x: number, z: number, out: FieldCel
       hd = du1;
       hh = hash01(j * 7919 + kr, 909, s);
     }
-    if (tr === 1 && regionEdge < HEDGE_QUERY && regionEdge < hd && hedgeAt(u + v, best + second, gapSeed)) {
+    if (
+      tr === 1 &&
+      regionEdge < HEDGE_QUERY &&
+      regionEdge < hd &&
+      hedgeAt(u + v, best + second, gapSeed)
+    ) {
       hd = regionEdge;
       hh = 0.5;
     }

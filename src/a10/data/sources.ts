@@ -129,6 +129,33 @@ export const SOURCES = {
     title: '14 CFR 25.103 (stall speed) and 33.73 (engine acceleration)',
     url: 'https://www.ecfr.gov/current/title-14/part-25/section-25.103',
   },
+  usStandardAtmosphere1976: {
+    title:
+      'U.S. Standard Atmosphere, 1976 (NOAA-S/T 76-1562) and ICAO Doc 7488/3, Manual of the ICAO Standard Atmosphere',
+    url: 'https://ntrs.nasa.gov/citations/19770009539',
+  },
+  wmoCimo: {
+    title:
+      'WMO-No. 8, Guide to Instruments and Methods of Observation (CIMO Guide): 10 m surface wind, Davenport–Wieringa terrain roughness classes',
+    url: 'https://library.wmo.int/',
+  },
+  stull1988: {
+    title: 'Stull, An Introduction to Boundary Layer Meteorology, Kluwer, 1988',
+    url: 'https://doi.org/10.1007/978-94-009-3027-8',
+  },
+  icaoAnnex14: {
+    title: 'ICAO Annex 14, Aerodromes, Vol. I (runway and taxiway widths)',
+    url: 'https://www.icao.int/',
+  },
+  aashtoGreenBook: {
+    title:
+      'AASHTO, A Policy on Geometric Design of Highways and Streets (lane widths, maximum grades)',
+    url: 'https://store.transportation.org/',
+  },
+  leopoldWolman1960: {
+    title: 'Leopold & Wolman, River meanders, GSA Bulletin 71(6), 1960',
+    url: 'https://doi.org/10.1130/0016-7606(1960)71[769:RM]2.0.CO;2',
+  },
   plan: { title: 'PLAN_A10.md (this project): design decision', url: 'PLAN_A10.md' },
 } as const;
 

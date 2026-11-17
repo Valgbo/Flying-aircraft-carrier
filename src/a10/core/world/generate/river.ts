@@ -11,7 +11,17 @@ import { Rng } from '../../rng';
 import { noise2, smoothstep } from '../noise';
 import { RANGE_WORLD } from '../params';
 import type { RiverPolyline } from '../types';
-import { axisSlope, axisV, floorAt, fromUVx, fromUVz, halfWidth, toU, toV, type Layout } from './layout';
+import {
+  axisSlope,
+  axisV,
+  floorAt,
+  fromUVx,
+  fromUVz,
+  halfWidth,
+  toU,
+  toV,
+  type Layout,
+} from './layout';
 import type { Grid } from './grid';
 
 /** River centre-line spacing, m. */
@@ -57,7 +67,8 @@ export function makeRiver(L: Layout, rng: Rng, seed: number): RiverPolyline {
     const M = 1.25 * RANGE_WORLD.meanderPerWidth * width;
     const omega = omega0 * (0.7 + 0.45 * (0.5 + 0.5 * noise2(s / 9000, 3.3, beltSeed)));
     const theta = base + omega * Math.sin(phase) + steer;
-    phase += (2 * Math.PI * STEP) / (M * (0.8 + 0.4 * (0.5 + 0.5 * noise2(s / 7000, 9.1, beltSeed))));
+    phase +=
+      (2 * Math.PI * STEP) / (M * (0.8 + 0.4 * (0.5 + 0.5 * noise2(s / 7000, 9.1, beltSeed))));
     u += Math.cos(theta) * STEP;
     v += Math.sin(theta) * STEP;
     s += STEP;
@@ -66,7 +77,9 @@ export function makeRiver(L: Layout, rng: Rng, seed: number): RiverPolyline {
   const points = new Float64Array(pts);
   const arc = new Float64Array(n);
   for (let i = 1; i < n; i++) {
-    arc[i] = arc[i - 1] + Math.hypot(points[2 * i] - points[2 * i - 2], points[2 * i + 1] - points[2 * i - 1]);
+    arc[i] =
+      arc[i - 1] +
+      Math.hypot(points[2 * i] - points[2 * i - 2], points[2 * i + 1] - points[2 * i - 1]);
   }
   const length = arc[n - 1];
   // Width grows downstream; water level follows the valley floor 3.2 m down, never rising.

@@ -7,13 +7,18 @@ import { Vector3 } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   RANGE_WORLD,
+  SURFACE_INDEX,
   SURFACE_KINDS,
   createFlatTerrain,
   createTerrain,
   generateTerrainData,
+  gridX,
+  gridZ,
+  maskAt,
   nearestRoadPoint,
   createRoadPoint,
   pointAlongRoad,
+  surfaceMaskAt,
   worldExtra,
   type FieldSample,
   type Terrain,
@@ -67,7 +72,8 @@ describe('generation', () => {
     expect(ea.start).toEqual(eb.start);
     const other = generateTerrainData(SEED + 1, { cache: false });
     let diff = 0;
-    for (let i = 0; i < other.heights.length; i += 97) if (other.heights[i] !== data.heights[i]) diff++;
+    for (let i = 0; i < other.heights.length; i += 97)
+      if (other.heights[i] !== data.heights[i]) diff++;
     expect(diff).toBeGreaterThan(1000);
   }, 60000);
 
@@ -93,6 +99,40 @@ describe('generation', () => {
     expect(t2.start).toEqual(terrain.start);
     expect(t2.maxHeight).toBe(terrain.maxHeight);
   }, 30000);
+
+  it('gives the renderer typed access to the masks: worldExtra, maskAt, surfaceMaskAt, gridX/gridZ', () => {
+    const e = worldExtra(data)!;
+    expect(e).not.toBeNull();
+    expect(worldExtra(createFlatTerrain(10).data)).toBeNull();
+    const n = data.resolution;
+    expect(gridX(data, 0)).toBe(-data.size / 2);
+    expect(gridX(data, n - 1)).toBe(data.size / 2);
+    expect(gridZ(data, (n - 1) / 2)).toBe(0);
+    const r = new Rng(21);
+    // At a grid sample a mask reads its stored byte; anywhere it is the terrain's smooth value.
+    for (let k = 0; k < 500; k++) {
+      const col = r.int(0, n - 1);
+      const row = r.int(0, n - 1);
+      const x = gridX(data, col);
+      const z = gridZ(data, row);
+      expect(maskAt(data, e.forest, x, z)).toBeCloseTo(e.forest[row * n + col] / 255, 9);
+      expect(maskAt(data, e.roughness, x, z)).toBeCloseTo(e.roughness[row * n + col] / 255, 9);
+    }
+    for (const [x, z] of points(2000, 23)) {
+      expect(maskAt(data, e.forest, x, z)).toBeCloseTo(terrain.forestDensityAt!(x, z), 9);
+      expect(maskAt(data, e.moisture, x, z)).toBeCloseTo(terrain.moistureAt!(x, z), 9);
+    }
+    // The baked surface classes are surfaceAt at the surface-grid samples.
+    const ns = e.surfaceResolution;
+    const ss = data.size / (ns - 1);
+    for (let k = 0; k < 500; k++) {
+      const x = -data.size / 2 + r.int(0, ns - 1) * ss;
+      const z = -data.size / 2 + r.int(0, ns - 1) * ss;
+      const s = terrain.surfaceAt(x, z);
+      expect(surfaceMaskAt(data, e, x, z)).toBe(s);
+      expect(SURFACE_KINDS[SURFACE_INDEX[s]]).toBe(s);
+    }
+  });
 
   it('fills the map: valley floor, ridges to about 900 m, height grid and masks of the right size', () => {
     const e = worldExtra(data)!;
@@ -247,7 +287,9 @@ describe('river', () => {
       expect(terrain.waterLevelAt!(x, z)).toBeCloseTo(river.levels[i], 1);
       const h0 = terrain.heightAt(x, z);
       for (const f of [-0.8, -0.4, 0.4, 0.8]) {
-        expect(Math.abs(terrain.heightAt(x + nx * hw * f, z + nz * hw * f) - h0)).toBeLessThan(0.05);
+        expect(Math.abs(terrain.heightAt(x + nx * hw * f, z + nz * hw * f) - h0)).toBeLessThan(
+          0.05,
+        );
       }
       // Just outside the water: sand bank, above the water.
       const bx = x + nx * (hw + 3);
@@ -299,7 +341,10 @@ describe('target areas', () => {
     for (const a of nonRange) expect(['open', 'treeline', 'road', 'dugIn']).toContain(a.kind);
     const kinds = new Set(nonRange.map((a) => a.kind));
     expect(kinds.size).toBe(4);
-    const names = areas.filter((a) => a.kind === 'range').map((a) => a.name).sort();
+    const names = areas
+      .filter((a) => a.kind === 'range')
+      .map((a) => a.name)
+      .sort();
     expect(names).toEqual(['BOMB CIRCLE', 'STRAFE PIT', 'TACTICAL LANE']);
     expect(new Set(areas.map((a) => a.name)).size).toBe(areas.length);
     areas.forEach((a, i) => expect(a.id).toBe(i));
@@ -373,13 +418,17 @@ describe('target areas', () => {
       }
     }
     expect(Math.abs(best - START_DISTANCE)).toBeLessThan(600);
-    expect(Math.abs(wrapPi(s.heading - headingOf(nearest.x - s.x, nearest.z - s.z)))).toBeLessThan(0.01);
+    expect(Math.abs(wrapPi(s.heading - headingOf(nearest.x - s.x, nearest.z - s.z)))).toBeLessThan(
+      0.01,
+    );
     expect(nearest.name).toBe('ALPHA');
     // Not over high ground: the valley, well below the ridges, within 2 km.
     for (let k = 0; k < 16; k++) {
       const ang = (k / 16) * Math.PI * 2;
       for (const r of [0, 1000, 2000]) {
-        expect(terrain.heightAt(s.x + Math.cos(ang) * r, s.z + Math.sin(ang) * r)).toBeLessThan(400);
+        expect(terrain.heightAt(s.x + Math.cos(ang) * r, s.z + Math.sin(ang) * r)).toBeLessThan(
+          400,
+        );
       }
     }
   });
@@ -411,12 +460,14 @@ describe('surfaces and trees', () => {
     expect(rock).toBeGreaterThan(50);
     expect(rockSlope / rock).toBeGreaterThan((22 * Math.PI) / 180);
     // The big classes appear in a random sample; the narrow ones are checked where they live.
-    for (const k of ['grass', 'field', 'dirt', 'rock', 'forest'] as const) expect(seen.has(k)).toBe(true);
+    for (const k of ['grass', 'field', 'dirt', 'rock', 'forest'] as const)
+      expect(seen.has(k)).toBe(true);
     const ab = terrain.airbase!;
     expect(terrain.surfaceAt(ab.x, ab.z)).toBe('concrete');
     const e = worldExtra(data)!;
     const counts = new Map<string, number>();
-    for (const v of e.surface) counts.set(SURFACE_KINDS[v], (counts.get(SURFACE_KINDS[v]) ?? 0) + 1);
+    for (const v of e.surface)
+      counts.set(SURFACE_KINDS[v], (counts.get(SURFACE_KINDS[v]) ?? 0) + 1);
     for (const k of ['grass', 'field', 'dirt', 'rock', 'forest', 'water'] as const) {
       expect(counts.get(k) ?? 0).toBeGreaterThan(0);
     }
@@ -438,7 +489,9 @@ describe('surfaces and trees', () => {
     let forest = 0;
     for (const [x, z] of points(30000, 9)) {
       const c = terrain.canopyAt(x, z);
-      expect(c === 0 || (c >= RANGE_WORLD.hedgeMin - 1e-9 && c <= RANGE_WORLD.canopyMax + 1e-9)).toBe(true);
+      expect(
+        c === 0 || (c >= RANGE_WORLD.hedgeMin - 1e-9 && c <= RANGE_WORLD.canopyMax + 1e-9),
+      ).toBe(true);
       if (terrain.forestDensityAt!(x, z) > 0.8 && c > 0) {
         forest++;
         expect(c).toBeGreaterThanOrEqual(RANGE_WORLD.canopyMin * 0.72 - 1e-9);
@@ -455,7 +508,15 @@ describe('surfaces and trees', () => {
   });
 
   it('farmed fields have stable ids, crops and edges', () => {
-    const f1: FieldSample = { id: 0, variant: 0, crop: 'cereal', rowHeading: 0, edgeDistance: 0, hedge: false, track: false };
+    const f1: FieldSample = {
+      id: 0,
+      variant: 0,
+      crop: 'cereal',
+      rowHeading: 0,
+      edgeDistance: 0,
+      hedge: false,
+      track: false,
+    };
     const f2: FieldSample = { ...f1 };
     let fields = 0;
     for (const [x, z] of points(20000, 13)) {
@@ -472,7 +533,13 @@ describe('surfaces and trees', () => {
     const flat = createFlatTerrain(50);
     expect(flat.heightAt(1234, -999)).toBe(50);
     expect(flat.targetAreas.length).toBe(3);
-    const hit = { point: new Vector3(), normal: new Vector3(), distance: 0, t: 0, surface: 'grass' as const };
+    const hit = {
+      point: new Vector3(),
+      normal: new Vector3(),
+      distance: 0,
+      t: 0,
+      surface: 'grass' as const,
+    };
     expect(flat.segmentHit(new Vector3(0, 60, 0), new Vector3(10, 40, 0), hit)).toBe(true);
     expect(hit.point.x).toBeCloseTo(5, 9);
     expect(hit.point.y).toBe(50);

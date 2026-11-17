@@ -103,8 +103,8 @@ export function traceRay(
   if (oy + dy * s0 > top && oy + dy * s1 > top) return _res;
 
   // The part of the ray inside the map square.
-  let a = s0;
-  let b = s1;
+  const a = s0;
+  const b = s1;
   let ta = -Infinity;
   let tb = Infinity;
   if (Math.abs(dx) < 1e-12) {

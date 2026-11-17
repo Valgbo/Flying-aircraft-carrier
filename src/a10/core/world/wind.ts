@@ -92,7 +92,12 @@ export interface GustScales {
 const FT = 0.3048;
 
 /** Turbulence intensities and length scales at `agl` metres for a 10 m wind `u10` (m/s). */
-export function gustScales(world: WorldState, agl: number, u10: number, out: GustScales): GustScales {
+export function gustScales(
+  world: WorldState,
+  agl: number,
+  u10: number,
+  out: GustScales,
+): GustScales {
   const h = Math.max(agl, 3);
   const hFt = h / FT;
   const blTop = world.boundaryLayerHeight ?? WIND.boundaryLayerHeight;
@@ -104,7 +109,9 @@ export function gustScales(world: WorldState, agl: number, u10: number, out: Gus
   let lw = Math.max(TURBULENCE.minScale, h);
   let lu = Math.max(TURBULENCE.minScale, h / Math.pow(0.177 + 0.000823 * Math.min(hFt, 1000), 1.2));
   // Blend to the isotropic medium-altitude model between 1,000 and 2,000 ft.
-  const t = clamp01((h - TURBULENCE.lowAltitudeTop) / (TURBULENCE.highAltitudeBottom - TURBULENCE.lowAltitudeTop));
+  const t = clamp01(
+    (h - TURBULENCE.lowAltitudeTop) / (TURBULENCE.highAltitudeBottom - TURBULENCE.lowAltitudeTop),
+  );
   if (t > 0) {
     const L = TURBULENCE.highAltitudeScale;
     lw += (L - lw) * t;
@@ -119,7 +126,8 @@ export function gustScales(world: WorldState, agl: number, u10: number, out: Gus
   const lowness = 1 - clamp01(h / blTop);
   const extra =
     world.turbulence *
-    (TURBULENCE.moderateSigmaAloft + (TURBULENCE.moderateSigma - TURBULENCE.moderateSigmaAloft) * lowness);
+    (TURBULENCE.moderateSigmaAloft +
+      (TURBULENCE.moderateSigma - TURBULENCE.moderateSigmaAloft) * lowness);
   out.sigmaU = Math.sqrt(sigmaU * sigmaU + extra * extra);
   out.sigmaW = Math.sqrt(sigmaW * sigmaW + extra * extra * 0.8);
   out.lengthU = lu;

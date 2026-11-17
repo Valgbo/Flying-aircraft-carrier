@@ -251,7 +251,14 @@ export function loadAircraftModels(
     };
     const [exterior, cockpit, pilot, ...storeGroups] = await Promise.all(files.map(one));
     const stores = new Map<string, Group>();
-    storeIds.forEach((id, i) => stores.set(id, storeGroups[i]));
+    storeIds.forEach((id, i) => {
+      // parts shown only in some states (the Mk 82 AIR ballute) start at their default
+      for (const t of meta.stores[id].toggles ?? []) {
+        const o = storeGroups[i].getObjectByName(t.node);
+        if (o) o.visible = t.default;
+      }
+      stores.set(id, storeGroups[i]);
+    });
     const gear = buildGearUp(exterior, meta);
     templates = {
       meta,

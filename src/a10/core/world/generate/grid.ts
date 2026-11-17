@@ -85,7 +85,14 @@ export function gridBSpline(g: Grid, x: number, z: number): number {
     else if (jj > n - 1) jj = n - 1;
     const o = jj * n;
     const r = b0 * h[o + c0] + b1 * h[o + i] + b2 * h[o + i + 1] + b3 * h[o + c3];
-    const w = b === 0 ? (1 - 3 * u + 3 * u2 - u3) / 6 : b === 1 ? (3 * u3 - 6 * u2 + 4) / 6 : b === 2 ? (-3 * u3 + 3 * u2 + 3 * u + 1) / 6 : u3 / 6;
+    const w =
+      b === 0
+        ? (1 - 3 * u + 3 * u2 - u3) / 6
+        : b === 1
+          ? (3 * u3 - 6 * u2 + 4) / 6
+          : b === 2
+            ? (-3 * u3 + 3 * u2 + 3 * u + 1) / 6
+            : u3 / 6;
     v += w * r;
   }
   return v;

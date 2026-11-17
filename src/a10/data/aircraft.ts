@@ -183,46 +183,16 @@ export const A10_MASS_NOTES: Record<keyof typeof A10_MASS, SourceNote> = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Hull points tested against the ground (body frame). Data/geometry.ts adds nose, tail, wing
-// tips, belly and fin tops measured on the model.
+// Ground contact. The hull, gear-pod and wheel points are measured on the model
+// (data/geometry.ts `hull` and `gearContacts`); core/flight/ground.ts tests them.
 // ---------------------------------------------------------------------------------------------
 
 export const A10_CONTACT = {
-  /** Main gear pods with the gear up (wheels protrude a little). */
-  gearPodsUp: [
-    { x: -2.5, y: -1.45, z: 0.65 },
-    { x: 2.5, y: -1.45, z: 0.65 },
-  ],
-  /** Wheels with the gear down: nose, left main, right main. */
-  gearDown: [
-    { x: -0.4, y: -2.63, z: -4.8 },
-    { x: -2.5, y: -2.67, z: 0.65 },
-    { x: 2.5, y: -2.67, z: 0.65 },
-  ],
-  /** Height of the wing tips above the reference (outer-panel dihedral), m. */
-  wingTipY: 0.2,
-  /** Fore–aft station of the wing tips, m. */
-  wingTipZ: 0.8,
-  /** Lateral position of the twin fins (horizontal tail tips), m. */
-  finX: 2.85,
-  finZ: 7.5,
-  /** Lowest point of the fins, m. */
-  finBottomY: -0.45,
-  /** Rear belly point under the engines, m. */
-  aftBelly: { x: 0, y: -1.0, z: 3.0 },
   /** Coefficient of restitution of a bounce off the ground (invulnerable mode). */
   bounceRestitution: 0.3,
 } as const;
 
 export const A10_CONTACT_NOTES: Record<keyof typeof A10_CONTACT, SourceNote> = {
-  gearPodsUp: { source: 'flightgearA10', confidence: 'estimate' },
-  gearDown: { source: 'flightgearA10', confidence: 'approximate', note: 'YASim gear points' },
-  wingTipY: { source: 'flightgearA10', confidence: 'estimate' },
-  wingTipZ: { source: 'flightgearA10', confidence: 'estimate' },
-  finX: { source: 'flightgearA10', confidence: 'approximate', note: 'YASim vstab y = ±2.85 m' },
-  finZ: { source: 'flightgearA10', confidence: 'approximate' },
-  finBottomY: { source: 'flightgearA10', confidence: 'estimate' },
-  aftBelly: { source: 'flightgearA10', confidence: 'estimate' },
   bounceRestitution: { source: 'plan', confidence: 'estimate' },
 };
 

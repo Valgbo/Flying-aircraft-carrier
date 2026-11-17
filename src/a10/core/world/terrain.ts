@@ -23,6 +23,7 @@ import {
   KIND_TRACK,
   padCentre,
   padPlane,
+  padSpecsOf,
   queryFeatures,
   segmentEnds,
   type FeatureQuery,
@@ -665,7 +666,17 @@ export function createTerrain(data: TerrainData, options: CreateTerrainOptions =
     const l = _d.length();
     if (l < 1e-12 || !(maxDistance > 0)) return false;
     _d.multiplyScalar(1 / l);
-    const r = traceRay(accelOf(), origin.x, origin.y, origin.z, _d.x, _d.y, _d.z, maxDistance, false);
+    const r = traceRay(
+      accelOf(),
+      origin.x,
+      origin.y,
+      origin.z,
+      _d.x,
+      _d.y,
+      _d.z,
+      maxDistance,
+      false,
+    );
     if (r.s < 0) return false;
     fillHit(out, origin.x + _d.x * r.s, origin.z + _d.z * r.s, r.s, maxDistance);
     return true;
@@ -849,37 +860,7 @@ export function createTerrain(data: TerrainData, options: CreateTerrainOptions =
 
 /** Feature tables of a generated world. */
 function buildFeatures(extra: WorldExtra, size: number): FeatureSet {
-  const pads: PadSpec[] = extra.pads.map((p) => ({
-    shape: 'disc',
-    x: p.x,
-    z: p.z,
-    ex: 1,
-    ez: 0,
-    halfLength: p.radius,
-    halfWidth: p.radius,
-    blend: p.blend,
-    elevation: p.elevation,
-    gx: p.gx,
-    gz: p.gz,
-    role: 'range',
-  }));
-  const a = extra.airfield;
-  if (a) {
-    pads.push({
-      shape: 'rect',
-      x: a.x,
-      z: a.z,
-      ex: Math.sin(a.heading),
-      ez: -Math.cos(a.heading),
-      halfLength: a.halfLength,
-      halfWidth: a.halfWidth,
-      blend: a.blend,
-      elevation: a.elevation,
-      gx: a.gx,
-      gz: a.gz,
-      role: 'airfield',
-    });
-  }
+  const pads: PadSpec[] = padSpecsOf(extra.pads, extra.airfield);
   return buildFeatureSet(size, extra.rivers, extra.roads, pads, {
     highway: RANGE_WORLD.highwayBlend,
     road: RANGE_WORLD.roadBlend,

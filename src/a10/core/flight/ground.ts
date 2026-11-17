@@ -10,22 +10,37 @@ import { A10_CONTACT as K } from '../../data/aircraft';
 import { A10_GEOMETRY as GEO } from '../../data/geometry';
 import type { Sim } from '../types';
 
-/** Hull points with the gear up (body frame). */
+type P = { readonly x: number; readonly y: number; readonly z: number };
+const v = (p: P): Vector3 => new Vector3(p.x, p.y, p.z);
+/** A measured point (data/geometry.ts `hull`, right side) and, off the centreline, its mirror. */
+const both = (p: P): Vector3[] => (p.x === 0 ? [v(p)] : [v(p), new Vector3(-p.x, p.y, p.z)]);
+const H = GEO.hull;
+
+/** Hull points with the gear up (body frame), measured on the model. */
 const HULL: readonly Vector3[] = [
-  new Vector3(GEO.muzzle.x, GEO.muzzle.y, GEO.muzzle.z),
-  new Vector3(0, -0.3, GEO.noseZ),
-  new Vector3(0, GEO.bellyY, -1.5),
-  new Vector3(K.aftBelly.x, K.aftBelly.y, K.aftBelly.z),
-  new Vector3(0, 0.3, GEO.tailZ),
-  new Vector3(-GEO.wingTipX, K.wingTipY, K.wingTipZ),
-  new Vector3(GEO.wingTipX, K.wingTipY, K.wingTipZ),
-  new Vector3(-K.finX, GEO.finTopY, K.finZ),
-  new Vector3(K.finX, GEO.finTopY, K.finZ),
-  new Vector3(-K.finX, K.finBottomY, K.finZ),
-  new Vector3(K.finX, K.finBottomY, K.finZ),
+  v(GEO.muzzle),
+  ...both(H.noseTip),
+  v(H.pavePenny), // right side only
+  ...both(H.belly),
+  ...both(H.aftBelly),
+  ...both(H.tailTip),
+  ...both(H.wingTip.leading),
+  ...both(H.wingTip.trailing),
+  ...both({ x: H.fin.x, y: H.fin.top.y, z: H.fin.top.z }),
+  ...both({ x: H.fin.x, y: H.fin.bottom.y, z: H.fin.bottom.z }),
 ];
-const PODS: readonly Vector3[] = K.gearPodsUp.map((p) => new Vector3(p.x, p.y, p.z));
-const WHEELS: readonly Vector3[] = K.gearDown.map((p) => new Vector3(p.x, p.y, p.z));
+/** Gear up: the retracted main wheels stand out below their pods; the pods' ends. */
+const PODS: readonly Vector3[] = [
+  ...both(H.gearPod.tyre),
+  ...both(H.gearPod.front),
+  ...both(H.gearPod.rear),
+];
+/** Gear down: tyre contacts, struts uncompressed (the nose wheel is right of the centreline). */
+const WHEELS: readonly Vector3[] = [
+  GEO.gearContacts.nose,
+  GEO.gearContacts.left,
+  GEO.gearContacts.right,
+].map(v);
 
 /** Distance from the origin to the farthest hull point, m: no test needed above it. */
 const REACH = Math.max(...[...HULL, ...WHEELS].map((p) => p.length())) + 1;

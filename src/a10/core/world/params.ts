@@ -32,15 +32,39 @@ export const ISA = {
 } as const;
 
 export const ISA_NOTES: Record<keyof typeof ISA, SourceNote> = {
-  seaLevelTemperature: { source: 'plan', confidence: 'confirmed', note: 'ISA (ICAO Doc 7488)' },
-  seaLevelPressure: { source: 'plan', confidence: 'confirmed', note: 'ISA (ICAO Doc 7488)' },
-  seaLevelDensity: { source: 'plan', confidence: 'confirmed', note: 'ISA (ICAO Doc 7488)' },
-  lapseRate: { source: 'plan', confidence: 'confirmed', note: 'ISA troposphere' },
-  gasConstant: { source: 'plan', confidence: 'confirmed', note: 'US Standard Atmosphere 1976' },
+  seaLevelTemperature: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'ISA (ICAO Doc 7488)',
+  },
+  seaLevelPressure: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'ISA (ICAO Doc 7488)',
+  },
+  seaLevelDensity: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'ISA (ICAO Doc 7488)',
+  },
+  lapseRate: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'ISA troposphere',
+  },
+  gasConstant: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'US Standard Atmosphere 1976',
+  },
   gamma: { source: 'plan', confidence: 'confirmed', note: 'diatomic ideal gas' },
   gravity: { source: 'plan', confidence: 'confirmed', note: 'standard gravity (CGPM 1901)' },
-  tropopause: { source: 'plan', confidence: 'confirmed', note: 'ISA' },
-  earthRadius: { source: 'plan', confidence: 'confirmed', note: 'US Standard Atmosphere 1976 r0' },
+  tropopause: { source: 'usStandardAtmosphere1976', confidence: 'confirmed', note: 'ISA' },
+  earthRadius: {
+    source: 'usStandardAtmosphere1976',
+    confidence: 'confirmed',
+    note: 'US Standard Atmosphere 1976 r0',
+  },
 };
 
 /**
@@ -72,25 +96,29 @@ export const WIND = {
 } as const;
 
 export const WIND_NOTES: Record<keyof typeof WIND, SourceNote> = {
-  referenceHeight: { source: 'plan', confidence: 'confirmed', note: 'WMO CIMO Guide: 10 m wind' },
+  referenceHeight: {
+    source: 'wmoCimo',
+    confidence: 'confirmed',
+    note: 'WMO CIMO Guide: 10 m wind',
+  },
   roughnessOpen: {
-    source: 'plan',
+    source: 'wmoCimo',
     confidence: 'approximate',
     note: 'WMO CIMO Guide Annex (Davenport–Wieringa roughness classes): open 0.03 m',
   },
   roughnessForest: {
-    source: 'plan',
+    source: 'wmoCimo',
     confidence: 'approximate',
     note: 'Davenport–Wieringa: closed forest ≥ 1 m',
   },
-  roughnessWater: { source: 'plan', confidence: 'approximate', note: 'Davenport–Wieringa: sea' },
+  roughnessWater: { source: 'wmoCimo', confidence: 'approximate', note: 'Davenport–Wieringa: sea' },
   displacementFraction: {
-    source: 'plan',
+    source: 'stull1988',
     confidence: 'approximate',
     note: 'd ≈ 2/3–0.7 h (Stull, Introduction to Boundary Layer Meteorology)',
   },
   surfaceLayerTop: {
-    source: 'plan',
+    source: 'stull1988',
     confidence: 'approximate',
     note: 'surface layer ≈ lowest 10 % of the boundary layer (Stull)',
   },
@@ -123,14 +151,14 @@ export const TURBULENCE = {
 } as const;
 
 export const TURBULENCE_NOTES: Record<keyof typeof TURBULENCE, SourceNote> = {
-  sigmaPerW20: { source: 'plan', confidence: 'confirmed', note: 'MIL-F-8785C §3.7.3.4' },
-  lowAltitudeTop: { source: 'plan', confidence: 'confirmed', note: 'MIL-F-8785C' },
-  highAltitudeBottom: { source: 'plan', confidence: 'confirmed', note: 'MIL-F-8785C' },
-  highAltitudeScale: { source: 'plan', confidence: 'confirmed', note: 'MIL-F-8785C Dryden' },
+  sigmaPerW20: { source: 'milF8785c', confidence: 'confirmed', note: 'MIL-F-8785C §3.7.3.4' },
+  lowAltitudeTop: { source: 'milF8785c', confidence: 'confirmed' },
+  highAltitudeBottom: { source: 'milF8785c', confidence: 'confirmed' },
+  highAltitudeScale: { source: 'milF8785c', confidence: 'confirmed', note: 'Dryden, 1,750 ft' },
   moderateSigma: {
-    source: 'plan',
+    source: 'milF8785c',
     confidence: 'approximate',
-    note: 'MIL-F-8785C: moderate ≈ 10 ft/s at low level',
+    note: 'moderate ≈ 10 ft/s at low level',
   },
   moderateSigmaAloft: { source: 'plan', confidence: 'estimate' },
   minScale: { source: 'plan', confidence: 'estimate', note: 'keeps the field smooth near 0 ft' },
@@ -195,19 +223,35 @@ export const RANGE_WORLD_NOTES: Record<keyof typeof RANGE_WORLD, SourceNote> = {
   floorHigh: { source: 'plan', confidence: 'estimate', note: 'PLAN §10 / world brief' },
   ridgeTop: { source: 'plan', confidence: 'estimate', note: 'PLAN §10: ridges to about 900 m' },
   runwayLength: { source: 'plan', confidence: 'estimate', note: 'world brief: one 2,400 m runway' },
-  runwayWidth: { source: 'plan', confidence: 'confirmed', note: 'ICAO Annex 14 code 4 runway' },
-  taxiwayWidth: { source: 'plan', confidence: 'confirmed', note: 'ICAO Annex 14 code E taxiway' },
+  runwayWidth: {
+    source: 'icaoAnnex14',
+    confidence: 'confirmed',
+    note: 'ICAO Annex 14 code 4 runway',
+  },
+  taxiwayWidth: {
+    source: 'icaoAnnex14',
+    confidence: 'confirmed',
+    note: 'ICAO Annex 14 code E taxiway',
+  },
   apronLength: { source: 'plan', confidence: 'estimate' },
   apronWidth: { source: 'plan', confidence: 'estimate' },
   highwayWidth: {
-    source: 'plan',
+    source: 'aashtoGreenBook',
     confidence: 'approximate',
     note: 'two 3.65 m lanes + shoulders (AASHTO Green Book)',
   },
   roadWidth: { source: 'plan', confidence: 'approximate', note: 'two-lane rural road' },
   trackWidth: { source: 'plan', confidence: 'approximate', note: 'single-lane farm/forest track' },
-  highwayMaxGrade: { source: 'plan', confidence: 'approximate', note: 'AASHTO rolling terrain' },
-  roadMaxGrade: { source: 'plan', confidence: 'approximate', note: 'AASHTO rural collector' },
+  highwayMaxGrade: {
+    source: 'aashtoGreenBook',
+    confidence: 'approximate',
+    note: 'AASHTO rolling terrain',
+  },
+  roadMaxGrade: {
+    source: 'aashtoGreenBook',
+    confidence: 'approximate',
+    note: 'AASHTO rural collector',
+  },
   trackMaxGrade: { source: 'plan', confidence: 'approximate', note: 'forest road practice' },
   highwayBlend: { source: 'plan', confidence: 'estimate', note: 'cut/fill slopes ≈ 1:2–1:3' },
   roadBlend: { source: 'plan', confidence: 'estimate' },
@@ -217,11 +261,15 @@ export const RANGE_WORLD_NOTES: Record<keyof typeof RANGE_WORLD, SourceNote> = {
   riverDepth: { source: 'plan', confidence: 'estimate' },
   riverBank: { source: 'plan', confidence: 'estimate' },
   meanderPerWidth: {
-    source: 'plan',
+    source: 'leopoldWolman1960',
     confidence: 'approximate',
     note: 'meander wavelength ≈ 10–14 channel widths (Leopold & Wolman 1960)',
   },
-  floodPlainRise: { source: 'plan', confidence: 'estimate', note: 'bankfull height of a lowland river' },
+  floodPlainRise: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'bankfull height of a lowland river',
+  },
   canopyMin: { source: 'plan', confidence: 'estimate', note: 'world brief: canopy 12–22 m' },
   canopyMax: { source: 'plan', confidence: 'estimate', note: 'world brief: canopy 12–22 m' },
   hedgeMin: { source: 'plan', confidence: 'estimate' },

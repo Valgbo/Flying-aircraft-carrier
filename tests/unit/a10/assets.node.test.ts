@@ -2,14 +2,17 @@
  * Self-checks of the converted FlightGear A-10 (scripts/a10/convert-ac3d.mjs → public/a10/):
  * the GLB files are read with a small reader below, their pivots are posed from the meta file,
  * and the results are compared with the measurements of the conversion spec, data/geometry.ts and
- * CREDITS.md (PLAN_A10.md §3.1, §14, §16 "Assets").
+ * CREDITS.md (PLAN_A10.md §3.1, §14, §16 "Assets"). CREDITS.md must list every file under
+ * public/a10/models, public/a10/textures and public/a10/sounds.
  */
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { A10Meta, PivotMeta } from '../../../src/a10/assets/meta';
 import { A10_GEOMETRY } from '../../../src/a10/data/geometry';
+import { STORES } from '../../../src/a10/data/munitions';
 
 const ROOT = resolve(__dirname, '../../..');
 const PUB = join(ROOT, 'public/a10');
@@ -234,20 +237,48 @@ describe('converted A-10: files', () => {
     expect(total).toBeLessThan(10 * 1024 * 1024);
   });
 
-  it('every file under public/a10/models and public/a10/textures is credited in CREDITS.md', () => {
+  it('every file under public/a10/models, textures and sounds is credited in CREDITS.md', () => {
     const credits = readFileSync(join(ROOT, 'CREDITS.md'), 'utf8');
     const missing: string[] = [];
     const walk = (d: string) => {
       for (const f of readdirSync(d)) {
         const p = join(d, f);
         if (statSync(p).isDirectory()) walk(p);
-        else if (!credits.includes('`' + relative(ROOT, p).split('\\').join('/') + '`'))
+        else if (!credits.includes('| `' + relative(ROOT, p).split('\\').join('/') + '` |'))
           missing.push(relative(ROOT, p));
       }
     };
     walk(MODELS);
     walk(join(PUB, 'textures'));
+    walk(join(PUB, 'sounds'));
     expect(missing).toEqual([]);
+  });
+
+  it('credits every sound as sounds-credits.json says, and keeps its FlightGear original unchanged', () => {
+    const credits = readFileSync(join(ROOT, 'CREDITS.md'), 'utf8');
+    const json = JSON.parse(
+      readFileSync(join(ROOT, 'scripts/a10/sounds-credits.json'), 'utf8'),
+    ) as {
+      files: Record<string, { original?: string; originalSha256?: string; changes: string }>;
+    };
+    const files = readdirSync(join(PUB, 'sounds'));
+    expect(Object.keys(json.files).sort()).toEqual(files.sort());
+    for (const [file, s] of Object.entries(json.files)) {
+      const row = credits
+        .split('\n')
+        .find((l) => l.startsWith(`| \`public/a10/sounds/${file}\` |`));
+      expect(row, file).toBeDefined();
+      // regenerate the table with `node scripts/a10/convert-credits.mjs` when this fails
+      expect(row, file).toContain(s.changes);
+      if (!s.original) continue;
+      expect(s.original.startsWith('third_party/flightgear-a10/Sounds/'), file).toBe(true);
+      const sha = createHash('sha256')
+        .update(readFileSync(join(ROOT, s.original)))
+        .digest('hex');
+      expect(sha, s.original).toBe(s.originalSha256);
+      expect(row, file).toContain(sha);
+      expect(row, file).toContain('GPL-2.0 (package COPYING)');
+    }
   });
 
   it('keeps the original FlightGear files with the licence', () => {
@@ -439,9 +470,98 @@ describe('converted A-10: meta file and data/geometry.ts', () => {
       const want = g.stations[s.station]!;
       close(s.suspension, [want.x, want.y, want.z], 0.015);
     }
-    expect(Math.abs(meta.exterior.bounds.min[2] - g.noseZ)).toBeLessThan(0.17); // muzzle is ahead of the nose
-    expect(Math.abs(meta.exterior.bounds.max[1] - g.finTopY)).toBeLessThan(0.005);
-    expect(Math.abs(meta.exterior.bounds.min[1] - g.bellyY)).toBeLessThan(0.005);
+    for (const s of meta.stations)
+      expect(Math.abs(s.pitch - g.stationPitch[s.station]!), `station ${s.station}`).toBeLessThan(
+        5e-4,
+      );
+    expect(g.eyeDefaultFovDeg).toBe(meta.eye.fovDeg);
+    // the HUD glass centre and size follow from its corners
+    const c = g.hudCorners;
+    close(
+      [g.hudCenter.x, g.hudCenter.y, g.hudCenter.z],
+      [0, 1, 2].map((k) => (meta.hud.glassCorners[0][k] + meta.hud.glassCorners[2][k]) / 2),
+      0.002,
+    );
+    expect(Math.abs(g.hudSize.width - (c[1].x - c[0].x))).toBeLessThan(0.002);
+    expect(Math.abs(g.hudSize.height - Math.hypot(c[3].y - c[0].y, c[3].z - c[0].z))).toBeLessThan(
+      0.002,
+    );
+    close(
+      [g.gunClusterAxisPoint.x, g.gunClusterAxisPoint.y, g.gunClusterAxisPoint.z],
+      meta.gun.clusterAxisPoint,
+      0.002,
+    );
+    for (const [id, want] of Object.entries(g.gearContacts)) {
+      const m = meta.gear.contacts[id as 'nose' | 'left' | 'right'];
+      close(m.contact, [want.x, want.y, want.z], 0.002);
+      expect(Math.abs(m.radius - want.radius)).toBeLessThan(0.002);
+    }
+    meta.engines.forEach((e, i) => {
+      close(e.fan, [g.engines[i].fan.x, g.engines[i].fan.y, g.engines[i].fan.z], 0.002);
+      close(
+        e.exhaust,
+        [g.engines[i].exhaust.x, g.engines[i].exhaust.y, g.engines[i].exhaust.z],
+        0.002,
+      );
+    });
+  });
+
+  it('gives the simulation the hull points measured on the model (gear up)', () => {
+    const g = A10_GEOMETRY;
+    const h = meta.hull;
+    const v = (p: { x: number; y: number; z: number }) => [p.x, p.y, p.z];
+    close(v(g.hull.noseTip), h.noseTip, 0.002);
+    close(v(g.hull.tailTip), h.tailTip, 0.002);
+    close(v(g.hull.belly), h.belly, 0.002);
+    close(v(g.hull.aftBelly), h.aftBelly, 0.002);
+    close(v(g.hull.wingTip.outer), h.wingTip.outer, 0.002);
+    close(v(g.hull.wingTip.leading), h.wingTip.leading, 0.002);
+    close(v(g.hull.wingTip.trailing), h.wingTip.trailing, 0.002);
+    expect(Math.abs(g.hull.fin.x - h.fin.x)).toBeLessThan(0.002);
+    close(v(g.hull.fin.top), h.fin.top, 0.002);
+    close(v(g.hull.fin.bottom), h.fin.bottom, 0.002);
+    close(v(g.hull.gearPod.tyre), h.gearPod.tyre, 0.002);
+    close(v(g.hull.gearPod.front), h.gearPod.front, 0.002);
+    close(v(g.hull.gearPod.rear), h.gearPod.rear, 0.002);
+    close(v(g.hull.pavePenny), h.pavePenny, 0.002);
+    // the older single numbers say the same
+    expect(Math.abs(g.noseZ - h.noseTip[2])).toBeLessThan(0.002);
+    expect(Math.abs(g.tailZ - h.tailTip[2])).toBeLessThan(0.002);
+    expect(Math.abs(g.wingTipX - h.wingTip.outer[0])).toBeLessThan(0.002);
+    expect(Math.abs(g.finTopY - h.fin.top[1])).toBeLessThan(0.002);
+    expect(Math.abs(g.bellyY - h.belly[1])).toBeLessThan(0.002);
+    // the muzzle is ahead of the nose; the fins are the highest part of the clean model
+    expect(g.muzzle.z).toBeLessThan(g.noseZ);
+    expect(Math.abs(meta.exterior.bounds.max[1] - g.finTopY)).toBeLessThan(0.002);
+  });
+
+  it('measures the hull on the drawn parts: the retracted wheels are the lowest point', () => {
+    // every vertex of the exterior with the gear up, except the hidden 600-gal tanks
+    const tanks = new Set(
+      meta.exterior.toggles.filter((t) => t.semantic?.station !== undefined).map((t) => t.node),
+    );
+    const rest = pose(exterior);
+    let lowest = Infinity;
+    const visit = (i: number) => {
+      const n = exterior.json.nodes[i];
+      if (n.name && tanks.has(n.name)) return;
+      if (n.mesh !== undefined)
+        for (const prim of exterior.json.meshes![n.mesh].primitives) {
+          const a = readAccessor(exterior, prim.attributes.POSITION);
+          const p = new Vector3();
+          for (let k = 0; k < a.count; k++) {
+            p.set(a.data[k * 3], a.data[k * 3 + 1], a.data[k * 3 + 2]).applyMatrix4(rest.world[i]);
+            lowest = Math.min(lowest, p.y);
+          }
+        }
+      for (const ch of n.children ?? []) visit(ch);
+    };
+    visit(rest.byName.get('a10-exterior')!);
+    // quantized positions: a few millimetres
+    expect(Math.abs(lowest - A10_GEOMETRY.hull.gearPod.tyre.y)).toBeLessThan(0.005);
+    // the hidden tanks reach lower (the old bellyY of −1.64 was theirs)
+    expect(meta.exterior.bounds.min[1]).toBeLessThan(-1.6);
+    expect(A10_GEOMETRY.bellyY).toBeGreaterThan(A10_GEOMETRY.hull.gearPod.tyre.y);
   });
 
   it('places every store type the simulation knows on a model', () => {
@@ -474,10 +594,40 @@ describe('converted A-10: meta file and data/geometry.ts', () => {
       expect(meta.racks[r].mounts.length).toBeGreaterThan(0);
     expect(meta.racks.ter9a.mounts).toHaveLength(3);
     expect(meta.racks.lau88.mounts).toHaveLength(3);
+    // the Mk 82 AIR's ballute (deployed after a high-drag release) is hidden on the rack, as in
+    // FlightGear, so the bomb measures like a Mk 82
+    const chute = meta.stores.mk82air.toggles?.find((t) => t.node === 'MK-82AIR_Chute');
+    expect(chute?.default).toBe(false);
+    // the models are as long as the weapons the simulation flies (bombs, missiles, pods of rockets)
+    for (const t of types) {
+      const d = STORES[t as keyof typeof STORES];
+      if (!['bomb', 'guidedBomb', 'missile', 'dispenser', 'airToAir', 'rocketPod'].includes(d.kind))
+        continue;
+      const model = meta.stores[meta.storeTypes[t]];
+      expect(Math.abs(model.length - d.length) / d.length, t).toBeLessThan(0.05);
+    }
     // a Mk 82 hangs from station 4 with its lugs at the pylon bottom (FlightGear's placement)
     const s4 = meta.stations[3];
     expect(Math.abs(s4.placements.mk82.position[1] - s4.suspension[1])).toBeLessThan(0.03);
     expect(meta.stations).toHaveLength(11);
+  });
+
+  it("leaves FlightGear's HUD out of the cockpit (our HUD draws itself), keeping the combiner", () => {
+    const nodes = cockpit.json.nodes;
+    const idx = (name: string) => nodes.findIndex((n) => n.name === name);
+    // the canvas quad is kept only as an empty marker: no mesh below it
+    const quad = idx('hud-screen');
+    if (quad >= 0) {
+      expect(nodes[quad].mesh).toBeUndefined();
+      expect(nodes[quad].children ?? []).toEqual([]);
+    }
+    // nothing of A-10-hud.ac (the legacy 3-D symbols, e.g. its gun cross)
+    for (const n of nodes) expect(n.name ?? '').not.toMatch(/gun-?cross|A-10-hud(?!-panel)/i);
+    expect(meta.cockpit.models.some((m) => /A-10-hud\.xml$/.test(m.file))).toBe(false);
+    // the tinted combiner stays, as glass
+    const glass = idx('CPT-hud-screen');
+    expect(glass).toBeGreaterThanOrEqual(0);
+    expect(pointsUnder(pose(cockpit), 'CPT-hud-screen').length).toBeGreaterThan(0);
   });
 
   it('keeps the cockpit displays, HUD glass and clickable controls', () => {
@@ -496,10 +646,38 @@ describe('converted A-10: meta file and data/geometry.ts', () => {
     }
   });
 
-  it('stays inside the draw-call budget in flight', () => {
-    // exterior: the gear pivots are drawn as one merged mesh per material while retracted
+  it('stays inside the draw-call budget in flight (exterior ≤ 60)', () => {
     const b = meta.budget['a10-exterior.glb'];
     expect(b.triangles).toBeLessThan(60000);
-    expect(b.drawCalls).toBeLessThan(110);
+    // in flight the forty gear parts are drawn as one merged mesh per material (models.ts
+    // buildGearUp), and the inner glass and the hidden tanks are not drawn from outside
+    const gear = new Set(
+      meta.exterior.pivots
+        .filter(
+          (p) => /^(gear|compression|wheel)/.test(p.drive.input ?? '') || /__steer$/.test(p.node),
+        )
+        .map((p) => p.node),
+    );
+    const hidden = new Set(
+      meta.exterior.toggles
+        .filter((t) => t.semantic?.view === 'inside' || t.semantic?.station !== undefined)
+        .map((t) => t.node),
+    );
+    const nodes = exterior.json.nodes;
+    const parent = new Int32Array(nodes.length).fill(-1);
+    nodes.forEach((n, i) => (n.children ?? []).forEach((c) => (parent[c] = i)));
+    const under = (i: number, set: Set<string>) => {
+      for (let p = i; p >= 0; p = parent[p]) if (set.has(nodes[p].name ?? '')) return true;
+      return false;
+    };
+    let draws = 0;
+    const gearMaterials = new Set<number>();
+    nodes.forEach((n, i) => {
+      if (n.mesh === undefined || under(i, hidden)) return;
+      const prims = exterior.json.meshes![n.mesh].primitives;
+      if (under(i, gear)) prims.forEach((p) => gearMaterials.add(p.material ?? -1));
+      else draws += prims.length;
+    });
+    expect(draws + gearMaterials.size).toBeLessThanOrEqual(60);
   });
 });

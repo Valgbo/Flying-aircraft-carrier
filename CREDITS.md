@@ -8,18 +8,21 @@ SPDX `GPL-2.0-or-later`). Everything not listed below is original work of this p
 terrain, vehicles, effects, display pages and the parts of the aircraft built in code.
 
 Third-party material is limited to GPL, CC0, CC BY and public-domain files (PLAN_A10.md §3.1).
-A unit test (`tests/unit/a10/assets.test.ts`) fails when a file under `public/a10/models/` or
-`public/a10/textures/` has no entry here.
+A unit test (`tests/unit/a10/assets.node.test.ts`) fails when a file under `public/a10/models/`,
+`public/a10/textures/` or `public/a10/sounds/` has no entry here, and when an original FlightGear
+sound no longer matches the SHA-256 listed for it.
 
-## FlightGear A-10 (models, textures, model data)
+## FlightGear A-10 (models, textures, sounds, model data)
 
 | | |
 |---|---|
 | Source | FlightGear A-10, <https://github.com/l0k1/A-10>, commit `72da115` (2026-11-15) |
-| Authors | Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts (package README) |
-| Licence | GNU GPL version 2 (package `COPYING`); some files say "version 2 or later" |
-| Original files | `third_party/flightgear-a10/` (unchanged copies, with `COPYING`, the package README and `SOURCE.md`) |
-| Converter | `scripts/a10/convert-ac3d.mjs` (this project) |
+| Authors | Lee Elliott, Alexis Bory, David Bastien, Pinto, Rudolf, JMaverick16, Zorka, SammySkycrafts (package README); "FlightGear A-10 contributors" in the tables below |
+| Licence | GNU GPL version 2 (package `COPYING`); some files say "version 2 or later"; the sound files carry no notice of their own, so the package `COPYING` covers them; written "GPL-2.0 (package COPYING)" in the tables below |
+| Original files | `third_party/flightgear-a10/` (unchanged copies, with `COPYING`, the package README and `SOURCE.md`; the sounds under `third_party/flightgear-a10/Sounds/`) |
+| Converters | `scripts/a10/convert-ac3d.mjs` (models, textures, model data) and `scripts/a10/sounds.mjs` (sounds), this project |
+
+### Models, textures and model data
 
 Every file below is generated from the originals by the converter. Common changes: converted
 from AC3D to glTF 2.0 binary in our body frame and metres, normals computed with the AC3D crease
@@ -36,7 +39,7 @@ alpha channel is used) and resized. "Built in code" marks geometry made by
 | `public/a10/models/a10-cockpit.glb` | `Models/Cockpit/` (65 files: A-10-AoA-gauge.ac, A-10-AoA-gauge.xml, A-10-HSI.ac, A-10-HSI.xml, …); `Models/Cockpit/RWR/rwr.ac`, `Models/Cockpit/RWR/rwr.xml` | FlightGear A-10 contributors; parts built in code by this project | GPL-2.0 (package COPYING) | Cockpit: tub, side consoles and every instrument sub-model placed with its offsets, and the MPCD; panels the simulation does not drive frozen at their default positions; 56 screw heads and one knob simplified by vertex clustering; HUD canvas quad and legacy 3-D HUD left out; altimeter built in code (its model is not in the package) |
 | `public/a10/models/a10-pilot.glb` | `Models/pilot.ac`, `Models/pilot.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Pilot and ejection seat |
 | `public/a10/models/stores/mk82.glb` | `Models/Stores/Weapons/MK-82/MK-82.ac`, `Models/Stores/Weapons/MK-82/MK-82.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Mk 82 low-drag bomb; own frame, origin at the suspension lugs |
-| `public/a10/models/stores/mk82air.glb` | `Models/Stores/Weapons/MK-82AIR/MK-82AIR.ac`, `Models/Stores/Weapons/MK-82AIR/MK-82AIR.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Mk 82 AIR (BSU-49 ballute) bomb; own frame, origin at the suspension lugs |
+| `public/a10/models/stores/mk82air.glb` | `Models/Stores/Weapons/MK-82AIR/MK-82AIR.ac`, `Models/Stores/Weapons/MK-82AIR/MK-82AIR.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Mk 82 AIR (BSU-49 ballute) bomb; own frame, origin at the suspension lugs. The deployed BSU-49 ballute kept as a hidden part (shown after a high-drag release) |
 | `public/a10/models/stores/mk84.glb` | `Models/Stores/Weapons/MK-84/MK-84.ac`, `Models/Stores/Weapons/MK-84/MK-84.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Mk 84 bomb; own frame, origin at the suspension lugs |
 | `public/a10/models/stores/agm65.glb` | `Models/Stores/Weapons/AGM-65B/AGM-65B.ac`, `Models/Stores/Weapons/AGM-65B/AGM-65B.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | AGM-65 Maverick; own frame, origin at the suspension lugs |
 | `public/a10/models/stores/aim9m_lw.glb` | `Models/Stores/Weapons/AIM-9M/AIM-9M_LW.ac`, `Models/Stores/Weapons/AIM-9M/AIM-9M_LW.xml` | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | AIM-9M (left rail); own frame, origin at the suspension lugs |
@@ -110,5 +113,28 @@ alpha channel is used) and resized. "Built in code" marks geometry made by
 
 ## Sounds
 
-<!-- The integrator lists the files under public/a10/sounds/ here (author, source, licence, changes). -->
-To be completed by the integrator: one entry per file under `public/a10/sounds/`.
+The FlightGear rows have the source, authors and licence of the FlightGear A-10 section above
+(path in the package and the SHA-256 of the original); the other rows were made for this project.
+Generated from `scripts/a10/sounds-credits.json`, which `scripts/a10/sounds.mjs` writes: after the
+sounds change, run `node scripts/a10/convert-credits.mjs`.
+
+<!-- BEGIN sounds (generated by scripts/a10/convert-credits.mjs from scripts/a10/sounds-credits.json; do not edit by hand) -->
+
+| File | Source (package path) | Author | Licence | Changes |
+|---|---|---|---|---|
+| `public/a10/sounds/altitude.wav` | `Sounds/altitude.wav` (SHA-256 `ad2ba2bb120a223d58e9e1365645e7b89e0409300560d76a4a415f4f49b3ae3d`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Altitude alert voice ("ALTITUDE, ALTITUDE"): converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 80 Hz; silence trimmed; peak-normalised to -1 dBFS |
+| `public/a10/sounds/bomb-release.wav` | `Sounds/bomb_release.wav` (SHA-256 `2860201624533104644bf38400a5ed13260b9a976c5137babb9118ffb7cebc21`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Store release clunk (ejector rack): converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 32 Hz; silence trimmed; peak-normalised to -1 dBFS |
+| `public/a10/sounds/click.wav` | `Sounds/click.wav` (SHA-256 `a797a293428afe1e9999a5ffccd1ad7b9b581d427189de02caf66f389a70a31b`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Cockpit switch (toggle): converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 40 Hz; silence trimmed; peak-normalised to -1 dBFS |
+| `public/a10/sounds/click2.wav` | `Sounds/click2.wav` (SHA-256 `4c9e0a0f9a4b75c56b714144da3532b4164b64dda8e152a9af8ac94d80fc2bf3`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Cockpit switch (push button): converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 40 Hz; silence trimmed; peak-normalised to -1 dBFS |
+| `public/a10/sounds/engine-fan-inside.wav` | `Sounds/fan3.wav` (SHA-256 `464d67ed998e29771219afc1f72c253bd070c63c8c9ebdbbe5b69851fc259c5b`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | TF34 fan layer heard in the cockpit: converted to mono 16-bit 16 kHz WAV; DC removed; high-pass 30 Hz; cut to a 3.997 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/engine-fan.wav` | `Sounds/fan2.wav` (SHA-256 `e04f82057b0094086d3046bc29fd64a3a1fdac64eb5a7b2ed43e603c8840df7b`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | TF34 fan layer, outside: converted to mono 16-bit 32 kHz WAV; DC removed; high-pass 30 Hz; cut to a 3.973 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/engine-jet.wav` | `Sounds/jet.wav` (SHA-256 `210f356636a6e73bf2df76cb87e60e412c3dbb57c90e438f20c77f71aea12491`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | TF34 exhaust roar: converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 25 Hz; cut to a 4.724 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/engine-whine-low.wav` | `Sounds/whine2.wav` (SHA-256 `70220c8a626ccce7d0d86c1f2f44683edc6201453b3a7573b6794aa3d6ad6ded`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | TF34 core whine: converted to mono 16-bit 22.05 kHz WAV; DC removed; high-pass 60 Hz; cut to a 2.917 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/engine-whine.wav` | `Sounds/whine.wav` (SHA-256 `69cda98dacd826af2a6de07e57af525af68e271b7e0685dabca756609d035cfd`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | TF34 high whine (fan blade-passing tone), outside: converted to mono 16-bit 32 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 80 Hz; cut to a 2.771 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/gun-loop.wav` | `Sounds/gau-8.wav` (SHA-256 `8dbf326b2b44edd6ff8c990199c48162a3c7c813ff1fa3f74dd48123d9e0724b`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | GAU-8/A firing loop (played at 65/69.7 of its speed to match the real 65 rounds/s): converted to mono 16-bit 44.1 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 40 Hz; low-pass 14 kHz; cut to a 1.345 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/pull-up.wav` | `scripts/a10/sounds.mjs`: flite text "Pull up.", voice slt | this project, generated with CMU Flite (voice cmu_us_slt) via FFmpeg | GPL-2.0-or-later; the Flite engine and the cmu_us_slt voice (CMU ARCTIC) are under BSD-style free licences | Ground-collision voice warning ("PULL UP"): telephone-band filter 280–3600 Hz; silence trimmed; peak-normalised to -1 dBFS; mono 16-bit 22.05 kHz |
+| `public/a10/sounds/stall-chopped.wav` | `Sounds/stall-600-chopped.wav` (SHA-256 `6937b3bea7ec4f6278ec99af5d9f3479c1b0b764a1511dd2a4d2b034fe8d3330`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Chopped stall warning tone (at the stall): converted to mono 16-bit 22.05 kHz WAV; DC removed; kept whole as a loop; peak-normalised to -1 dBFS |
+| `public/a10/sounds/stall-steady.wav` | `Sounds/stall-600-continue.wav` (SHA-256 `4011156af61fb8bdee7ce376e9522294516dd0637688e3d30855ebda9716f73f`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Steady stall warning tone (approaching the stall): converted to mono 16-bit 22.05 kHz WAV; DC removed; cut to a 0.507 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+| `public/a10/sounds/wind.wav` | `Sounds/wind.wav` (SHA-256 `d50f9c9ef248226f64c8449ea40336959fabbb2ae23825199322f79e33eb4c38`) | FlightGear A-10 contributors | GPL-2.0 (package COPYING) | Airflow over the canopy: converted to mono 16-bit 22.05 kHz WAV; clipped peaks rebuilt (cubic de-clipping); DC removed; high-pass 25 Hz; cut to a 3.156 s seamless loop (crossfaded seam); peak-normalised to -1 dBFS |
+
+<!-- END sounds -->

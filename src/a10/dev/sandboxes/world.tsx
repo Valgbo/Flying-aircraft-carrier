@@ -43,7 +43,7 @@ const CROP_RGB: Record<FieldSample['crop'], [number, number, number]> = {
 const ROAD_STYLE = {
   highway: { color: '#f2d27a', width: 3, casing: '#5b4a24' },
   road: { color: '#f4f0e6', width: 2, casing: '#4a4a4a' },
-  track: { color: '#c9a878', width: 1.2, casing: '' },
+  track: { color: '#e2c48e', width: 1.3, casing: '#4a3820' },
 } as const;
 
 const AREA_COLOR: Record<string, string> = {
@@ -64,9 +64,15 @@ interface Info {
   minH: number;
 }
 
+/** A world seed typed or passed in the URL: an integer 0 … 2^31 (what the settings accept). */
+function parseSeed(text: string | null): number | null {
+  if (text === null || text.trim() === '') return null;
+  const n = Math.floor(Number(text));
+  return Number.isFinite(n) && n >= 0 && n <= 2 ** 31 ? n : null;
+}
+
 function initialSeed(): number {
-  const s = Number(new URLSearchParams(location.search).get('seed'));
-  return Number.isFinite(s) && s > 0 ? Math.floor(s) : 1;
+  return parseSeed(new URLSearchParams(location.search).get('seed')) ?? 1;
 }
 
 export default function WorldSandbox() {
@@ -77,6 +83,11 @@ export default function WorldSandbox() {
   const [info, setInfo] = useState<Info | null>(null);
   const [hover, setHover] = useState<string>('');
   const terrainRef = useRef<Terrain | null>(null);
+  const generate = () => {
+    const s = parseSeed(input);
+    if (s === null) setInput(String(seed));
+    else setSeed(s);
+  };
 
   useEffect(() => {
     setBusy(true);
@@ -126,11 +137,11 @@ export default function WorldSandbox() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && setSeed(Math.max(1, Math.floor(Number(input)) || 1))}
+            onKeyDown={(e) => e.key === 'Enter' && generate()}
             style={{ width: 80 }}
           />
         </label>
-        <button type="button" onClick={() => setSeed(Math.max(1, Math.floor(Number(input)) || 1))}>
+        <button type="button" onClick={generate}>
           Generate
         </button>
         <button
@@ -147,8 +158,9 @@ export default function WorldSandbox() {
           <span>Generating…</span>
         ) : info ? (
           <span style={{ opacity: 0.8 }}>
-            generated in {info.ms.toFixed(0)} ms · drawn in {info.drawMs.toFixed(0)} ms · {info.roads}{' '}
-            roads · {info.areas} target areas · {info.minH.toFixed(0)}–{info.maxH.toFixed(0)} m
+            generated in {info.ms.toFixed(0)} ms · drawn in {info.drawMs.toFixed(0)} ms ·{' '}
+            {info.roads} roads · {info.areas} target areas · {info.minH.toFixed(0)}–
+            {info.maxH.toFixed(0)} m
           </span>
         ) : null}
       </div>
@@ -158,7 +170,11 @@ export default function WorldSandbox() {
           width={MAP_PX}
           height={MAP_PX}
           onMouseMove={onMove}
-          style={{ width: 'min(100vh - 90px, 100vw - 260px)', aspectRatio: '1', background: '#222' }}
+          style={{
+            width: 'min(100vh - 90px, 100vw - 260px)',
+            aspectRatio: '1',
+            background: '#222',
+          }}
         />
         <Legend />
       </div>
@@ -183,7 +199,15 @@ function Legend() {
     <div style={{ fontSize: 12, lineHeight: '20px', minWidth: 200 }}>
       {items.map(([n, c]) => (
         <div key={n}>
-          <span style={{ display: 'inline-block', width: 14, height: 10, background: c, marginRight: 6 }} />
+          <span
+            style={{
+              display: 'inline-block',
+              width: 14,
+              height: 10,
+              background: c,
+              marginRight: 6,
+            }}
+          />
           {n}
         </div>
       ))}
@@ -245,7 +269,7 @@ function drawMap(cv: HTMLCanvasElement, t: Terrain): void {
       if ((s === 'field' || s === 'grass' || s === 'dirt') && t.fieldAt && t.fieldAt(x, z, field)) {
         if (field.edgeDistance > 6) c = CROP_RGB[field.crop];
         // A little variation from field to field.
-        const v = 0.92 + 0.16 * ((field.variant * 37) % 100) / 100;
+        const v = 0.92 + (0.16 * ((field.variant * 37) % 100)) / 100;
         c = [c[0] * v, c[1] * v, c[2] * v];
       }
       if (s === 'forest') {
@@ -378,7 +402,13 @@ function drawMap(cv: HTMLCanvasElement, t: Terrain): void {
   label(ctx, 'START', sx - 18, sz + 18, '#ff40ff');
 }
 
-function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
+function label(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+): void {
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(0,0,0,0.75)';
   ctx.strokeText(text, x, y);

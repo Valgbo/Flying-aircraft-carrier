@@ -30,7 +30,7 @@ import {
 } from 'three';
 import type { Sim } from '../core/types';
 import type { StationState } from '../core/weapons/types';
-import { A10 } from '../data/aircraft';
+import { A10, A10_FCS } from '../data/aircraft';
 import type { ExteriorInput, PivotMeta } from './meta';
 import { getAircraftTemplates, storeModelId, type AircraftTemplates } from './models';
 import { a10Asset } from './urls';
@@ -109,8 +109,11 @@ export function createVisualState(): AircraftVisualState {
   };
 }
 
-/** Full gear travel time, s (each strut). */
-export const GEAR_TRAVEL_TIME = 6;
+/**
+ * Full gear travel time, s: only used when the simulation does not give the gear position
+ * (`aircraft.gearPosition`, which the flight model animates over the same time).
+ */
+export const GEAR_TRAVEL_TIME = A10_FCS.gearTravelTime;
 /** The speed-brake drive in the meta file assumes an 80° split; the flight data may differ. */
 const META_SPEED_BRAKE_SPLIT = (80 * Math.PI) / 180;
 /**
@@ -133,7 +136,10 @@ interface PivotBinding {
   table: Float64Array | null;
   min: number;
   max: number;
-  /** Nose-wheel steering: only while the nose gear is out. */
+  /**
+   * Nose-wheel steering (FlightGear turns it with the rudder): the real system works only with
+   * weight on the wheels, and our aircraft always flies, so the wheel stays centred.
+   */
   steer: boolean;
   angle: number;
 }
@@ -164,6 +170,11 @@ export interface AircraftInstance {
   stations: StationVisual[];
   storesGroup: Group;
   lights: Points | null;
+  /**
+   * The pilot, the seat and the cockpit tub seen through the canopy (outside views only); hidden
+   * from far away by updateAircraftDetail.
+   */
+  interior: Group;
   shadows: boolean;
   lastTime: number;
   inputs: Float64Array;
@@ -240,10 +251,11 @@ export function createAircraftInstance(opts: AircraftInstanceOptions): AircraftI
     if (o) toggles.push({ obj: o, rule });
   }
 
+  const interior = new Group();
+  interior.name = 'interior';
   if (!opts.forCockpit) {
     // the pilot, the seat and a low-detail cockpit tub (FlightGear's far LOD) behind the canopy
-    const pilot = t.pilot.clone(true);
-    root.add(pilot);
+    interior.add(t.pilot.clone(true));
     const tub = t.cockpit.getObjectByName('A-10-detail-cpt');
     if (tub) {
       const c = tub.clone(true);
@@ -251,8 +263,9 @@ export function createAircraftInstance(opts: AircraftInstanceOptions): AircraftI
         const o = c.getObjectByName(l.node);
         if (o) o.visible = l.min >= 1; // the far stand-in panel, not the near detail
       }
-      root.add(c);
+      interior.add(c);
     }
+    root.add(interior);
   }
 
   const inputs = IN as unknown as Record<string, number>;
@@ -302,6 +315,7 @@ export function createAircraftInstance(opts: AircraftInstanceOptions): AircraftI
     stations,
     storesGroup,
     lights: opts.lights === false ? null : createLights(t),
+    interior,
     shadows: false,
     lastTime: -1,
     inputs: new Float64Array(INPUT_NAMES.length),
@@ -342,10 +356,15 @@ export function updateAircraftInstance(inst: AircraftInstance, sim: Sim, dayligh
   st.flaps = s?.flaps ?? 0;
   st.slats = s?.slats ?? 0;
   st.canopy = 0;
-  const target = ac.gearDown ? 1 : 0;
-  const step = dt / GEAR_TRAVEL_TIME;
-  st.gear =
-    inst.gear < target ? Math.min(target, inst.gear + step) : Math.max(target, inst.gear - step);
+  // the flight model moves the gear (the same position in every view and on the gear lights)
+  const gp = ac.gearPosition;
+  if (Number.isFinite(gp)) st.gear = Math.min(1, Math.max(0, gp));
+  else {
+    const target = ac.gearDown ? 1 : 0;
+    const step = dt / GEAR_TRAVEL_TIME;
+    st.gear =
+      inst.gear < target ? Math.min(target, inst.gear + step) : Math.max(target, inst.gear - step);
+  }
   st.n1[0] = ac.engines?.[0]?.n1 ?? 0;
   st.n1[1] = ac.engines?.[1]?.n1 ?? 0;
   st.barrelAngle = sim.gun?.barrelAngle ?? 0;
@@ -405,7 +424,7 @@ export function applyAircraftVisualState(
     let y = p.table ? lookup(p.table, x) : p.gain * x + p.offset;
     if (y < p.min) y = p.min;
     if (y > p.max) y = p.max;
-    if (p.steer) y *= st.gear >= 1 ? 1 : 0;
+    if (p.steer) y = 0;
     if (p.type === 0) p.obj.quaternion.setFromAxisAngle(p.axis, y);
     else p.obj.position.copy(p.rest).addScaledVector(p.axis, y);
   }
@@ -418,6 +437,30 @@ export function applyAircraftVisualState(
 
   if (st.stations) syncStations(inst, st.stations);
   if (inst.lights) updateLights(inst.lights, st.daylight, st.time);
+}
+
+/**
+ * Below this size on screen (pixels per metre at the aircraft) the pilot and the cockpit behind
+ * the canopy are not drawn (PLAN §14: no cockpit in distant outside views). At 1080 lines and a
+ * 62° field of view that is 100 m away, where the canopy is 9 pixels wide.
+ */
+export const INTERIOR_MIN_PIXELS_PER_METRE = 9;
+
+/**
+ * Level of detail for outside views (call every frame after placing the instance): hides the
+ * pilot and the cockpit tub when they would be a few pixels on screen (22 draw calls and
+ * 15,000 triangles less). `viewportHeight` in pixels, `fovDeg` the camera's vertical field of view.
+ */
+export function updateAircraftDetail(
+  inst: AircraftInstance,
+  cameraPosition: Vector3,
+  fovDeg: number,
+  viewportHeight: number,
+): void {
+  if (inst.forCockpit) return;
+  const d = Math.max(0.1, cameraPosition.distanceTo(inst.root.position));
+  const pixelsPerMetre = viewportHeight / (2 * d * Math.tan((fovDeg * Math.PI) / 360));
+  inst.interior.visible = pixelsPerMetre >= INTERIOR_MIN_PIXELS_PER_METRE;
 }
 
 /** Cast and receive shadows (the High preset only; call when the preset changes). */

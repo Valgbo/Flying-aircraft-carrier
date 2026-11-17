@@ -268,7 +268,7 @@ export function erodedFbm2(x: number, z: number, octaves: number, seed: number):
 
 /** Hermite smoothstep of x between e0 and e1 (clamped). */
 export function smoothstep(e0: number, e1: number, x: number): number {
-  let t = (x - e0) / (e1 - e0);
+  const t = (x - e0) / (e1 - e0);
   if (t <= 0) return 0;
   if (t >= 1) return 1;
   return t * t * (3 - 2 * t);
