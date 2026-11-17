@@ -31,9 +31,14 @@ import MainMenu from './MainMenu';
 import PauseMenu from './PauseMenu';
 import SettingsDialog from './SettingsDialog';
 import Toasts from './Toasts';
+import { persistLoadoutChoices } from './uiStore';
 import './ui.css';
 
 let flagsApplied = false;
+
+// The player's last preset and gun load are in the store before any flight can start (also
+// with ?ui=0).
+persistLoadoutChoices();
 
 // Leaving the pause (by any key, button or module) also closes what was open on top of it.
 useA10Store.subscribe((s, prev) => {

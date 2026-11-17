@@ -3,6 +3,9 @@
  * Settings, the controls reference, End flight and debrief, Exit to menu. Escape always
  * resumes (UIRoot handles the key, together with the input module's own pause binding). While
  * the settings dialog is open on top, the menu hides and hands the focus over.
+ *
+ * The controls page can also keep the reference on screen: "Keep on screen" resumes with the
+ * help panel (HelpPanel.tsx) open beside the flight, so it needs no key of its own.
  */
 import { useEffect, useRef, useState } from 'react';
 import { IconArrowLeft, IconSliders, useModalFocus } from '../../engine';
@@ -22,6 +25,7 @@ export default function PauseMenu() {
   const scenario = useA10Store((s) => s.scenario);
   const time = useA10Store((s) => s.telemetry.time);
   const rounds = useA10Store((s) => s.telemetry.rounds);
+  const helpOpen = useA10Store((s) => s.helpOpen);
   const view = useA10Ui((s) => s.pauseView);
   const setView = useA10Ui((s) => s.setPauseView);
   const [rearmed, setRearmed] = useState(false);
@@ -49,6 +53,12 @@ export default function PauseMenu() {
       ?.querySelector<HTMLElement>('[data-autofocus]')
       ?.focus({ preventScroll: true });
   }, [view]);
+
+  const keepOnScreen = () => {
+    const s = useA10Store.getState();
+    s.setHelpOpen(true);
+    s.setPaused(false);
+  };
 
   const rearm = () => {
     const sim = getSim();
@@ -98,6 +108,18 @@ export default function PauseMenu() {
                 <IconArrowLeft size={18} />
                 <span>Back</span>
               </button>
+              {!helpOpen && (
+                <button
+                  type="button"
+                  className="fac-btn a10-pause__keep"
+                  data-testid="a10-pause-controls-keep"
+                  title="Resume with this list beside the flight"
+                  onClick={keepOnScreen}
+                >
+                  <IconKeyboard size={18} />
+                  <span>Keep on screen</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="fac-btn fac-btn--primary"

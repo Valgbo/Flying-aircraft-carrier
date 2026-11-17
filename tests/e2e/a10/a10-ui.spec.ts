@@ -87,7 +87,10 @@ test('the weapons range entries start their events', async ({ page }) => {
   }
 });
 
-test('the loadout screen picks the preset and the gun load', async ({ page }) => {
+test('the loadout screen picks the preset and the gun load; the next flight carries them', async ({
+  page,
+}) => {
+  test.slow(); // a reload and a flight
   await openA10(page);
   await page.getByTestId('a10-loadout').click();
   const screen = page.getByTestId('a10-loadout-screen');
@@ -104,12 +107,26 @@ test('the loadout screen picks the preset and the gun load', async ({ page }) =>
     .toBe(id);
   await expect(page.getByTestId('a10-loadout-totals')).toContainText('rounds');
   await page.getByTestId('a10-gunload-allHEI').click();
-  expect(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('a10-ui-v1') ?? '{}').gunLoad),
-  ).toBe('allHEI');
+  expect(await evalIn<string>(page, 'window.__A10__.store.getState().ammoLoad')).toBe('allHEI');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('a10-ui-v1') ?? '{}'))).toEqual({
+    loadoutId: id,
+    gunLoad: 'allHEI',
+  });
+
+  // both choices survive a reload: restored into the store before any flight starts
   await page.reload();
+  await expect(page.getByTestId('a10-menu')).toBeVisible({ timeout: 60_000 });
+  expect(await evalIn<string>(page, 'window.__A10__.store.getState().ammoLoad')).toBe('allHEI');
+  expect(await evalIn<string>(page, 'window.__A10__.store.getState().loadoutId')).toBe(id);
   await page.getByTestId('a10-loadout').click();
+  await expect(page.getByTestId(`a10-loadout-preset-${id}`).locator('input')).toBeChecked();
   await expect(page.getByTestId('a10-gunload-allHEI').locator('input')).toBeChecked();
+
+  // Fly now from the loadout screen: the flight carries that preset and gun load
+  await startFlight(page, 'a10-loadout-fly');
+  expect(await evalIn<string>(page, 'window.__A10__.getSim().options.ammoLoad')).toBe('allHEI');
+  expect(await evalIn<string>(page, 'window.__A10__.getSim().gun.load')).toBe('allHEI');
+  expect(await evalIn<string>(page, 'window.__A10__.getSim().options.loadoutId')).toBe(id);
 });
 
 test('the pause menu: controls reference, settings, rearm; Escape always resumes', async ({
@@ -265,6 +282,43 @@ test('the help panel lists the controls beside the flight; Escape closes it', as
   await page.keyboard.press('Escape');
   await expect(help).toHaveCount(0);
   expect(await evalIn<boolean>(page, 'window.__A10__.store.getState().paused')).toBe(false);
+});
+
+test('Keep on screen shows the controls in flight; a rebinding renames their keys and the strip', async ({
+  page,
+}) => {
+  await openA10(page);
+  await startFlight(page);
+  // pause → Controls reference → Keep on screen: the flight resumes with the list beside it
+  await page.keyboard.press('Escape');
+  await page.getByTestId('a10-pause-controls').click();
+  await page.getByTestId('a10-pause-controls-keep').click();
+  await expect(page.getByTestId('a10-pause')).toHaveCount(0);
+  const help = page.getByTestId('a10-help');
+  await expect(help).toBeVisible();
+  expect(await evalIn<boolean>(page, 'window.__A10__.store.getState().paused')).toBe(false);
+  const masterArmKeys = help.locator('.a10-keys__row', { hasText: 'Master Arm' }).locator('kbd');
+  await expect(masterArmKeys).toHaveText(['1']);
+  const strip = page.getByTestId('a10-checklist');
+  await expect(strip).toHaveAttribute('data-step', 'gun.masterArm');
+  await expect(strip.locator('kbd')).toHaveText(['1']);
+
+  // pause again (with the list open, Escape would close the list first), Settings, and add J
+  // to Master Arm in the input module's controls panel
+  await hook(page, (h) => h.store.getState().setPaused(true));
+  await page.getByTestId('a10-pause-settings').click();
+  await page.getByTestId('binding-add-masterArm').click();
+  await expect(page.getByTestId('capture-masterArm')).toBeVisible();
+  await page.keyboard.press('j');
+  await expect(page.getByTestId('capture-masterArm')).toHaveCount(0);
+  await page.keyboard.press('Escape'); // closes the dialog and resumes the flight
+  await expect(page.getByTestId('a10-settings-dialog')).toHaveCount(0);
+  expect(await evalIn<boolean>(page, 'window.__A10__.store.getState().paused')).toBe(false);
+
+  // the list that stayed open and the checklist strip both name the new key
+  await expect(masterArmKeys).toHaveText(['1', 'J']);
+  await expect(strip.locator('kbd')).toHaveText(['1', 'J'], SLOW);
+  await expect(strip).toContainText('Master Arm → ARM');
 });
 
 test('the menu realism chip opens the settings at the realism table', async ({ page }) => {

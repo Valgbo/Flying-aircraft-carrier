@@ -111,10 +111,7 @@ test('with Master Arm at SAFE the trigger fires no rounds', async ({ page }) => 
   expect(await rounds(page)).toBe(loaded);
 });
 
-// FIXME(weapons): src/a10/core/weapons still has the foundation's stand-in stepGun (a no-op), so
-// no round can leave yet. Remove `.fixme` when the weapons module's GAU-8 lands; nothing else in
-// this test needs to change.
-test.fixme('with Master Arm ARM and GUN/PAC ARM the trigger fires', async ({ page }) => {
+test('with Master Arm ARM and GUN/PAC ARM the trigger fires', async ({ page }) => {
   await openA10(page);
   await startFlight(page);
   const loaded = await rounds(page);

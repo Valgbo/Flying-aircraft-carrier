@@ -69,7 +69,13 @@ export function rasterCloudShadow(layout: CloudLayout, size = CLOUD_SHADOW_SIZE)
 /** The coverage as a repeating texture (the caller owns and disposes it). */
 export function createCloudShadowTexture(layout: CloudLayout): DataTexture {
   const size = CLOUD_SHADOW_SIZE;
-  const tex = new DataTexture(rasterCloudShadow(layout, size), size, size, RedFormat, UnsignedByteType);
+  const tex = new DataTexture(
+    rasterCloudShadow(layout, size),
+    size,
+    size,
+    RedFormat,
+    UnsignedByteType,
+  );
   tex.wrapS = RepeatWrapping;
   tex.wrapT = RepeatWrapping;
   tex.magFilter = LinearFilter;

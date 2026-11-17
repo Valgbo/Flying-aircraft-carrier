@@ -11,7 +11,8 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect } from 'react';
 import { frameInfo, onSimFrame } from '../frame';
-import { acquireFx, getFx, releaseFx, updateFx, warmFx } from './fx';
+import type { SimEvent } from '../../core/types';
+import { acquireFx, getFx, playFx, releaseFx, updateFx, warmFx } from './fx';
 
 export default function EffectsView() {
   const scene = useThree((s) => s.scene);
@@ -19,9 +20,12 @@ export default function EffectsView() {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    // window.__A10_FX__: development aid for screenshots and the console
+    // window.__A10_FX__: development aid for screenshots and the console (dev server only)
     const hook = {
+      /** Run the effects forward without stepping the simulation. */
       warm: (seconds: number) => warmFx(seconds, camera),
+      /** Play hand-made events (t = seconds from now) at their exact times, then `seconds` more. */
+      play: (events: SimEvent[], seconds: number) => playFx(events, seconds, camera),
       stats: () => getFx()?.ps.stats,
     };
     (window as unknown as { __A10_FX__?: typeof hook }).__A10_FX__ = hook;

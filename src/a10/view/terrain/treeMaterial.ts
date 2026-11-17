@@ -228,9 +228,9 @@ void main() {
 
 /** Foliage colours (linear): broadleaf, conifer, poplar. */
 export const LEAF_COLORS = [
-  new Color(0.055, 0.085, 0.032),
-  new Color(0.032, 0.05, 0.03),
-  new Color(0.07, 0.1, 0.038),
+  new Color(0.068, 0.104, 0.038),
+  new Color(0.04, 0.064, 0.036),
+  new Color(0.085, 0.12, 0.045),
 ];
 
 export const treeUniforms = {

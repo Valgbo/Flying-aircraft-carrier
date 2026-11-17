@@ -50,10 +50,10 @@ export const GROUND = {
   cerealYoung: rgb(92, 114, 62),
   cerealRipe: rgb(156, 146, 98),
   greenCrop: rgb(112, 108, 76),
-  rapeseedBloom: rgb(188, 174, 80),
+  rapeseedBloom: rgb(178, 166, 84),
   rapeseedGreen: rgb(90, 110, 60),
-  ploughed: rgb(112, 94, 74),
-  ploughedDark: rgb(86, 72, 58),
+  ploughed: rgb(116, 102, 86),
+  ploughedDark: rgb(90, 80, 68),
   fallow: rgb(134, 126, 96),
   margin: rgb(104, 114, 72),
   dirt: rgb(124, 108, 86),
@@ -180,8 +180,9 @@ function fieldColor(f: FieldSample, out: Rgb): number {
       mixInto(out, GROUND.cerealYoung, 0.35 * v);
       return DETAIL.crop;
     case 'rapeseed':
-      set(out, v > 0.45 ? GROUND.rapeseedBloom : GROUND.rapeseedGreen);
-      mixInto(out, GROUND.cerealYoung, 0.2 * (1 - v));
+      // a third of the rapeseed in bloom: striking from the air, but not every other field
+      set(out, v > 0.66 ? GROUND.rapeseedBloom : GROUND.rapeseedGreen);
+      mixInto(out, GROUND.cerealYoung, 0.25 * (1 - v));
       return DETAIL.crop;
     case 'ploughed':
       set(out, GROUND.ploughed);
@@ -276,17 +277,15 @@ export function bakeTexel(
     // the field's own tint, stable per field
     const tint = hash01(field.id, 7, seed);
     scale(c, 0.9 + 0.2 * tint);
-    // within-field patches (soil, moisture)
-    scale(c, 0.92 + 0.16 * mid);
-    // tramlines: pairs of wheel tracks every 24 m along the rows (only where texels are small)
-    if (cls === DETAIL.crop && footprint < 8) {
-      const h = field.rowHeading;
-      const across = x * Math.cos(h) + z * Math.sin(h);
-      const p = (((across / 24) % 1) + 1) % 1;
-      const wheel = Math.min(Math.abs(p * 24 - 0.4), Math.abs(p * 24 - 2.2));
-      const track = Math.max(0, 1 - wheel / Math.max(0.6, footprint)) * (1 - footprint / 8);
-      mixInto(c, GROUND.ploughed, 0.35 * track);
-    }
+    // within-field patches of soil, moisture and growth at two scales (the terrain shader
+    // draws the tramlines)
+    const patch =
+      valueNoise(x / 55, z / 55, seed + 301) * 0.45 +
+      valueNoise(x / 190, z / 190, seed + 303) * 0.55;
+    scale(c, 0.84 + 0.32 * patch);
+    // greener in the damp patches, yellower on the dry ones
+    c[0] *= 1.04 - 0.08 * mid;
+    c[2] *= 0.96 + 0.08 * mid;
     // field margins: a grass strip, a farm track or the foot of a hedge
     const edge = field.edgeDistance;
     const band = Math.max(2.5, footprint * 0.75);
@@ -301,7 +300,8 @@ export function bakeTexel(
     scale(c, 0.9 + 0.2 * mid);
     if (kind === 'forest' && footprint > 2) {
       // crowns in clusters: the mottled texture a forest shows from altitude
-      const crowns = valueNoise(x / 23, z / 23, seed + 191) * 0.6 + valueNoise(x / 61, z / 61, seed + 193) * 0.4;
+      const crowns =
+        valueNoise(x / 23, z / 23, seed + 191) * 0.6 + valueNoise(x / 61, z / 61, seed + 193) * 0.4;
       scale(c, 0.72 + 0.56 * crowns);
     }
   }

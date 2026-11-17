@@ -19,6 +19,7 @@ import ControlsPanel from '../input/ControlsPanel';
 import { DEFAULT_SETTINGS, useA10Store, type QualityLevel } from '../state/store';
 import RealismTable from './RealismTable';
 import { REALISM_INFO, REALISM_PRESETS } from './realism';
+import { useScrollEdges } from './TableWrap';
 import { useA10Ui } from './uiStore';
 
 const QUALITY: readonly { level: QualityLevel; label: string; description: string }[] = [
@@ -58,6 +59,9 @@ export default function SettingsDialog() {
   const [confirmReset, setConfirmReset] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  // on a phone the section links scroll sideways: fade the edge that hides some
+  useScrollEdges(navRef);
 
   // Scroll the body only: scrollIntoView would also scroll the dialog box itself (an
   // overflow: hidden element is still scrollable from script) and push its header away.
@@ -114,7 +118,7 @@ export default function SettingsDialog() {
           <h2 className="a10-dialog__title" id="a10-settings-title">
             Settings
           </h2>
-          <nav className="a10-dialog__nav" aria-label="Sections">
+          <nav className="a10-dialog__nav" aria-label="Sections" ref={navRef}>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}

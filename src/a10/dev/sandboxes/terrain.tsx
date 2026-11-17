@@ -8,8 +8,9 @@
  *
  * Controls: drag to look, W A S D to fly, Q / E down / up, Shift ×5 speed.
  * Parameters:
- *   preset=3000|1000|300     camera that many metres above the first target area, 4–6 km back,
+ *   preset=3000|1000|300     camera that many metres above the first target area, 2.5–6 km back,
  *                            looking at it (area=<index> picks another target area)
+ *   airbase=<agl>            on the runway's approach, that high, looking at the airbase
  *   cam=x,y,z  look=yawDeg,pitchDeg      explicit camera (yaw 0 = north, clockwise)
  *   time=<hours>  vis=<km>   time of day and visibility
  *   quality=low|medium|high  graphics preset (default medium)
@@ -54,14 +55,20 @@ const DPR: Record<QualityLevel, [number, number]> = {
 /** The free camera's pose: position and yaw (0 = north, clockwise) / pitch, radians. */
 const pose = { x: 0, y: 3000, z: 0, yaw: 0, pitch: -0.3 };
 
-/** Put the camera `agl` metres above target area `area`, back along its axis, looking at it. */
-function presetPose(terrain: Terrain, agl: number, area: number): void {
-  const a = terrain.targetAreas[area] ?? terrain.targetAreas[0];
-  const tx = a ? a.x : terrain.start.x;
-  const tz = a ? a.z : terrain.start.z;
-  // come in from the start point's side
-  const dx = terrain.start.x - tx;
-  const dz = terrain.start.z - tz;
+/**
+ * Put the camera `agl` metres above the ground at (tx, tz), `back` metres away toward (fromX,
+ * fromZ), looking at it.
+ */
+function lookAtPose(
+  terrain: Terrain,
+  tx: number,
+  tz: number,
+  agl: number,
+  fromX: number,
+  fromZ: number,
+): void {
+  const dx = fromX - tx;
+  const dz = fromZ - tz;
   const l = Math.hypot(dx, dz) || 1;
   const back = agl >= 2000 ? 6000 : agl >= 800 ? 4500 : 2500;
   const x = tx + (dx / l) * back;
@@ -74,6 +81,28 @@ function presetPose(terrain: Terrain, agl: number, area: number): void {
   pose.pitch = -Math.atan2(pose.y - ground, back);
 }
 
+/** `agl` metres above target area `area`, coming in from the start point's side. */
+function presetPose(terrain: Terrain, agl: number, area: number): void {
+  const a = terrain.targetAreas[area] ?? terrain.targetAreas[0];
+  const tx = a ? a.x : terrain.start.x;
+  const tz = a ? a.z : terrain.start.z;
+  lookAtPose(terrain, tx, tz, agl, terrain.start.x, terrain.start.z);
+}
+
+/** `agl` metres above the airbase, on the extended runway centre line (approach). */
+function airbasePose(terrain: Terrain, agl: number): void {
+  const b = terrain.airbase;
+  if (!b) return;
+  lookAtPose(
+    terrain,
+    b.x,
+    b.z,
+    agl,
+    b.x - Math.sin(b.heading) * 1e4,
+    b.z + Math.cos(b.heading) * 1e4,
+  );
+}
+
 if (typeof window !== 'undefined') {
   // scripted screenshots: jump between presets in one session
   (window as unknown as { __TERRAIN_SANDBOX__: unknown }).__TERRAIN_SANDBOX__ = {
@@ -82,6 +111,11 @@ if (typeof window !== 'undefined') {
       const t = getTerrain();
       if (t) presetPose(t, agl, area);
     },
+    airbase(agl: number) {
+      const t = getTerrain();
+      if (t) airbasePose(t, agl);
+    },
+    overrides: environmentOverrides,
   };
 }
 
@@ -174,8 +208,8 @@ function Readout() {
         {((pose.yaw * 180) / Math.PI).toFixed(0)}°
       </div>
       <div>
-        tiles {s.drawn} drawn / {s.tiles} held · {(s.triangles / 1000).toFixed(0)}k tri ·{' '}
-        {s.pending} pending
+        tiles {s.drawCalls} drawn / {s.drawn} selected / {s.tiles} held ·{' '}
+        {(s.drawnTriangles / 1000).toFixed(0)}k tri · {s.pending} pending
       </div>
       <div>
         trees {s.trees} · build {s.buildMs.toFixed(0)} ms · frame {s.frameMs.toFixed(2)} ms
@@ -227,6 +261,14 @@ function Panel({ terrain }: { terrain: Terrain | null }) {
             {agl} m
           </button>
         ))}
+        <button
+          type="button"
+          className="fac-btn"
+          disabled={!terrain?.airbase}
+          onClick={() => terrain && airbasePose(terrain, 600)}
+        >
+          airbase
+        </button>
         {(['low', 'medium', 'high'] as const).map((q) => (
           <button
             key={q}
@@ -305,7 +347,8 @@ export default function TerrainSandbox() {
         pose.x = cam[0];
         pose.y = cam[1];
         pose.z = cam[2];
-      } else presetPose(t, num('preset') ?? 3000, num('area') ?? 0);
+      } else if (num('airbase') !== null && t.airbase) airbasePose(t, num('airbase')!);
+      else presetPose(t, num('preset') ?? 3000, num('area') ?? 0);
       if (look && look.length === 2) {
         pose.yaw = (look[0] * Math.PI) / 180;
         pose.pitch = (look[1] * Math.PI) / 180;

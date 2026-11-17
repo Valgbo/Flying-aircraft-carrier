@@ -9,6 +9,10 @@ export const terrainStreaming = {
   tiles: 0,
   /** Tiles selected for drawing this frame (before frustum culling). */
   drawn: 0,
+  /** Tile draw calls of the last frame (after frustum culling; trees add one). */
+  drawCalls: 0,
+  /** Triangles of the tiles drawn last frame (after frustum culling). */
+  drawnTriangles: 0,
   /** Triangles of the selected tiles. */
   triangles: 0,
   /** Instanced trees drawn. */

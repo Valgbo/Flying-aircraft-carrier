@@ -288,7 +288,39 @@
 .a10-table-wrap {
   max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
+}
+
+/* content hidden past an edge (useScrollEdges sets data-more, TableWrap.tsx): it fades out */
+.a10-table-wrap[data-more='right'],
+.a10-dialog__nav[data-more='right'] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+}
+
+.a10-table-wrap[data-more='left'],
+.a10-dialog__nav[data-more='left'] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+}
+
+.a10-table-wrap[data-more='both'],
+.a10-dialog__nav[data-more='both'] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 44px,
+    #000 calc(100% - 44px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 44px,
+    #000 calc(100% - 44px),
+    transparent
+  );
 }
 
 .a10-table {
@@ -826,13 +858,36 @@
   padding: 8px 14px;
 }
 
+/* the buttons under the controls reference: one equal column each */
 .a10-pause__actions--row {
   flex: none;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
 }
 
 .a10-pause__actions--row .fac-btn {
   justify-content: center;
+}
+
+/* narrow: Back and Keep on screen side by side, Resume across the full width below */
+@media (max-width: 520px) {
+  .a10-pause__actions--row {
+    grid-template-columns: 1fr 1fr;
+    grid-auto-flow: row;
+  }
+
+  .a10-pause__actions--row .fac-btn {
+    padding-inline: 8px;
+  }
+
+  .a10-pause__actions--row .fac-btn:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  /* "Keep on screen" fits on one line beside Back without its icon */
+  .a10-pause__keep svg {
+    display: none;
+  }
 }
 
 .a10-pause__key {
@@ -853,10 +908,19 @@
 
 /* ---------- Controls reference ---------------------------------------------------------- */
 
+/* balanced columns: a short group (Throttle) never leaves a hole beside a long one (Stick) */
 .a10-keys {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px 24px;
+  columns: 280px 2;
+  column-gap: 24px;
+}
+
+.a10-keys__group {
+  padding-bottom: 14px;
+  break-inside: avoid;
+}
+
+.a10-keys__group:last-child {
+  padding-bottom: 0;
 }
 
 .a10-keys__title {
@@ -1390,18 +1454,33 @@
   box-shadow: 0 0 0 2px rgba(57, 198, 255, 0.25);
 }
 
+/* inline flow, not flex: a comma stays on its key cap, and a long line wraps between words */
 .a10-checklist__text {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
   min-width: 0;
   white-space: normal;
 }
 
 .a10-checklist__text .shell-key {
   height: 21px;
+  margin: 0 1px;
+  vertical-align: middle;
   font-size: 11.5px;
+}
+
+.a10-checklist__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.a10-checklist__keys .shell-key {
+  margin: 0;
+}
+
+.a10-checklist__or {
+  color: var(--fac-text-dim);
+  font-size: 11px;
 }
 
 .a10-checklist--act {
@@ -1468,8 +1547,11 @@
   line-height: 1.5;
 }
 
+/* figures inside a sentence: the text face (a monospace no-break space reads as two spaces) */
 .a10-crash__facts .fac-readout {
   color: var(--fac-text);
+  font-family: inherit;
+  font-weight: 600;
 }
 
 .a10-crash__actions {
@@ -1536,7 +1618,7 @@
 }
 
 .a10-help .a10-keys {
-  grid-template-columns: minmax(0, 1fr);
+  columns: 1;
 }
 
 /* ---------- Toasts ---------------------------------------------------------------------- */
@@ -2304,6 +2386,11 @@
 
   .a10-pause__actions {
     grid-template-columns: 1fr 1fr;
+  }
+
+  /* two columns of buttons: wide enough that no label wraps (the controls page is wider) */
+  .a10-pause__panel:not(.a10-pause__panel--wide) {
+    width: min(560px, 100%);
   }
 }
 

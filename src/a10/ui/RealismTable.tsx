@@ -5,11 +5,12 @@
 import { useMemo } from 'react';
 import type { RealismPreset } from '../core/types';
 import { REALISM_INFO, REALISM_PRESETS, realismRows } from './realism';
+import TableWrap from './TableWrap';
 
 export default function RealismTable({ selected }: { selected: RealismPreset }) {
   const rows = useMemo(() => realismRows(), []);
   return (
-    <div className="a10-table-wrap">
+    <TableWrap>
       <table className="a10-table a10-realism" data-testid="a10-realism-table">
         <caption className="fac-visually-hidden">What each realism preset changes</caption>
         <thead>
@@ -35,6 +36,6 @@ export default function RealismTable({ selected }: { selected: RealismPreset }) 
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

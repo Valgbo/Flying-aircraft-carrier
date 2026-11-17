@@ -3,14 +3,31 @@
  * checklist strip (PLAN_A10.md §2), the crash panel, and — only with ?fps=1 — a telemetry line
  * for debugging (tests read telemetry from window.__A10__.store instead).
  */
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { a10Flags } from '../state/debugFlags';
 import { exitToMenu, finishFlight, restartFlight } from '../state/flow';
 import { getSim } from '../state/runtime';
 import { useA10Store } from '../state/store';
 import { getCrashInfo, useChecklistStep } from './bridge';
+import { keyCaps } from './ControlsReference';
 import { formatDegFromRad, formatKnots } from './format';
 import { IconDebrief, IconExit, IconRestart } from './icons';
+
+/** A step's key as key caps: "1 / J" (two keys bound) → 1 / J, each in its own cap. */
+function StepKeys({ label }: { label: string }) {
+  const caps = keyCaps(label);
+  if (caps.length <= 1) return <kbd className="shell-key">{caps[0] ?? label}</kbd>;
+  return (
+    <span className="a10-checklist__keys">
+      {caps.map((k, i) => (
+        <Fragment key={`${k}-${i}`}>
+          {i > 0 && <span className="a10-checklist__or">/</span>}
+          <kbd className="shell-key">{k}</kbd>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
 
 function ChecklistStrip() {
   const step = useChecklistStep();
@@ -41,13 +58,7 @@ function ChecklistStrip() {
       </span>
       <span className="a10-checklist__text" aria-hidden="true">
         {step.parts.map((p, i) =>
-          p.key !== undefined ? (
-            <kbd key={i} className="shell-key">
-              {p.key}
-            </kbd>
-          ) : (
-            <span key={i}>{p.text}</span>
-          ),
+          p.key !== undefined ? <StepKeys key={i} label={p.key} /> : <span key={i}>{p.text}</span>,
         )}
       </span>
     </div>

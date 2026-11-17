@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { spatialStep, type NavRect } from '../../../src/a10/ui/spatialNav';
-import { groupControls, keyCaps } from '../../../src/a10/ui/ControlsReference';
+import { groupControls, keepDesignators, keyCaps } from '../../../src/a10/ui/ControlsReference';
+import { hiddenEdges } from '../../../src/a10/ui/TableWrap';
 
 const rect = (left: number, top: number, width = 100, height = 40): NavRect => ({
   left,
@@ -68,5 +69,29 @@ describe('controls reference', () => {
     expect(keyCaps('1, 2, 3, 4, or click')).toEqual(['1', '2', '3', '4', 'click']);
     expect(keyCaps('Ctrl + arrow keys')).toEqual(['Ctrl + arrow keys']);
     expect(keyCaps('[ / ]')).toEqual(['[', ']']);
+    // two keys bound to one control (a rebinding added J): the checklist strip shows two caps
+    expect(keyCaps('1 / J')).toEqual(['1', 'J']);
+    expect(keyCaps('—')).toEqual([]);
+  });
+
+  it('never breaks a line inside a designator such as PAC-1', () => {
+    expect(keepDesignators('Trigger: first detent (PAC-1)')).toBe(
+      'Trigger: first detent (PAC\u20111)',
+    );
+    expect(keepDesignators('GBU-12 and AGM-65D')).toBe('GBU\u201112 and AGM\u201165D');
+    // ordinary hyphens stay breakable
+    expect(keepDesignators('fly-by, look-at-SPI')).toBe('fly-by, look-at-SPI');
+  });
+});
+
+describe('table scroll hint', () => {
+  it('names the edges that hide columns', () => {
+    expect(hiddenEdges(0, 300, 300)).toBe(''); // it all fits
+    expect(hiddenEdges(0, 300, 520)).toBe('right');
+    expect(hiddenEdges(110, 300, 520)).toBe('both');
+    expect(hiddenEdges(220, 300, 520)).toBe('left');
+    // fractional scroll positions on a zoomed page still count as the end
+    expect(hiddenEdges(219.4, 300, 520)).toBe('left');
+    expect(hiddenEdges(0.5, 300, 520)).toBe('right');
   });
 });

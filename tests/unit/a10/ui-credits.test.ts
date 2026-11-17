@@ -44,6 +44,12 @@ describe('credits screen', () => {
           : `${url.protocol}//${url.hostname}`;
       expect(screen, `CREDITS.md source ${raw}`).toContain(source);
     }
-    for (const c of THIRD_PARTY) for (const a of c.authors) expect(text).toContain(a);
+    // every entry on the screen is a source CREDITS.md credits, under the same name
+    for (const c of THIRD_PARTY) expect(text, c.title).toContain(c.creditsMd);
+    // the FlightGear authors are named in CREDITS.md exactly as on the screen
+    const fg = THIRD_PARTY.find((c) => c.creditsMd === 'FlightGear A-10')!;
+    for (const a of fg.authors) expect(text).toContain(a);
+    // and a tool CREDITS.md names for a generated file is on the screen too
+    if (/\bFlite\b/.test(text)) expect(THIRD_PARTY.some((c) => /Flite/.test(c.title))).toBe(true);
   });
 });

@@ -36,8 +36,10 @@ import type { CloudLayout } from '../../../engine';
 import type { Terrain } from '../../core/world/types';
 import { a10Env } from '../environment/env';
 import { a10Lights, cloudShadowSource, envClock, envFrame } from '../environment/envState';
+import { hazeDistanceFor } from '../environment/haze';
 import { cloudShadowHeight, createCloudShadowTexture } from './cloudShadow';
 import {
+  MAX_LEVEL_BY_DETAIL,
   TILE_QUADS,
   morphRange,
   nodeKey,
@@ -51,21 +53,31 @@ import {
 import { bindTile, createTerrainMaterial, terrainUniforms } from './terrainMaterial';
 import type { WorkerReply, WorkerRequest } from './terrainProtocol';
 import { terrainStreaming } from './terrainStats';
-import { createTerrain } from '../../core/world';
 import { DETAIL_LAYER_COUNT, DETAIL_SIZE, buildDetailTextures } from './detailTextures';
-import { buildTile, prepareFeatures, type FeatureIndex, type TileData, type TileSpec } from './tileBuilder';
+import { createBakeScratch, type BakeScratch } from './palette';
+import {
+  buildTile,
+  prepareFeatures,
+  type FeatureIndex,
+  type TileData,
+  type TileSpec,
+} from './tileBuilder';
 import { buildTreeCell, type TreeCellSpec } from './treeCells';
 import { TreeLayer } from './treeLayer';
 
 /**
- * Texture texels per tile edge (the texture has one more sample per edge): 256 on tiles of
- * 2 km and more (crisp fields seen from altitude), 128 on the small near tiles (close-range
- * detail textures carry those).
+ * Texture texels per tile edge (the texture has one more sample per edge) for a tile of `level`
+ * under terrain-detail preset `detail`. The bake costs ≈ 2.5 µs per texel in the worker, so the
+ * texels go where they show: 2 m on the finest tiles of the preset (under the aircraft), 4 m on
+ * the next two rings (≈ 0.8–3 km: the ground seen on a strafing pass), 8 m on the 2 km tiles
+ * seen from 3,000 m, and 32 m beyond, where the haze has most of the contrast.
  */
-export function tileTexels(level: number): number {
+export function tileTexels(level: number, detail: number): number {
   const size = nodeSize(level);
-  // 2 m texels near the aircraft, 8 m on the tiles seen from 3,000 m, coarser beyond
-  return size <= 256 ? 128 : size <= 2048 ? 256 : 128;
+  const d = Math.max(0, Math.min(2, detail));
+  // (Low: 4 m under the aircraft too — its finest tiles are twice as large)
+  if (level >= MAX_LEVEL_BY_DETAIL[d]) return Math.min(256, size / (d === 0 ? 4 : 2));
+  return size <= 512 ? Math.min(128, size / 2) : size <= 2048 ? 256 : 128;
 }
 /** Tiles kept in memory at most (drawn ones are never dropped). */
 const TILE_BUDGET = 260;
@@ -102,7 +114,13 @@ type Job =
   | { kind: 'trees'; spec: TreeCellSpec; priority: number };
 
 const _camera = new Vector3();
+const _dir = new Vector3();
 const _range: [number, number] = [0, 0];
+
+/** Ground is drawn out to where the clear-air haze leaves this much of its contrast. */
+const DRAW_CONTRAST = 0.01;
+/** ... but never closer than this, m (thick haze, or inside the cloud the fog is in). */
+const MIN_DRAW_DISTANCE = 12000;
 
 export interface TerrainFrameSettings {
   detail: number;
@@ -133,7 +151,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   /** The one material every tile draws with. */
   private readonly material: ShaderMaterial = createTerrainMaterial();
   /** Main-thread fallback when no worker could start. */
-  private local: { terrain: Terrain; features: FeatureIndex | null } | null = null;
+  private local: { terrain: Terrain; features: FeatureIndex; scratch: BakeScratch } | null = null;
 
   constructor(
     private readonly terrain: Terrain,
@@ -211,8 +229,13 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     slot.worker.terminate();
     if (this.workers.every((w) => w.failed) && !this.local) {
       console.warn('[terrain] no worker: building tiles on the main thread');
-      this.local = { terrain: createTerrain(this.terrain.data), features: null };
-      this.local.features = prepareFeatures(this.local.terrain);
+      // the main thread already holds the very same Terrain
+      const terrain = this.terrain;
+      this.local = {
+        terrain,
+        features: prepareFeatures(terrain),
+        scratch: createBakeScratch(terrain.seed, terrain),
+      };
       this.setDetailTexture(buildDetailTextures());
     }
   }
@@ -270,6 +293,15 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
 
   /** Drawing-buffer height, px (set by the view). */
   viewHeight = 720;
+  /** Tiles and their triangles drawn since the last update (counted as they render). */
+  private drawCalls = 0;
+  private drawnTriangles = 0;
+  private readonly countDraw = (triangles: number) => {
+    this.drawCalls++;
+    this.drawnTriangles += triangles;
+  };
+  private readonly requestTrees = (spec: TreeCellSpec, priority: number) =>
+    this.dispatchTrees(spec, priority);
 
   update(camera: Camera, settings: TerrainFrameSettings): void {
     if (this.disposed) return;
@@ -279,9 +311,17 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     if (settings.detail !== this.detail) this.setDetail(settings.detail);
     this.updateUniforms(camera);
 
-    // 1. selection
+    // 1. selection: out to where the clear-air haze has taken the ground's contrast
     this.wanted.length = 0;
-    selectTiles(this, _camera.x, _camera.y, _camera.z, this.detail, this.selected);
+    const reach = Math.max(
+      MIN_DRAW_DISTANCE,
+      hazeDistanceFor(envFrame.clearDensity, DRAW_CONTRAST),
+    );
+    selectTiles(this, _camera.x, _camera.y, _camera.z, this.detail, this.selected, reach);
+    terrainStreaming.drawCalls = this.drawCalls;
+    terrainStreaming.drawnTriangles = this.drawnTriangles;
+    this.drawCalls = 0;
+    this.drawnTriangles = 0;
     for (const n of this.previous) if (n.tile) n.tile.mesh.visible = false;
     let triangles = 0;
     for (const n of this.selected) {
@@ -299,13 +339,19 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     }
     const ground = this.terrain.heightAt(_camera.x, _camera.z);
     this.treesThisFrame = 0;
+    camera.getWorldDirection(_dir);
+    const horizontal = Math.hypot(_dir.x, _dir.z);
+    const dirX = horizontal > 0.05 ? _dir.x / horizontal : 0;
+    const dirZ = horizontal > 0.05 ? _dir.z / horizontal : 0;
     this.trees.update(
       _camera.x,
       _camera.z,
       Math.max(0, _camera.y - ground),
       settings.treeCount,
       settings.treeDistance,
-      (spec, priority) => this.dispatchTrees(spec, priority),
+      this.requestTrees,
+      dirX,
+      dirZ,
     );
 
     // 3. finished builds → meshes, within the time budget
@@ -349,7 +395,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
       z0: nodeOrigin(level, node.iz),
       size: nodeSize(level),
       quads: TILE_QUADS,
-      texels: tileTexels(level),
+      texels: tileTexels(level, this.detail),
       roads: s <= 128,
       tracks: s <= 32,
       rivers: s <= 512,
@@ -359,7 +405,9 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     if (!slot) {
       // fallback: one tile per frame on this thread
       node.pending = true;
-      this.arrived.push(buildTile(this.local!.terrain, spec, this.local!.features));
+      this.arrived.push(
+        buildTile(this.local!.terrain, spec, this.local!.features, this.local!.scratch),
+      );
       return false;
     }
     const id = this.nextJob++;
@@ -426,7 +474,12 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     const tileParams = new Vector4(size, tile.texels, _range[0], _range[1]);
     const material = this.material;
     const mesh = new Mesh(geometry, material);
-    mesh.onBeforeRender = () => bindTile(material, texture, tileParams);
+    const countDraw = this.countDraw;
+    const triangles = tile.triangleCount;
+    mesh.onBeforeRender = () => {
+      bindTile(material, texture, tileParams);
+      countDraw(triangles);
+    };
     mesh.position.set(tile.ox, tile.oy, tile.oz);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -467,7 +520,8 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     // forget idle nodes far from anything (bounds are cheap to rebuild)
     if (this.nodes.size > 4000) {
       for (const [key, n] of this.nodes) {
-        if (!n.tile && !n.pending && this.frame - n.wantedAt > 600 && n.level > 2) this.nodes.delete(key);
+        if (!n.tile && !n.pending && this.frame - n.wantedAt > 600 && n.level > 2)
+          this.nodes.delete(key);
       }
     }
   }
@@ -499,7 +553,8 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     u.uDepthBias.value.set(0.2, 4 / (near * 16777216));
     // angle of one pixel (thin roads stay about a pixel and a half wide far away)
     const fov = (camera as { fov?: number }).fov ?? 62;
-    u.uPixelAngle.value = (2 * Math.tan(((fov / 2) * Math.PI) / 180)) / Math.max(1, this.viewHeight);
+    u.uPixelAngle.value =
+      (2 * Math.tan(((fov / 2) * Math.PI) / 180)) / Math.max(1, this.viewHeight);
     // thermal: solar heating by time of day (peaks in the early afternoon), ambient level
     const h = envFrame.hours;
     const solar = Math.max(0, Math.sin(((h - 6.5) / 13) * Math.PI)) * a10Env.daylight;

@@ -19,7 +19,7 @@ import { getTerrain, onTerrain } from '../../state/runtime';
 import { getA10Quality } from '../quality';
 import { terrainUniforms } from './terrainMaterial';
 import { terrainStreaming } from './terrainStats';
-import { TerrainSystem } from './terrainSystem';
+import { TerrainSystem, type TerrainFrameSettings } from './terrainSystem';
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   // development read-out (sandbox, screenshots): live numbers and the shared uniforms
@@ -28,6 +28,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     uniforms: terrainUniforms,
   };
 }
+
+/** The preset's terrain settings, refreshed every frame (no allocation per frame). */
+const frameSettings: TerrainFrameSettings = { detail: 1, treeCount: 0, treeDistance: 0 };
 
 export default function TerrainView() {
   const gl = useThree((s) => s.gl);
@@ -54,11 +57,10 @@ export default function TerrainView() {
     if (!sys) return;
     sys.viewHeight = size.height * viewport.dpr;
     const q = getA10Quality();
-    sys.update(camera, {
-      detail: q.terrainDetail,
-      treeCount: q.treeCount,
-      treeDistance: q.treeDistance,
-    });
+    frameSettings.detail = q.terrainDetail;
+    frameSettings.treeCount = q.treeCount;
+    frameSettings.treeDistance = q.treeDistance;
+    sys.update(camera, frameSettings);
   });
 
   return null;

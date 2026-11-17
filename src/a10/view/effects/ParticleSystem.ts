@@ -488,7 +488,7 @@ export class ParticleSystem {
       C[o + 1] = this.cg[i];
       C[o + 2] = this.cb[i];
       C[o + 3] = k.alpha * this.ca[i] * env;
-      let heat = 0;
+      let heat: number;
       if (k.emissive > 0) {
         const el = t / k.emissiveLife;
         let em = 0;

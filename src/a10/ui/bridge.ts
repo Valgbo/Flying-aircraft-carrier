@@ -10,6 +10,7 @@
  */
 import { useEffect, useSyncExternalStore } from 'react';
 import type { Sim, SimEvent } from '../core/types';
+import { subscribeBindings } from '../input/bindingsStore';
 import { getControlsReference } from '../input/controlsReference';
 import { useA10Store } from '../state/store';
 import { onSimFrame, type FrameInfo } from '../view/frame';
@@ -54,6 +55,8 @@ function refreshKeys(): void {
   } catch {
     keys = DEFAULT_CHECKLIST_KEYS;
   }
+  // the next frame redraws the strip with the new key caps
+  checklistClock = CHECKLIST_PERIOD;
 }
 
 function sameStep(a: ChecklistStep | null, b: ChecklistStep | null): boolean {
@@ -124,14 +127,15 @@ function onFrame(events: readonly SimEvent[], sim: Sim, info: FrameInfo): void {
 export function useSimBridge(): void {
   useEffect(() => {
     const offFrame = onSimFrame(onFrame);
-    // Bindings can change in the settings dialog: re-read the keys when it closes, and hide
-    // the strip at once when the player switches it off or leaves the flight.
-    const offStore = useA10Store.subscribe((s, prev) => {
-      if (prev.settingsOpen && !s.settingsOpen) refreshKeys();
+    // A rebinding (settings dialog, Controls section) renames the strip's key caps at once.
+    const offBindings = subscribeBindings(refreshKeys);
+    // Hide the strip at once when the player switches it off or leaves the flight.
+    const offStore = useA10Store.subscribe((s) => {
       if ((!s.settings.checklist || s.screen !== 'flight') && step) publishStep(null);
     });
     return () => {
       offFrame();
+      offBindings();
       offStore();
     };
   }, []);

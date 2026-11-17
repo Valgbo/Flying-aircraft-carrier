@@ -5,6 +5,8 @@
  * mount → unmount → mount and sandboxes create and dispose it cleanly.
  */
 import { Group, Vector3, type Camera } from 'three';
+import type { SimEvent } from '../../core/types';
+import type { FrameInfo } from '../frame';
 import { getA10Quality } from '../quality';
 import { disposeAtlas } from './atlas';
 import { DecalPool } from './decals';
@@ -97,4 +99,33 @@ export function warmFx(seconds: number, camera: Camera): void {
   if (!f) return;
   const dt = 1 / 30;
   for (let t = 0; t < seconds; t += dt) updateFx(f, dt, camera);
+}
+
+/**
+ * Development aid (screenshots, the console): deliver hand-made `events` — each `t` in seconds
+ * from now — to the director at their exact times while running the effects forward `seconds` in
+ * 1/60 s steps, without stepping the simulation (the live flight may stay paused). A burst of 65
+ * impacts then walks along the ground exactly as it does in flight, at any frame rate.
+ */
+export function playFx(events: readonly SimEvent[], seconds: number, camera: Camera): void {
+  const f = fx;
+  const sim = viewSim();
+  if (!f || !sim) return;
+  const dt = 1 / 60;
+  const order = events.slice().sort((a, b) => a.t - b.t);
+  const batch: SimEvent[] = [];
+  const info: FrameInfo = { steps: 1, alpha: 0, realDt: dt, simDt: dt };
+  const steps = Math.max(1, Math.round(seconds / dt));
+  let next = 0;
+  for (let k = 0; k < steps; k++) {
+    const end = (k + 1) * dt;
+    batch.length = 0;
+    while (next < order.length && order[next].t < end) {
+      const e = order[next++];
+      // the director places an event (t − frame start) into its frame
+      batch.push({ ...e, t: sim.time - dt + Math.max(0, e.t - k * dt) });
+    }
+    f.director.onSimFrame(batch, sim, info);
+    updateFx(f, dt, camera);
+  }
 }

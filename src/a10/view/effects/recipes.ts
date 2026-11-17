@@ -176,9 +176,11 @@ export function impactGround(
 
   const skip = outcome === 'skip';
   const k = skip ? 0.55 : 1;
-  // the spurt: a dark core of soil shooting up, leaning along the reflected path
+  // an HEI round bursts in the soil: its dust is darkened by the explosive's smoke
+  const hei = round === 1;
+  // the spurt: a core of soil shooting up a few metres, leaning along the reflected path
   const jets = count(ctx, (1.6 + 0.9 * s.ejecta) * k, lod, 1);
-  const jetCol = mix3(s.dust, s.clod, 0.6);
+  const jetCol = mix3(s.dust, s.clod, hei ? 0.8 : 0.6);
   for (let j = 0; j < jets; j++) {
     cone(nx, ny, nz, 0.28, _dir);
     const v = R.range(21, 31) * energy * (0.85 + 0.3 * s.ejecta);
@@ -191,9 +193,9 @@ export function impactGround(
       _dir.x * v + rx * lean,
       _dir.y * v,
       _dir.z * v + rz * lean,
-      R.range(0.7, 1.0),
-      R.range(2.6, 3.6),
-      R.range(1.5, 2.4),
+      R.range(0.8, 1.1),
+      R.range(3.0, 4.2),
+      R.range(1.6, 2.6),
     );
     ps.color(i, jetCol[0], jetCol[1], jetCol[2], 1);
   }
@@ -217,7 +219,7 @@ export function impactGround(
     ps.color(i, s.clod[0], s.clod[1], s.clod[2]);
   }
   // the dust that lingers 1–3 s around the spurt and drifts off
-  const puffs = count(ctx, (1.8 + 1.4 * s.dustiness) * k, lod);
+  const puffs = count(ctx, (2 + 1.4 * s.dustiness) * k, lod);
   for (let j = 0; j < puffs; j++) {
     const a = R.next() * Math.PI * 2;
     const h = R.range(1.5, 4);
@@ -229,11 +231,12 @@ export function impactGround(
       Math.cos(a) * h + rx * R.range(1, 4),
       R.range(2.5, 7) * energy,
       Math.sin(a) * h + rz * R.range(1, 4),
-      R.range(1.3, 1.9),
-      R.range(5, 7.5) * (0.8 + 0.25 * s.dustiness),
-      R.range(2.4, 4.4),
+      R.range(1.4, 2.0),
+      R.range(6.5, 9.5) * (0.8 + 0.25 * s.dustiness),
+      R.range(2.6, 4.6),
     );
-    ps.color(i, s.dust[0] * 0.85, s.dust[1] * 0.85, s.dust[2] * 0.85, 0.78);
+    if (hei) ps.color(i, s.dust[0] * 0.45 + 0.01, s.dust[1] * 0.45 + 0.01, s.dust[2] * 0.45 + 0.01, 0.9);
+    else ps.color(i, s.dust[0], s.dust[1], s.dust[2], 0.85);
   }
   if (s.fleck && lod > 0.5) {
     const n = count(ctx, 4, lod, 0);
@@ -380,11 +383,11 @@ function heiBurst(ctx: FxContext, x: number, y: number, z: number, nx: number, n
       _dir.x * v,
       _dir.y * v + 1,
       _dir.z * v,
-      R.range(0.6, 0.9),
-      R.range(2.6, 3.8),
-      R.range(2.0, 3.4),
+      R.range(0.7, 1.0),
+      R.range(3.2, 4.6),
+      R.range(2.2, 3.6),
     );
-    ps.color(i, 0.07, 0.065, 0.06, 0.85);
+    ps.color(i, 0.07, 0.065, 0.06, 0.9);
   }
   sparks(ctx, x, y, z, nx, ny, nz, count(ctx, onArmour ? 8 : 5, lod), 1.25, 15, 60, 0.15, 0.45);
 }
@@ -486,7 +489,7 @@ export function explosion(
     const v = R.range(4, 11) * sq * (fuel ? 0.8 : 1);
     const r = R.next() * 0.45 * s;
     const i = ps.spawn(
-      PK.fireball,
+      fuel ? PK.fuelball : PK.fireball,
       x + _dir.x * r,
       y + 0.35 * s + _dir.y * r,
       z + _dir.z * r,
@@ -494,14 +497,14 @@ export function explosion(
       _dir.y * v + (fuel ? 6 : 2) * sq,
       _dir.z * v,
       0.9 * s,
-      R.range(2.0, 2.8) * s * (fuel ? 1.4 : 1),
+      R.range(2.0, 2.8) * s * (fuel ? 1.8 : 1),
       (0.7 + 0.28 * s) * R.range(0.75, 1.25) * (fuel ? 2.2 : 1),
     );
     ps.emissive(i, R.range(0.8, 1.2));
   }
 
   // smoke: dark, mixed with dust for a ground burst, rising
-  const nSmoke = count(ctx, 6 + 6 * Math.min(s, 4.5), lod, 2);
+  const nSmoke = count(ctx, 7 + 8 * Math.min(s, 4.5), lod, 2);
   const smokeCol = soil ? mix3(sf.dust, SOOT, 0.62) : mix3(SOOT, GREY_SMOKE, 0.12);
   const sr = smokeCol[0];
   const sg = smokeCol[1];
@@ -509,20 +512,22 @@ export function explosion(
   for (let j = 0; j < nSmoke; j++) {
     cone(0, 1, 0, 1.3, _dir);
     const v = R.range(3, 9) * sq;
+    // a big charge's hot cloud climbs: the smoke of a bomb towers over its crater
+    const climb = R.range(2, 5) * sq * (s > 2 ? 1 + 0.25 * Math.min(s - 2, 4) : 1);
     const i = ps.spawn(
       fuel ? PK.blackSmoke : PK.smoke,
       x + _dir.x * 0.5 * s,
       y + 0.4 * s + _dir.y * 0.5 * s,
       z + _dir.z * 0.5 * s,
       _dir.x * v,
-      _dir.y * v + R.range(2, 5) * sq,
+      _dir.y * v + climb,
       _dir.z * v,
-      1.1 * s,
-      R.range(3.5, 5.2) * s,
+      1.3 * s,
+      R.range(3.5, 5.2) * s * (s > 2 ? 1.2 : 1),
       (7 + 3.5 * s) * R.range(0.7, 1.3) * (fuel ? 1.8 : 1),
     );
     if (fuel) ps.color(i, 0.03, 0.028, 0.026, 0.95);
-    else ps.color(i, sr, sg, sb, 0.85);
+    else ps.color(i, sr, sg, sb, 0.92);
   }
 
   if (sf.water && nearGround) splash(ctx, x, ground, z, Math.min(6, 1.2 * s), lod);

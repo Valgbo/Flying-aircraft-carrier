@@ -187,6 +187,17 @@ float paint(float x, float halfWidth) {
   return l * clamp(halfWidth * 2.0 / fw, 0.0, 1.0);
 }
 
+/** Size of one repeat of the crown pattern on the canopy shell (≈10 m crowns), m. */
+const float CROWN_SCALE = 59.0;
+/** Canopy colour where a tile's texel was not classified forest (linear). */
+const vec3 CANOPY_ALBEDO = vec3(0.042, 0.071, 0.026);
+
+/** paint() with the pixel footprint given (for coordinates that wrap). */
+float paintW(float x, float halfWidth, float fw) {
+  float l = 1.0 - smoothstep(halfWidth - fw, halfWidth + fw, abs(x));
+  return l * clamp(halfWidth * 2.0 / fw, 0.0, 1.0);
+}
+
 /** Detail sample (rgb modulation, a height) of a class layer at world-plane coordinates p. */
 vec4 detail(vec2 p, float layer) {
   return texture(uDetail, vec3(p / uDetailScale[int(layer)], layer));
@@ -203,6 +214,17 @@ vec3 bumped(vec3 n, vec2 p, float layer, vec2 ax, vec2 ay, float strength) {
   vec2 g = vec2(hx - h0, hy - h0) / (e * sc) * strength;
   vec2 gw = g.x * ax + g.y * ay;
   return normalize(n - vec3(gw.x, 0.0, gw.y));
+}
+
+/** Bumped normal from a detail layer's height sampled at an explicit repeat size (world x/z axes). */
+vec3 bumpedAt(vec3 n, vec2 p, float layer, float sc, float strength) {
+  float e = 1.0 / 256.0;
+  vec2 uv = p / sc;
+  float h0 = texture(uDetail, vec3(uv, layer)).a;
+  float hx = texture(uDetail, vec3(uv + vec2(e, 0.0), layer)).a;
+  float hy = texture(uDetail, vec3(uv + vec2(0.0, e), layer)).a;
+  vec2 g = vec2(hx - h0, hy - h0) / (e * sc) * strength;
+  return normalize(n - vec3(g.x, 0.0, g.y));
 }
 
 void main() {
@@ -236,6 +258,13 @@ void main() {
       vec2 p = vec2(dot(vWorld.xz, ax), dot(vWorld.xz, ay));
       vec4 d = detail(p, cls);
       albedo *= mix(vec3(1.0), d.rgb * 2.0, near * 0.8);
+      if (cls == 1.0) {
+        // tramlines: a pair of wheel tracks every 24 m along the rows — scale from the air
+        float fw = max(fwidth(p.y), 1e-4);
+        float q = mod(p.y, 24.0);
+        float tracks = max(paintW(q - 0.4, 0.22, fw), paintW(q - 2.2, 0.22, fw));
+        albedo *= 1.0 - 0.38 * tracks * near;
+      }
       float bumpK = cls == 2.0 ? 1.4 : cls == 3.0 ? 1.0 : 0.5;
       N = bumped(N, p, cls, ax, ay, bumpK * near * near);
       // micro detail: speed and height cues close to the ground
@@ -345,15 +374,25 @@ void main() {
     heatUptake = 0.9;
   } else {
     // ---- forest canopy shell: crowns from above, dark foliage walls along the edges ----
-    vec4 d;
+    // the stand's baked colour where the bake saw forest (coarse texels classify roughly)
+    ivec2 tc = clamp(ivec2(floor(vUv * uTile.y + 0.5)), ivec2(0), ivec2(int(uTile.y)));
+    float cls = mod(floor(texelFetch(uSplat, tc, 0).a * 255.0 + 0.5), 8.0);
+    if (cls != 5.0) albedo = CANOPY_ALBEDO;
+    // crown clusters (≈10 m) and stands (≈230 m): the canopy keeps a texture at every range
+    float crowns = texture(uDetail, vec3(vWorld.xz / CROWN_SCALE, 5.0)).r * 2.0;
+    float stands = texture(uDetail, vec3(vWorld.xz / 233.0, MICRO)).g;
+    albedo *= mix(1.0, crowns, 0.6) * (0.74 + 0.52 * stands);
     if (kind < 5.5) {
-      d = detail(vWorld.xz, 5.0);
-      N = bumped(N, vWorld.xz, 5.0, vec2(1.0, 0.0), vec2(0.0, 1.0), 1.6);
-      albedo *= mix(vec3(1.0), d.rgb * 2.0, 0.9);
+      vec4 d = detail(vWorld.xz, 5.0);
+      N = bumpedAt(N, vWorld.xz, 5.0, CROWN_SCALE, 1.2);
+      N = bumped(N, vWorld.xz, 5.0, vec2(1.0, 0.0), vec2(0.0, 1.0), 1.6 * near);
+      albedo *= mix(vec3(1.0), d.rgb * 2.0, 0.9 * near);
     } else {
-      vec2 p = vec2(dot(vWorld.xz, vec2(0.7071, 0.7071)), vWorld.y * 1.3);
-      d = detail(p, 5.0);
-      albedo *= mix(vec3(1.0), d.rgb * 2.0, 0.8) * (0.42 + 0.58 * vInfo.z);
+      // foliage side-on along the wall, darker toward the shaded understorey
+      vec2 t = normalize(vec2(-vNormal.z, vNormal.x) + vec2(1e-5, 0.0));
+      vec2 p = vec2(dot(vWorld.xz, t), vWorld.y * 1.3);
+      vec4 d = texture(uDetail, vec3(p / CROWN_SCALE, 5.0));
+      albedo *= mix(vec3(1.0), d.rgb * 2.0, 0.8) * (0.35 + 0.65 * vInfo.z * vInfo.z);
     }
     color = lightLambert(albedo, N, sunVisible);
     temperature = 0.3;

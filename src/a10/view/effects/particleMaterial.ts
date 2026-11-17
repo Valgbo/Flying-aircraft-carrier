@@ -29,6 +29,7 @@ const VERTEX = /* glsl */ `
   varying vec4 vEmi;
   varying float vFog;
   varying float vHeat;
+  varying float vBias;
 
   const float TILES = ${ATLAS_TILES_PER_ROW.toFixed(1)};
 
@@ -78,9 +79,14 @@ const VERTEX = /* glsl */ `
 
     // fade as the camera gets inside the particle, and right at the near plane
     float near = smoothstep(0.2 * s, 1.0 * s, depth) * smoothstep(0.6, 2.0, depth);
-    vCol = vec4(iCol.rgb, iCol.a * cover * near);
+    // a soft sprite only a few pixels wide is mip-averaged down to a fraction of its core
+    // density: give dust and smoke their body back, and let light sample a sharper level, so a
+    // spurt or a spark 1–2 km away still shows as a solid dot
+    float small = 1.0 - smoothstep(2.0, 16.0, s / metresPerPx);
+    vCol = vec4(iCol.rgb, iCol.a * cover * near * (1.0 + 1.6 * small));
+    vBias = -3.0 * small * (1.0 - iEmi.a);
     // light enlarged to the minimum size keeps most of its brightness (it must stay visible)
-    vEmi = vec4(iEmi.rgb * sqrt(cover) * near, iEmi.a);
+    vEmi = vec4(iEmi.rgb * sqrt(cover) * near * (1.0 + 1.5 * small), iEmi.a);
     float f = uHazeDensity * length(mv.xyz);
     vFog = 1.0 - exp(-f * f);
     vHeat = iVel.w;
@@ -102,9 +108,10 @@ const FRAGMENT = /* glsl */ `
   varying vec4 vEmi;
   varying float vFog;
   varying float vHeat;
+  varying float vBias;
 
   void main() {
-    vec4 t = texture2D(uAtlas, vUv);
+    vec4 t = texture2D(uAtlas, vUv, vBias);
     float dens = t.a;
     float a = clamp(dens * vCol.a, 0.0, 1.0);
 
@@ -112,14 +119,16 @@ const FRAGMENT = /* glsl */ `
     float r2 = min(dot(vQuad, vQuad), 1.0);
     vec3 n = vec3(vQuad, sqrt(1.0 - r2));
     float ndl = dot(n, uSunView);
-    float diff = clamp((ndl + 0.5) / 1.5, 0.0, 1.0);
-    // thick centres shade darker, the detail channel breaks up flat areas
-    float shade = (0.7 + 0.55 * t.r) * (1.0 - 0.4 * t.g * dens);
+    // wrapped, and half of it isotropic: light scattered many times inside dust and smoke
+    // brightens the whole cloud, so a puff lit from the side or behind is not a dark ball
+    float diff = 0.5 * clamp((ndl + 0.6) / 1.6, 0.0, 1.0) + 0.4;
+    // thick centres shade a little darker, the detail channel breaks up flat areas
+    float shade = (0.78 + 0.4 * t.r) * (1.0 - 0.3 * t.g * dens);
     // thin smoke glows when the sun is behind it
     float fwd = pow(max(0.0, -uSunView.z), 6.0) * (1.0 - dens) * 0.8;
     // lit like the environment lights every surface (irradiance · albedo / π); a cloud scatters
     // less toward the eye than a matte surface facing the sun
-    vec3 light = (uAmbient * (0.7 + 0.25 * t.r) + uSunColor * (0.62 * diff * shade + fwd)) * 0.31830989;
+    vec3 light = (uAmbient * (0.75 + 0.25 * t.r) + uSunColor * (1.05 * diff * shade + fwd)) * 0.31830989;
     vec3 albedo = vCol.rgb * mix(vec3(1.0), light, vEmi.a);
     vec3 col = mix(albedo, uHaze, vFog);
     // light comes from the dense core: dimmer, redder edges instead of a bright outline

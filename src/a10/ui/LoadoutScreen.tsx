@@ -21,7 +21,7 @@ import {
   storeLabel,
   type StoreCategory,
 } from './loadout';
-import { GUN_LOADS, useA10Ui } from './uiStore';
+import { GUN_LOADS } from './uiStore';
 
 const LEGEND: readonly { category: StoreCategory; label: string }[] = [
   { category: 'missile', label: 'Missiles' },
@@ -36,8 +36,8 @@ export default function LoadoutScreen() {
   const loadoutId = useA10Store((s) => s.loadoutId);
   const setLoadout = useA10Store((s) => s.setLoadout);
   const setScreen = useA10Store((s) => s.setScreen);
-  const gunLoad = useA10Ui((s) => s.gunLoad);
-  const setGunLoad = useA10Ui((s) => s.setGunLoad);
+  const gunLoad = useA10Store((s) => s.ammoLoad);
+  const setGunLoad = useA10Store((s) => s.setAmmoLoad);
   const compact = useMediaQuery(COMPACT_QUERY);
   const [active, setActive] = useState<number | null>(null);
 

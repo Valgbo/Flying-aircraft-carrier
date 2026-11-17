@@ -33,6 +33,7 @@ import {
 import { IconRestart } from './icons';
 import ImpactPlot from './ImpactPlot';
 import { scenarioName } from './names';
+import TableWrap from './TableWrap';
 
 const CRASH_WHERE = {
   terrain: 'in a crash into the ground',
@@ -71,7 +72,7 @@ function outcomeClass(outcome: string): string {
 
 function HitRows({ hits }: { hits: readonly HitRecord[] }) {
   return (
-    <div className="a10-table-wrap">
+    <TableWrap>
       <table className="a10-table a10-table--dense">
         <thead>
           <tr>
@@ -118,7 +119,7 @@ function HitRows({ hits }: { hits: readonly HitRecord[] }) {
           <More total={hits.length} cols={8} />
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
@@ -231,7 +232,7 @@ export default function DebriefScreen() {
           {d.bursts.length === 0 ? (
             <p className="a10-note">No bursts recorded.</p>
           ) : (
-            <div className="a10-table-wrap">
+            <TableWrap>
               <table className="a10-table" data-testid="a10-debrief-bursts">
                 <thead>
                   <tr>
@@ -287,7 +288,7 @@ export default function DebriefScreen() {
                   <More total={d.bursts.length} cols={10} />
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
           <p className="a10-note">
             Rounds on target: {formatHitRate(summary.gunHits, summary.roundsFired)}. Open- and
@@ -359,7 +360,7 @@ export default function DebriefScreen() {
             {d.kills.length === 0 ? (
               <p className="a10-note">No vehicle destroyed.</p>
             ) : (
-              <div className="a10-table-wrap">
+              <TableWrap>
                 <table className="a10-table" data-testid="a10-debrief-kills">
                   <thead>
                     <tr>
@@ -383,7 +384,7 @@ export default function DebriefScreen() {
                     <More total={d.kills.length} cols={4} />
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             )}
           </section>
 
@@ -394,7 +395,7 @@ export default function DebriefScreen() {
             {byKind.size === 0 ? (
               <p className="a10-note">No vehicles on this range.</p>
             ) : (
-              <div className="a10-table-wrap">
+              <TableWrap>
                 <table className="a10-table" data-testid="a10-debrief-targets">
                   <thead>
                     <tr>
@@ -421,7 +422,7 @@ export default function DebriefScreen() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             )}
           </section>
         </div>
@@ -431,7 +432,7 @@ export default function DebriefScreen() {
             <h2 className="a10-section-title" id="a10-weapons-title">
               Weapons released
             </h2>
-            <div className="a10-table-wrap">
+            <TableWrap>
               <table className="a10-table" data-testid="a10-debrief-weapons">
                 <thead>
                   <tr>
@@ -479,7 +480,7 @@ export default function DebriefScreen() {
                   <More total={d.weapons.length} cols={9} />
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           </section>
         )}
 

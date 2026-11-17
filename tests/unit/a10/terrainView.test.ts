@@ -24,7 +24,11 @@ import {
   type LodNode,
 } from '../../../src/a10/view/terrain/lod';
 import { rasterCloudShadow } from '../../../src/a10/view/terrain/cloudShadow';
-import { buildDetailTextures, DETAIL_LAYER_COUNT, DETAIL_SIZE } from '../../../src/a10/view/terrain/detailTextures';
+import {
+  buildDetailTextures,
+  DETAIL_LAYER_COUNT,
+  DETAIL_SIZE,
+} from '../../../src/a10/view/terrain/detailTextures';
 import { DETAIL, rowIndex } from '../../../src/a10/view/terrain/palette';
 import {
   KIND,
@@ -32,7 +36,12 @@ import {
   prepareFeatures,
   type TileSpec,
 } from '../../../src/a10/view/terrain/tileBuilder';
-import { TREE_STRIDE, buildTreeCell } from '../../../src/a10/view/terrain/treeCells';
+import {
+  TREE_STRIDE,
+  buildTreeCell,
+  type TreeCellSpec,
+} from '../../../src/a10/view/terrain/treeCells';
+import { TreeLayer } from '../../../src/a10/view/terrain/treeLayer';
 import { createCloudLayout } from '../../../src/engine';
 
 /** A host where every node is ready at once (the selection's steady state). */
@@ -206,9 +215,11 @@ describe('terrain tiles', () => {
   });
 
   it('builds a canopy shell with walls where canopyAt says trees', () => {
+    const inStand = (x: number, z: number) => Math.hypot(x - 64, z - 64) < 70;
     const forest: Terrain = {
       ...createFlatTerrain(50),
-      canopyAt: (x: number, z: number) => (Math.hypot(x - 64, z - 64) < 70 ? 18 : 0),
+      canopyAt: (x: number, z: number) => (inStand(x, z) ? 18 : 0),
+      forestDensityAt: (x: number, z: number) => (inStand(x, z) ? 0.8 : 0.1),
     };
     const t = buildTile(forest, spec(9, 256, 256), null);
     let top = 0;
@@ -237,6 +248,39 @@ describe('terrain tiles', () => {
     }
   });
 
+  it('leaves hedgerows, lone trees and forest-density plateaus over fields out of the shell', () => {
+    const count = (t: ReturnType<typeof buildTile>) => {
+      let shell = 0;
+      for (let v = 0; v < t.vertexCount; v++) {
+        const k = t.info[v * 4];
+        if (k === KIND.canopy || k === KIND.canopyWall) shell++;
+      }
+      return shell;
+    };
+    // a 9 m hedgerow along a field edge (fieldAt true there): trees, not a box
+    const hedge: Terrain = {
+      ...createFlatTerrain(40),
+      canopyAt: (_x: number, z: number) => (Math.abs(z - 100) < 4.5 ? 12 : 0),
+      forestDensityAt: () => 0.6,
+      fieldAt: () => true,
+    };
+    expect(count(buildTile(hedge, spec(10, 512, 512), null))).toBe(0);
+    // single canopy samples (a lone tree caught by a vertex)
+    const lone: Terrain = {
+      ...createFlatTerrain(40),
+      canopyAt: (x: number, z: number) => (Math.abs(x - 64) < 1 && Math.abs(z - 64) < 1 ? 15 : 0),
+      forestDensityAt: () => 0.8,
+    };
+    expect(count(buildTile(lone, spec(9, 256, 256), null))).toBe(0);
+    // coarse tiles: dense forest mask but farmland cut into it (canopyAt 0) — no plateau
+    const cleared: Terrain = {
+      ...createFlatTerrain(40),
+      canopyAt: () => 0,
+      forestDensityAt: () => 0.9,
+    };
+    expect(count(buildTile(cleared, spec(6, 32, 32), null))).toBe(0);
+  });
+
   it('bakes a texture with a class in every texel', () => {
     const t = buildTile(terrain, spec(7, 64, 64), null);
     expect(t.texture.length).toBe((t.texels + 1) ** 2 * 4);
@@ -258,11 +302,46 @@ describe('trees and textures', () => {
     for (let k = 0; k < cell.count; k++) {
       expect(cell.data[k * TREE_STRIDE]).toBeLessThan(100);
       expect(cell.data[k * TREE_STRIDE + 1]).toBe(80);
-      if (k > 0) expect(cell.data[k * TREE_STRIDE + 7]).toBeGreaterThanOrEqual(cell.data[(k - 1) * TREE_STRIDE + 7]);
+      if (k > 0)
+        expect(cell.data[k * TREE_STRIDE + 7]).toBeGreaterThanOrEqual(
+          cell.data[(k - 1) * TREE_STRIDE + 7],
+        );
     }
     // deterministic
     const again = buildTreeCell(forest, { key: 1, x0: 0, z0: 0, size: 256, seed: 3 });
     expect(Array.from(again.data)).toEqual(Array.from(cell.data));
+  });
+
+  it('fits the tree budget by thinning evenly, trees in view first', () => {
+    // a forest everywhere; cells are built synchronously as the layer asks for them
+    const forest: Terrain = {
+      ...createFlatTerrain(60),
+      canopyAt: () => 16,
+      forestDensityAt: () => 0.9,
+    };
+    const capacity = 8000;
+    const layer = new TreeLayer(capacity);
+    const sink = (spec: TreeCellSpec) => {
+      layer.receive(buildTreeCell(forest, spec));
+      return true;
+    };
+    // camera 300 m up looking east (+x); a few frames so every cell in range arrives
+    for (let f = 0; f < 4; f++) layer.update(0, 0, 300, capacity, 1500, sink, 1, 0);
+    expect(layer.instances).toBeLessThanOrEqual(capacity);
+    expect(layer.instances).toBeGreaterThan(capacity * 0.9);
+    // the budget is far too small for full density out to 450 m: thinner everywhere instead
+    expect(layer.fullDensity).toBeLessThan(450);
+    expect(layer.fullDensity).toBeGreaterThan(60);
+    // more of the copied trees lie ahead of the camera than behind it
+    const data = layer.mesh.geometry.getAttribute('iA');
+    let ahead = 0;
+    let behind = 0;
+    for (let i = 0; i < layer.instances; i++) {
+      if (data.getX(i) > 300) ahead++;
+      else if (data.getX(i) < -300) behind++;
+    }
+    expect(ahead).toBeGreaterThan(behind);
+    layer.dispose();
   });
 
   it('generates detail layers whose mean is neutral grey', () => {

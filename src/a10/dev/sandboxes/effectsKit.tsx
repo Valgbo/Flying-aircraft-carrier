@@ -143,7 +143,10 @@ function tileFbm(u: number, v: number, cells: number, octaves: number, seed: num
   return sum / norm;
 }
 
-/** Ground texture: pasture with paler, drier patches (seamless, tiles every 160 m). */
+/**
+ * Ground texture: pasture with paler, drier patches (seamless, tiles every 160 m), about as bright
+ * as the app's farmland seen from the air, so contrast judged here holds in flight.
+ */
 function makeGroundTexture(): DataTexture {
   const n = 256;
   const data = new Uint8Array(n * n * 4);
@@ -154,9 +157,9 @@ function makeGroundTexture(): DataTexture {
       const a = tileFbm(u, v, 4, 4, 3);
       const b = tileFbm(u, v, 32, 3, 9);
       const dry = Math.max(0, Math.min(1, (a - 0.5) * 1.2));
-      const r = (0.25 + 0.08 * dry + 0.035 * (b - 0.5)) * 255;
-      const g = (0.29 + 0.03 * dry + 0.04 * (b - 0.5)) * 255;
-      const bl = (0.15 + 0.03 * dry + 0.025 * (b - 0.5)) * 255;
+      const r = (0.4 + 0.1 * dry + 0.05 * (b - 0.5)) * 255;
+      const g = (0.45 + 0.04 * dry + 0.06 * (b - 0.5)) * 255;
+      const bl = (0.24 + 0.04 * dry + 0.035 * (b - 0.5)) * 255;
       const o = (j * n + i) * 4;
       data[o] = r;
       data[o + 1] = g;

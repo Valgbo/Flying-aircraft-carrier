@@ -3,7 +3,8 @@
  *
  * This list MUST MIRROR CREDITS.md (PLAN_A10.md §3.1): every third-party source credited there
  * appears here with the same authors, source and licence. tests/unit/a10/ui-credits.test.ts
- * checks the authors and source URLs against CREDITS.md whenever that file exists.
+ * checks the source URLs, the FlightGear authors and each entry's `creditsMd` phrase against
+ * CREDITS.md whenever that file exists.
  */
 
 export interface CreditSource {
@@ -21,6 +22,8 @@ export interface CreditEntry {
   source: CreditSource;
   /** How it was taken and changed. */
   note?: string;
+  /** The words CREDITS.md credits this source with (the unit test checks they are there). */
+  creditsMd: string;
 }
 
 export const PROJECT_LICENCE = {
@@ -53,6 +56,16 @@ export const THIRD_PARTY: readonly CreditEntry[] = [
     licence: 'GNU GPL version 2 (some files "or later")',
     source: { label: 'github.com/l0k1/A-10', url: 'https://github.com/l0k1/A-10' },
     note: 'Taken at commit 72da115 (15 November 2026) and converted to glTF by scripts/a10/convert-ac3d.mjs, without editing by hand; a few parts the package lacks (the LAU-117 launcher, the GBU-12 guidance kit, the altimeter) are built in code by this project. The original files are kept unchanged under third_party/flightgear-a10/.',
+    creditsMd: 'FlightGear A-10',
+  },
+  {
+    title: 'CMU Flite speech synthesiser',
+    used: 'The voice of the PULL UP warning, spoken by Flite with its cmu_us_slt voice (built from the CMU ARCTIC recordings)',
+    authors: ['Carnegie Mellon University'],
+    licence: 'BSD-style free licences (the Flite engine and the cmu_us_slt voice)',
+    source: { label: 'github.com/festvox/flite', url: 'https://github.com/festvox/flite' },
+    note: 'Generated once by scripts/a10/sounds.mjs through FFmpeg and filtered to a telephone band; the resulting recording belongs to this project (GPL-2.0-or-later).',
+    creditsMd: 'CMU Flite',
   },
 ];
 

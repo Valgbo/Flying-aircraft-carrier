@@ -16,7 +16,8 @@
  * Vertex data is LOCAL to the tile (contract §2): x, z relative to the tile centre, y relative
  * to the tile's lowest ground; the mesh is placed with its object position.
  */
-import type { RiverPolyline, RoadPolyline, Terrain } from '../../core/world/types';
+import type { FieldSample, RiverPolyline, RoadPolyline, Terrain } from '../../core/world/types';
+import { valueNoise } from './noise';
 import { bakeTexel, createBakeScratch, type BakeScratch } from './palette';
 
 /** Vertex kinds (aInfo.x). */
@@ -38,6 +39,28 @@ export const PAVED_CODE = { runway: 0, taxiway: 1, apron: 2 } as const;
 const CANOPY_THRESHOLD = 2.5;
 /** The shell sits a little below the real canopy: instanced trees stand out of it up close. */
 export const CANOPY_SHELL_FACTOR = 0.86;
+/**
+ * Forest stands only: below this forest density a canopy is a riverside or field tree line,
+ * which stays instanced trees (near) and baked texture (far) instead of a shell.
+ */
+const SHELL_MIN_DENSITY = 0.25;
+/** Crown-scale roughness of the shell's top and outline (fraction of the canopy height). */
+const CROWN_ROUGHNESS = 0.3;
+/** Size of the crown clusters that make the shell's top and silhouette ragged, m. */
+const CROWN_CLUSTER = 9;
+
+/**
+ * Height of the canopy shell above the ground at (x, z) for a canopy of `c` metres: a little
+ * under the trees (they stand out of it near the aircraft), ragged at the scale of crown
+ * clusters — the same function for the top and the walls, so they meet exactly.
+ */
+export function shellHeight(x: number, z: number, c: number): number {
+  const k =
+    1 -
+    CROWN_ROUGHNESS * 0.5 +
+    CROWN_ROUGHNESS * valueNoise(x / CROWN_CLUSTER, z / CROWN_CLUSTER, 911);
+  return c * CANOPY_SHELL_FACTOR * k;
+}
 
 export interface TileSpec {
   key: number;
@@ -397,6 +420,15 @@ class TileSurface {
 }
 
 const _n = new Float64Array(3);
+const _field: FieldSample = {
+  id: 0,
+  variant: 0,
+  crop: 'pasture',
+  rowHeading: 0,
+  edgeDistance: 0,
+  hedge: false,
+  track: false,
+};
 
 /** Liang–Barsky: clip segment (ax, az)→(bx, bz) to the box; returns false when outside. */
 function clipSegment(
@@ -508,7 +540,19 @@ export function buildTile(
       if (oddI && oddJ) coarse = (surface.at(i - 1, j - 1) + surface.at(i + 1, j + 1)) / 2;
       else if (oddI) coarse = (surface.at(i - 1, j) + surface.at(i + 1, j)) / 2;
       else if (oddJ) coarse = (surface.at(i, j - 1) + surface.at(i, j + 1)) / 2;
-      w.vertex(x0 + i * s - ox, h - oy, z0 + j * s - oz, nx, ny, nz, coarse - h, KIND.ground, 0, 0, 0);
+      w.vertex(
+        x0 + i * s - ox,
+        h - oy,
+        z0 + j * s - oz,
+        nx,
+        ny,
+        nz,
+        coarse - h,
+        KIND.ground,
+        0,
+        0,
+        0,
+      );
     }
   }
   for (let j = 0; j < n; j++) {
@@ -577,7 +621,14 @@ export function buildTile(
       let prevL = -1;
       let prevR = -1;
       let runOpen = false;
-      const section = (px: number, pz: number, dx: number, dz: number, hw: number, along: number) => {
+      const section = (
+        px: number,
+        pz: number,
+        dx: number,
+        dz: number,
+        hw: number,
+        along: number,
+      ) => {
         // lateral = direction rotated 90° (to the right of travel in x/z)
         const lx = -dz;
         const lz = dx;
@@ -592,8 +643,34 @@ export function buildTile(
         const mr = surface.coarse(xr, zr) - hr;
         // the ribbon's full width (dm) rides along for markings and edge shading
         const wdm = Math.min(255, Math.round(hw * 20));
-        const l = w.vertex(xl - ox, hl + lift - oy, zl - oz, _n[0], _n[1], _n[2], ml, kind, sub, 0, along, wdm);
-        const r = w.vertex(xr - ox, hr + lift - oy, zr - oz, _n[0], _n[1], _n[2], mr, kind, sub, 1, along, wdm);
+        const l = w.vertex(
+          xl - ox,
+          hl + lift - oy,
+          zl - oz,
+          _n[0],
+          _n[1],
+          _n[2],
+          ml,
+          kind,
+          sub,
+          0,
+          along,
+          wdm,
+        );
+        const r = w.vertex(
+          xr - ox,
+          hr + lift - oy,
+          zr - oz,
+          _n[0],
+          _n[1],
+          _n[2],
+          mr,
+          kind,
+          sub,
+          1,
+          along,
+          wdm,
+        );
         w.setSide(l, lx, lz, hw);
         w.setSide(r, lx, lz, hw);
         if (runOpen && prevL >= 0) {
@@ -632,7 +709,14 @@ export function buildTile(
           const atVertexB = t === 1;
           const mdx = atVertexA ? line.miter[k * 2] : atVertexB ? line.miter[k * 2 + 2] : dx;
           const mdz = atVertexA ? line.miter[k * 2 + 1] : atVertexB ? line.miter[k * 2 + 3] : dz;
-          section(ax + (bx - ax) * t, az + (bz - az) * t, mdx, mdz, hwA + (hwB - hwA) * t, arcA + len * t);
+          section(
+            ax + (bx - ax) * t,
+            az + (bz - az) * t,
+            mdx,
+            mdz,
+            hwA + (hwB - hwA) * t,
+            arcA + len * t,
+          );
         }
         if (t1 < 1) runOpen = false;
       }
@@ -723,7 +807,10 @@ function pavedPolygon(
   lift: number,
 ): void {
   let poly = p.corners.slice();
-  const clip = (inside: (x: number, z: number) => boolean, cut: (ax: number, az: number, bx: number, bz: number) => number) => {
+  const clip = (
+    inside: (x: number, z: number) => boolean,
+    cut: (ax: number, az: number, bx: number, bz: number) => number,
+  ) => {
     const out: number[] = [];
     const m = poly.length / 2;
     for (let k = 0; k < m; k++) {
@@ -741,10 +828,22 @@ function pavedPolygon(
     }
     poly = out;
   };
-  clip((x) => x >= minX, (ax, _az, bx) => (minX - ax) / (bx - ax));
-  clip((x) => x <= maxX, (ax, _az, bx) => (maxX - ax) / (bx - ax));
-  clip((_x, z) => z >= minZ, (_ax, az, _bx, bz) => (minZ - az) / (bz - az));
-  clip((_x, z) => z <= maxZ, (_ax, az, _bx, bz) => (maxZ - az) / (bz - az));
+  clip(
+    (x) => x >= minX,
+    (ax, _az, bx) => (minX - ax) / (bx - ax),
+  );
+  clip(
+    (x) => x <= maxX,
+    (ax, _az, bx) => (maxX - ax) / (bx - ax),
+  );
+  clip(
+    (_x, z) => z >= minZ,
+    (_ax, az, _bx, bz) => (minZ - az) / (bz - az),
+  );
+  clip(
+    (_x, z) => z <= maxZ,
+    (_ax, az, _bx, bz) => (maxZ - az) / (bz - az),
+  );
   const m = poly.length / 2;
   if (m < 3) return;
   const first = w.count;
@@ -777,8 +876,11 @@ function pavedPolygon(
 
 /**
  * The forest canopy shell over the tile: marching squares on canopyAt at the tile's vertices.
- * Inside: a surface at ground + canopy × CANOPY_SHELL_FACTOR. Along the outline: a vertical
- * wall down to the ground. Returns the highest canopy point (world y).
+ * Inside: a surface at the shell height (`shellHeight`). Along the outline: a vertical wall down
+ * to the ground. Forest stands only — hedgerows on field edges (fieldAt) and thin riverside
+ * lines are left to the instanced trees and the baked texture, and samples without two inside
+ * neighbours are dropped, so no slivers or lone boxes appear. Returns the highest canopy
+ * point (world y).
  */
 function buildCanopy(
   terrain: Terrain,
@@ -793,21 +895,40 @@ function buildCanopy(
   const x0 = surface.x0;
   const z0 = surface.z0;
   const vn = (n + 1) * (n + 1);
-  const canopy = new Float32Array(vn);
-  // coarse tiles outline the stands from the smooth forest density (no hedgerow slivers)
-  const density = s > 12 && terrain.forestDensityAt ? terrain.forestDensityAt.bind(terrain) : null;
+  // canopy of forest stands on the vertex grid plus a one-vertex border (for the neighbour test)
+  const g = n + 3;
+  const raw = new Float32Array(g * g);
   let any = false;
+  for (let j = 0; j < g; j++) {
+    const z = z0 + (j - 1) * s;
+    for (let i = 0; i < g; i++) {
+      const x = x0 + (i - 1) * s;
+      let c = terrain.canopyAt(x, z);
+      if (c > CANOPY_THRESHOLD) {
+        if (terrain.fieldAt && terrain.fieldAt(x, z, _field)) c = 0;
+        else if (terrain.forestDensityAt && terrain.forestDensityAt(x, z) < SHELL_MIN_DENSITY)
+          c = 0;
+        else any = true;
+      }
+      raw[j * g + i] = c > CANOPY_THRESHOLD ? c : 0;
+    }
+  }
+  if (!any) return -Infinity;
+  const canopy = new Float32Array(vn);
+  any = false;
   for (let j = 0; j <= n; j++) {
     for (let i = 0; i <= n; i++) {
-      const x = x0 + i * s;
-      const z = z0 + j * s;
-      let c = 0;
-      if (density) {
-        const d = density(x, z);
-        if (d > 0.45) c = Math.max(terrain.canopyAt(x, z), 9 + 10 * d);
-      } else c = terrain.canopyAt(x, z);
+      const k = (j + 1) * g + i + 1;
+      const c = raw[k];
+      if (c <= 0) continue;
+      const around =
+        (raw[k - 1] > 0 ? 1 : 0) +
+        (raw[k + 1] > 0 ? 1 : 0) +
+        (raw[k - g] > 0 ? 1 : 0) +
+        (raw[k + g] > 0 ? 1 : 0);
+      if (around < 2) continue;
       canopy[j * (n + 1) + i] = c;
-      if (c > CANOPY_THRESHOLD) any = true;
+      any = true;
     }
   }
   if (!any) return -Infinity;
@@ -822,13 +943,26 @@ function buildCanopy(
     const nz = _n[2] * 0.5;
     const l = Math.hypot(nx, ny, nz);
     const h = surface.fine(x, z);
-    const y = h + c * CANOPY_SHELL_FACTOR;
+    const y = h + shellHeight(x, z, c);
     if (y > top) top = y;
-    return w.vertex(x - ox, y - oy, z - oz, nx / l, ny / l, nz / l, surface.coarse(x, z) - h, kind, 0, wallFrac, c);
+    return w.vertex(
+      x - ox,
+      y - oy,
+      z - oz,
+      nx / l,
+      ny / l,
+      nz / l,
+      surface.coarse(x, z) - h,
+      kind,
+      0,
+      wallFrac,
+      c,
+    );
   };
   const corner = (i: number, j: number): number => {
     const v = j * (n + 1) + i;
-    if (cornerVertex[v] < 0) cornerVertex[v] = topVertex(x0 + i * s, z0 + j * s, canopy[v], 1, KIND.canopy);
+    if (cornerVertex[v] < 0)
+      cornerVertex[v] = topVertex(x0 + i * s, z0 + j * s, canopy[v], 1, KIND.canopy);
     return cornerVertex[v];
   };
   const T = CANOPY_THRESHOLD;
@@ -853,10 +987,34 @@ function buildCanopy(
     const l = Math.hypot(wx, wz) || 1;
     wx /= l;
     wz /= l;
-    const ta = ha + ac * CANOPY_SHELL_FACTOR;
-    const tb = hb + bc * CANOPY_SHELL_FACTOR;
-    const a0 = w.vertex(ax - ox, ha - 0.5 - oy, az - oz, wx, 0.15, wz, ma, KIND.canopyWall, 0, 0, ac);
-    const b0 = w.vertex(bx - ox, hb - 0.5 - oy, bz - oz, wx, 0.15, wz, mb, KIND.canopyWall, 0, 0, bc);
+    const ta = ha + shellHeight(ax, az, ac);
+    const tb = hb + shellHeight(bx, bz, bc);
+    const a0 = w.vertex(
+      ax - ox,
+      ha - 0.5 - oy,
+      az - oz,
+      wx,
+      0.15,
+      wz,
+      ma,
+      KIND.canopyWall,
+      0,
+      0,
+      ac,
+    );
+    const b0 = w.vertex(
+      bx - ox,
+      hb - 0.5 - oy,
+      bz - oz,
+      wx,
+      0.15,
+      wz,
+      mb,
+      KIND.canopyWall,
+      0,
+      0,
+      bc,
+    );
     const a1 = w.vertex(ax - ox, ta - oy, az - oz, wx, 0.15, wz, ma, KIND.canopyWall, 0, 1, ac);
     const b1 = w.vertex(bx - ox, tb - oy, bz - oz, wx, 0.15, wz, mb, KIND.canopyWall, 0, 1, bc);
     // faces outward (the side away from the stand)

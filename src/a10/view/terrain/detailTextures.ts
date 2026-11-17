@@ -37,10 +37,11 @@ export function buildDetailTextures(seed = 4242): Uint8Array<ArrayBuffer> {
       for (let x = 0; x < n; x++) {
         const u = x / n;
         const v = y / n;
-        let r = 1;
-        let g = 1;
-        let b = 1;
-        let h = 0.5;
+        // every layer below sets all four
+        let r: number;
+        let g: number;
+        let b: number;
+        let h: number;
         const fine = tilingFbm(u, v, 32, 3, seed + layer * 31);
         const mid = tilingFbm(u, v, 8, 3, seed + layer * 53);
         switch (layer) {

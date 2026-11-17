@@ -1,11 +1,11 @@
 /**
- * The controls reference (pause menu): every control the input module lists, grouped as in the
- * aircraft (stick, throttle, armament panel …), with the keyboard keys as key caps and the
- * gamepad control beside them. Built from getControlsReference(), which follows the current
- * bindings.
+ * The controls reference (pause menu, help panel): every control the input module lists,
+ * grouped as in the aircraft (stick, throttle, armament panel …), with the keyboard keys as key
+ * caps and the gamepad control beside them. Built from useControlsReference(), so it follows a
+ * rebinding (or the mouse-stick setting) while it is open.
  */
 import { useMemo } from 'react';
-import { getControlsReference, type ControlsReferenceRow } from '../input/controlsReference';
+import { useControlsReference, type ControlsReferenceRow } from '../input/controlsReference';
 
 /** Rows grouped by `group`, groups in order of first appearance. */
 export function groupControls(
@@ -30,14 +30,14 @@ export function keyCaps(label: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+/** "Trigger: first detent (PAC-1)": never break a line inside "PAC-1" (non-breaking hyphen). */
+export function keepDesignators(text: string): string {
+  return text.replace(/\b([A-Z]+)-(?=\d)/g, '$1\u2011');
+}
+
 export default function ControlsReference() {
-  const groups = useMemo(() => {
-    try {
-      return groupControls(getControlsReference());
-    } catch {
-      return [];
-    }
-  }, []);
+  const rows = useControlsReference();
+  const groups = useMemo(() => groupControls(rows), [rows]);
   if (groups.length === 0)
     return <p className="a10-note">The controls reference is not available.</p>;
   return (
@@ -48,7 +48,7 @@ export default function ControlsReference() {
           <dl className="a10-keys__list">
             {g.rows.map((row, i) => (
               <div key={`${row.action}-${i}`} className="a10-keys__row">
-                <dt className="a10-keys__action">{row.action}</dt>
+                <dt className="a10-keys__action">{keepDesignators(row.action)}</dt>
                 <dd className="a10-keys__keys">
                   {keyCaps(row.keyboard).length > 0 ? (
                     keyCaps(row.keyboard).map((k, j) => (

@@ -145,7 +145,9 @@ export function emitVehicle(
     const pull = Math.max(0, accel);
     const rate = (4 + speed * 0.5 + pull * 8) * detail;
     st.exhaustAcc += rate * dt;
-    ps.groundY = py;
+    // a dug-in vehicle sits in a pit: its exhaust comes out at the surface
+    const surface = terrain.heightAt(px, pz);
+    ps.groundY = surface;
     ps.delay = 0;
     while (st.exhaustAcc >= 1) {
       st.exhaustAcc -= 1;
@@ -160,7 +162,7 @@ export function emitVehicle(
       const i = ps.spawn(
         PK.exhaust,
         wx,
-        py + ly,
+        Math.max(py + ly, surface + 0.3),
         wz,
         dx * sp + fx * speed * 0.5,
         ex[4] * sp + 0.5,

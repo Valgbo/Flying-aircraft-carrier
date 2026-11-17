@@ -9,7 +9,7 @@
  * is below a density that falls with distance, so thinning is smooth and needs no rebuild.
  * Trees on a stand's edge get low ranks: they shape the silhouettes and are drawn farthest.
  */
-import type { Terrain } from '../../core/world/types';
+import type { FieldSample, Terrain } from '../../core/world/types';
 import { hash01 } from './noise';
 
 /** Edge of a tree cell, m. */
@@ -25,6 +25,20 @@ const CANDIDATE_SPACING = 7.5;
 const MIN_CANOPY = 3;
 /** Distance at which the edge test looks for open ground, m. */
 const EDGE_PROBE = 11;
+/** Below this forest density a canopy is a tree line, not a stand (as tileBuilder's shell). */
+const LINE_DENSITY = 0.25;
+/** Rank scale of tree-line and stand-edge trees: drawn first and farthest. */
+const LINE_RANK = 0.12;
+const EDGE_RANK = 0.35;
+const _field: FieldSample = {
+  id: 0,
+  variant: 0,
+  crop: 'pasture',
+  rowHeading: 0,
+  edgeDistance: 0,
+  hedge: false,
+  track: false,
+};
 
 export interface TreeCellSpec {
   key: number;
@@ -68,23 +82,29 @@ export function buildTreeCell(terrain: Terrain, spec: TreeCellSpec): TreeCell {
       const ground = terrain.heightAt(x, z);
       // species: wet ground → broadleaves and poplars; high, dense stands → conifers
       let species: number = SPECIES.broadleaf;
-      const coniferChance = 0.15 + 0.5 * Math.min(1, Math.max(0, (ground - 250) / 400)) + 0.2 * density;
+      const coniferChance =
+        0.15 + 0.5 * Math.min(1, Math.max(0, (ground - 250) / 400)) + 0.2 * density;
       if (moisture > 0.72 && r1 < 0.25) species = SPECIES.poplar;
       else if (r1 < coniferChance * (1 - 0.6 * moisture)) species = SPECIES.conifer;
-      const height = Math.max(6, canopy * (0.82 + 0.36 * r2)) * (species === SPECIES.poplar ? 1.25 : 1);
+      const height =
+        Math.max(6, canopy * (0.82 + 0.36 * r2)) * (species === SPECIES.poplar ? 1.25 : 1);
       const radius =
         species === SPECIES.conifer
           ? height * (0.17 + 0.06 * r1)
           : species === SPECIES.poplar
             ? height * 0.12
             : height * (0.26 + 0.1 * r2);
-      // on the stand's edge? (open ground within EDGE_PROBE in any direction)
+      // hedgerows and riverside lines have no canopy shell under them (tileBuilder): their
+      // trees come first; then the trees on a stand's edge (open ground within EDGE_PROBE)
+      const line =
+        density < LINE_DENSITY || (terrain.fieldAt !== undefined && terrain.fieldAt(x, z, _field));
       const edge =
+        line ||
         terrain.canopyAt(x + EDGE_PROBE, z) < MIN_CANOPY ||
         terrain.canopyAt(x - EDGE_PROBE, z) < MIN_CANOPY ||
         terrain.canopyAt(x, z + EDGE_PROBE) < MIN_CANOPY ||
         terrain.canopyAt(x, z - EDGE_PROBE) < MIN_CANOPY;
-      const rank = hash01(gi, gj, spec.seed + 5) * (edge ? 0.35 : 1);
+      const rank = hash01(gi, gj, spec.seed + 5) * (line ? LINE_RANK : edge ? EDGE_RANK : 1);
       tmp.push(x, ground, z, height, radius, species, hash01(gi, gj, spec.seed + 6), rank);
     }
   }

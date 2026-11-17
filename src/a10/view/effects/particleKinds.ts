@@ -133,6 +133,7 @@ export const PK = {
   streak: 25,
   dustTrail: 26,
   ejecta: 27,
+  fuelball: 28,
 } as const;
 export type PK = (typeof PK)[keyof typeof PK];
 
@@ -150,7 +151,7 @@ define(
   PK.blackSmoke,
   kind({
     name: 'blackSmoke',
-    growTau: 2.2,
+    growTau: 3.5,
     drag: 0.9,
     rise: 6,
     riseTau: 12,
@@ -167,17 +168,17 @@ define(
   PK.column,
   kind({
     name: 'column',
-    growTau: 14,
+    growTau: 18,
     drag: 0.35,
-    rise: 8,
-    riseTau: 45,
+    rise: 9,
+    riseTau: 60,
     grow: 0.62,
     fadeIn: 0.015,
-    fadeOut: 0.3,
+    fadeOut: 0.55,
     alpha: 0.85,
     spin: 0.05,
     color: [0.045, 0.042, 0.04],
-    minPx: 2.2,
+    minPx: 4,
     thermal: 0.12,
   }),
 );
@@ -194,10 +195,10 @@ define(
     riseTau: 3,
     grow: 0.38,
     fadeIn: 0.02,
-    fadeOut: 0.25,
+    fadeOut: 0.42,
     alpha: 0.9,
     color: [0.3, 0.24, 0.16],
-    minPx: 1.3,
+    minPx: 2.2,
   }),
 );
 define(
@@ -213,12 +214,12 @@ define(
     wind: 0.6,
     grow: 0.55,
     fadeIn: 0,
-    fadeOut: 0.45,
+    fadeOut: 0.5,
     alpha: 1,
     stretch: 0.075,
     spin: 0,
     color: [0.28, 0.22, 0.15],
-    minPx: 1.6,
+    minPx: 2.6,
   }),
 );
 define(
@@ -704,6 +705,31 @@ define(
     spin: 0.5,
     color: [0.09, 0.07, 0.05],
     minPx: 1.6,
+  }),
+);
+
+define(
+  PK.fuelball,
+  kind({
+    name: 'fuelball',
+    rampHeat: 0.8,
+    growTau: 0.45,
+    drag: 1.6,
+    rise: 9,
+    riseTau: 3,
+    grow: 0.4,
+    fadeIn: 0,
+    fadeOut: 0.45,
+    alpha: 0.95,
+    emissive: 2.8,
+    // burning fuel keeps glowing for seconds while it rolls up
+    emissiveLife: 0.6,
+    fireRamp: true,
+    spin: 0.8,
+    color: [0.04, 0.035, 0.03],
+    minPx: 2,
+    flicker: 0.2,
+    thermal: 1,
   }),
 );
 

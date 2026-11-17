@@ -50,6 +50,8 @@ interface FireState {
   smoulderAcc: number;
   trailAcc: number;
   popTimer: number;
+  /** The simulation reports this wreck's cook-offs as 'secondary' detonations: invent none. */
+  simPops: boolean;
   burnSince: number;
   scorched: boolean;
   turret: Vector3;
@@ -119,17 +121,14 @@ export class EffectsDirector {
   private readonly popY = new Float64Array(EffectsDirector.POPS);
   private readonly popZ = new Float64Array(EffectsDirector.POPS);
   private readonly popS = new Float32Array(EffectsDirector.POPS);
+  private readonly popV = new Int32Array(EffectsDirector.POPS);
 
   // delayed camera shakes (blast arrives at the speed of sound)
   private static readonly SHAKES = 32;
   private readonly shakeT = new Float32Array(EffectsDirector.SHAKES).fill(-1);
   private readonly shakeA = new Float32Array(EffectsDirector.SHAKES);
 
-  // recent HEI impacts and big explosions, to avoid drawing the same blast twice
-  private readonly heiX = new Float64Array(16);
-  private readonly heiZ = new Float64Array(16);
-  private readonly heiT = new Float64Array(16).fill(-1e9);
-  private heiNext = 0;
+  // big explosions per vehicle, to avoid drawing the same blast twice
   private readonly bigBlast = new Map<number, number>();
 
   constructor(ctx: FxContext) {
@@ -146,7 +145,6 @@ export class EffectsDirector {
     this.eKind.fill(EMIT.none);
     this.popT.fill(-1);
     this.shakeT.fill(-1);
-    this.heiT.fill(-1e9);
     this.muzzleValid = false;
     this.gunAcc = 0;
   }
@@ -187,18 +185,13 @@ export class EffectsDirector {
         } else {
           impactGround(ctx, p.x, p.y, p.z, v.x, v.y, v.z, n.x, n.y, n.z, e.target.surface, e.round, e.outcome);
         }
-        if (e.round === 1) {
-          const k = this.heiNext;
-          this.heiNext = (k + 1) % this.heiX.length;
-          this.heiX[k] = p.x;
-          this.heiZ[k] = p.z;
-          this.heiT[k] = e.t;
-        }
         break;
       }
       case 'detonation': {
+        // a 30 mm HEI burst is drawn from its roundImpact (docs/a10/ARCHITECTURE.md §4); its
+        // detonation event must not draw a second one
+        if (e.kind === 'hei') break;
         const p = e.position;
-        if (e.kind === 'hei' && this.recentHei(p.x, p.z, e.t)) break;
         this.detonation(p.x, p.y, p.z, e.charge, e.kind, e.surface, e.vehicleId, sim, e.t, delay);
         break;
       }
@@ -233,13 +226,6 @@ export class EffectsDirector {
       default:
         break;
     }
-  }
-
-  private recentHei(x: number, z: number, t: number): boolean {
-    for (let i = 0; i < this.heiX.length; i++) {
-      if (Math.abs(t - this.heiT[i]) < 0.05 && Math.hypot(x - this.heiX[i], z - this.heiZ[i]) < 3) return true;
-    }
-    return false;
   }
 
   private detonation(
@@ -282,9 +268,18 @@ export class EffectsDirector {
         cookOffPop(ctx, x, y + 1, z, 1);
         return;
       }
+      const wreckedBefore = (v.condition === 'destroyed' || v.condition === 'catastrophic') && t - v.conditionTime > 0.5;
+      if (wreckedBefore && charge < 5) {
+        // a cook-off the simulation reports (and audio plays): draw it, and invent no more pops
+        // for this wreck
+        this.fireState(v, t).simPops = true;
+        cookOffPop(ctx, x, y + 0.5, z, Math.min(1, 0.25 + 0.45 * Math.cbrt(Math.max(0.01, charge))));
+        this.queueShake(x, y, z, charge, delay);
+        return;
+      }
       this.bigBlast.set(vehicleId, t);
       explosion(ctx, x, y, z, charge, kind, surface, { onVehicle: true, fuel: v.kind === 'truckFuel' });
-      if (v.kind === 'truckAmmo') this.scheduleCookOffs(x, y + 1, z, 10, 25);
+      if (v.kind === 'truckAmmo') this.scheduleCookOffs(vehicleId, x, y + 1, z, 10, 25);
     } else {
       explosion(ctx, x, y, z, charge, kind, surface, {
         onVehicle: vehicleId > 0,
@@ -302,8 +297,8 @@ export class EffectsDirector {
     const surface = sim.world.terrain.surfaceAt(x, z);
     this.bigBlast.set(id, t);
     explosion(this.ctx, x, y + 1.2, z, charge, 'secondary', surface, { onVehicle: true, fuel: kind === 'truckFuel' });
-    if (kind === 'truckAmmo') this.scheduleCookOffs(x, y + 1, z, 12, 30);
-    else if (HAS_AMMO[kind]) this.scheduleCookOffs(x, y + 1, z, 4, 12);
+    if (kind === 'truckAmmo') this.scheduleCookOffs(id, x, y + 1, z, 12, 30);
+    else if (HAS_AMMO[kind]) this.scheduleCookOffs(id, x, y + 1, z, 4, 12);
     this.queueShake(x, y, z, charge, delay);
   }
 
@@ -342,11 +337,13 @@ export class EffectsDirector {
     }
   }
 
-  private scheduleCookOffs(x: number, y: number, z: number, n: number, span: number): void {
+  /** Pops of ammunition cooking off after a blast (until the simulation reports its own). */
+  private scheduleCookOffs(vehicleId: number, x: number, y: number, z: number, n: number, span: number): void {
     for (let k = 0; k < n; k++) {
       for (let i = 0; i < this.popT.length; i++) {
         if (this.popT[i] >= 0) continue;
         this.popT[i] = R.range(0.6, span) * (0.4 + 0.6 * R.next());
+        this.popV[i] = vehicleId;
         this.popX[i] = x + R.signed(2);
         this.popY[i] = y + R.range(0, 1.5);
         this.popZ[i] = z + R.signed(2);
@@ -509,25 +506,7 @@ export class EffectsDirector {
       const wreck = v.condition === 'destroyed' || v.condition === 'catastrophic';
       const burning = v.fire > 0.01;
       if (!wreck && !burning && !v.thrownTurret) continue;
-      let st = this.fires.get(v.id);
-      if (!st) {
-        st = {
-          id: v.id,
-          stamp: 0,
-          flameAcc: 0,
-          smokeAcc: 0,
-          columnAcc: R.next(),
-          emberAcc: 0,
-          smoulderAcc: 0,
-          trailAcc: 0,
-          popTimer: R.range(2, 6),
-          burnSince: sim.time,
-          scorched: false,
-          turret: new Vector3(),
-          turretValid: false,
-        };
-        this.fires.set(v.id, st);
-      }
+      const st = this.fireState(v, sim.time);
       st.stamp = this.frame;
       const shape = VEHICLE_SHAPES[v.kind];
       const top = shape.hullClearance + shape.hullHeight;
@@ -536,9 +515,10 @@ export class EffectsDirector {
       const sh = Math.sin(v.heading);
       const ch = Math.cos(v.heading);
       // local (0, top, lz) → world: forward is -Z local = (sin h, 0, -cos h) world
-      _src.set(v.position.x - sh * lz, v.position.y + top, v.position.z + ch * lz);
+      // the terrain under the vehicle (a dug-in vehicle's position is the floor of its pit)
+      const ground = this.groundAt(v.position.x, v.position.z);
+      _src.set(v.position.x - sh * lz, Math.max(v.position.y + top, ground + 0.3), v.position.z + ch * lz);
       const d = Math.hypot(_src.x - camera.x, _src.y - camera.y, _src.z - camera.z);
-      const ground = v.position.y;
       ps.groundY = ground;
       ps.delay = 0;
       const f = v.fire;
@@ -579,8 +559,9 @@ export class EffectsDirector {
             }
           }
         }
-        // thick black smoke boiling off the fire
-        st.smokeAcc += (1.6 + 4 * f) * detail * (near > 0 ? 1 : 0.35) * dt;
+        // thick black smoke boiling off the fire: puffs close enough to merge into one
+        // billowing plume (fewer far away, where the column carries the picture)
+        st.smokeAcc += (3 + 7 * f) * (0.5 + 0.5 * detail) * (near > 0 ? 1 : 0.35) * dt;
         while (st.smokeAcc >= 1) {
           st.smokeAcc -= 1;
           const j = ps.spawn(
@@ -591,32 +572,33 @@ export class EffectsDirector {
             R.signed(1),
             R.range(3, 6),
             R.signed(1),
-            R.range(1.4, 2.2) * (0.6 + 0.6 * f),
-            R.range(8, 13) * (0.6 + 0.6 * f),
+            R.range(1.8, 2.6) * (0.6 + 0.6 * f),
+            R.range(14, 20) * (0.6 + 0.6 * f),
             R.range(9, 15),
           );
-          ps.opacity(j, 0.75 + 0.25 * f);
+          ps.opacity(j, 0.6 + 0.3 * f);
         }
-        // the column that rises hundreds of metres and leans with the wind (seen from afar)
-        st.columnAcc += (0.3 + 0.45 * f) * dt;
+        // the column that rises hundreds of metres and leans with the wind (seen from afar):
+        // it takes over above the black smoke, in puffs big enough to overlap
+        st.columnAcc += (0.5 + 0.6 * f) * dt;
         while (st.columnAcc >= 1) {
           st.columnAcc -= 1;
           const j = ps.spawn(
             PK.column,
             _src.x + R.signed(1.5),
-            _src.y + 4,
+            _src.y + 9,
             _src.z + R.signed(1.5),
-            R.signed(0.5),
+            R.signed(1),
             R.range(5, 8),
-            R.signed(0.5),
-            R.range(4, 6),
-            R.range(45, 70) * (0.7 + 0.4 * f),
+            R.signed(1),
+            R.range(7, 10),
+            R.range(55, 85) * (0.7 + 0.4 * f),
             R.range(100, 160),
           );
-          ps.opacity(j, 0.55 + 0.45 * f);
+          ps.opacity(j, 0.5 + 0.4 * f);
         }
         // ammunition cooking off
-        if (HAS_AMMO[v.kind] && f > 0.25 && sim.time - st.burnSince < 150) {
+        if (HAS_AMMO[v.kind] && !st.simPops && f > 0.25 && sim.time - st.burnSince < 150) {
           st.popTimer -= dt;
           if (st.popTimer <= 0) {
             st.popTimer = R.range(2, 9) * (1 + (sim.time - st.burnSince) / 50);
@@ -665,6 +647,31 @@ export class EffectsDirector {
       for (const [id, st] of this.fires) if (st.stamp !== this.frame) this.fires.delete(id);
       for (const [id, t] of this.bigBlast) if (this.time - t > 30) this.bigBlast.delete(id);
     }
+  }
+
+  /** The view state of a burning or wrecked vehicle (created when first needed). */
+  private fireState(v: Vehicle, time: number): FireState {
+    let st = this.fires.get(v.id);
+    if (!st) {
+      st = {
+        id: v.id,
+        stamp: this.frame,
+        flameAcc: 0,
+        smokeAcc: 0,
+        columnAcc: R.next(),
+        emberAcc: 0,
+        smoulderAcc: 0,
+        trailAcc: 0,
+        popTimer: R.range(2, 6),
+        simPops: false,
+        burnSince: time,
+        scorched: false,
+        turret: new Vector3(),
+        turretValid: false,
+      };
+      this.fires.set(v.id, st);
+    }
+    return st;
   }
 
   // ---- persistent emitters, pops, shakes ----------------------------------------------------
@@ -716,6 +723,7 @@ export class EffectsDirector {
       this.popT[i] -= dt;
       if (this.popT[i] < 0) {
         this.popT[i] = -1;
+        if (this.fires.get(this.popV[i])?.simPops) continue;
         const c = this.ctx.camera;
         const x = this.popX[i];
         const y = this.popY[i];

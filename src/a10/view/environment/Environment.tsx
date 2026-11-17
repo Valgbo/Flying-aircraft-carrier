@@ -103,7 +103,8 @@ function EnvironmentDriver() {
   useFrame(({ camera }, delta) => {
     const sim = getSim();
     const settings = useA10Store.getState().settings;
-    const hours = environmentOverrides.timeOfDay ?? (sim ? sim.world.timeOfDay : settings.timeOfDay);
+    const hours =
+      environmentOverrides.timeOfDay ?? (sim ? sim.world.timeOfDay : settings.timeOfDay);
     const visibility =
       environmentOverrides.visibilityKm ?? (sim ? sim.world.visibilityKm : DEFAULT_VISIBILITY_KM);
     if (hours !== skyHours || visibility !== skyVisibility) {

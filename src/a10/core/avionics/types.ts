@@ -4,6 +4,8 @@
  * See docs/a10/ARCHITECTURE.md §4 and PLAN_A10.md §7.
  */
 import type { Vector3 } from 'three';
+import type { HatDir } from '../types';
+import type { AmmoLoad, RoundType } from '../weapons/types';
 
 export type MasterArm = 'SAFE' | 'TRAIN' | 'ARM';
 /** GUN/PAC switch: SAFE, GUNARM (gun armed, PAC off), ARM (gun armed, PAC on). */
@@ -14,16 +16,29 @@ export type AltSource = 'BARO' | 'DELTA' | 'RADAR';
 export type MasterMode = 'NAV' | 'GUNS' | 'CCIP' | 'CCRP';
 export type Soi = 'HUD' | 'LMFD' | 'RMFD';
 
+/**
+ * What the HUD's weapon sight shows now (decided by the master mode and the selected profile):
+ * 'GUN' the CCIP gun reticle (GUNS, or CCIP when the gun is the CCIP weapon), 'CCIP' the selected
+ * store's CCIP pipper, 'CCRP' the CCRP steering of the selected store, 'NONE' no weapon sight.
+ */
+export type SightMode = 'NONE' | 'GUN' | 'CCIP' | 'CCRP';
+
+/**
+ * The gun sights (DMS left/right in GUNS with the HUD as SOI). Wave 1 computes 'CCIP'; the
+ * fixed-range reticles, the lead-computing cross and the manually depressed pipper are wave 3.
+ */
+export type GunSightMode = 'CCIP' | 'FIXED' | 'LEAD' | 'MANUAL';
+
 /** The gun sight solution, recomputed every step (PLAN_A10.md §6.2, "The sight"). */
 export interface GunSolution {
   /** A solution exists (the predicted round reaches the ground within the computed time). */
   valid: boolean;
   /** Predicted impact point of a round fired now, world. */
   impact: Vector3;
-  /** Pipper direction relative to the boresight, rad (HUD az + right, el + up). */
+  /** Pipper direction relative to the boresight, rad (HUD az + right, el + up), from the eye. */
   pipperAz: number;
   pipperEl: number;
-  /** Straight-line range to the impact point, m. */
+  /** Straight-line range from the aircraft to the impact point, m. */
   slantRange: number;
   /** Round time of flight to the impact, s. */
   timeOfFlight: number;
@@ -31,6 +46,26 @@ export interface GunSolution {
   tooClose: boolean;
   /** Beyond the maximum range the range bar shows. */
   tooFar: boolean;
+  /** Minimum range of the gun sight (the HUD's minimum-range cue; `tooClose` below it), m. */
+  minRange: number;
+  /** Full scale of the range bar (`tooFar` beyond it), m. */
+  maxRange: number;
+  /** Gun line direction from the eye (the gun cross), HUD angles, rad. */
+  gunLineAz: number;
+  gunLineEl: number;
+  /** The ground model the solution was computed against (altitude-source switch). */
+  groundSource: AltSource;
+  /**
+   * Height of the ground plane the computer assumed, m (RADAR: under the aircraft; BARO: the
+   * active steerpoint's elevation); NaN with DELTA (the terrain database) or no ground data.
+   */
+  groundPlane: number;
+  /** The ground model has data (radar altimeter in range, a steerpoint for BARO). */
+  groundValid: boolean;
+  /** Round type whose ballistics the computer used (from the loaded ammunition). */
+  roundType: RoundType;
+  /** Predicted impact speed, m/s (0 when invalid). */
+  impactSpeed: number;
 }
 
 /** A computed bomb / rocket release solution (CCIP or CCRP). */
@@ -53,22 +88,34 @@ export interface ReleaseSolution {
   releaseNow: boolean;
 }
 
+/** A bomb / rocket delivery: continuously computed impact or release point. */
+export type DeliveryMode = 'CCIP' | 'CCRP';
+/**
+ * The delivery a weapon profile is set to on the stores page; 'NONE' for weapons launched from
+ * their own page in any master mode (Maverick).
+ */
+export type ProfileMode = DeliveryMode | 'NONE';
+export type ReleaseMode = 'SGL' | 'PRS' | 'RIP_SGL' | 'RIP_PRS';
+export type FuzeOption = 'NOSE' | 'TAIL' | 'N/T';
+
 /** A weapon delivery profile on the stores page (PLAN_A10.md §6.5). */
 export interface WeaponProfile {
   id: string;
-  /** Store type this profile applies to. */
+  /** Store type this profile applies to (a weapons `StoreType`). */
   store: string;
-  mode: 'CCIP' | 'CCRP';
+  mode: ProfileMode;
   /** 'SGL' single, 'PRS' pairs, 'RIP SGL', 'RIP PRS'. */
-  release: 'SGL' | 'PRS' | 'RIP_SGL' | 'RIP_PRS';
+  release: ReleaseMode;
   rippleQty: number;
   /** Ripple spacing on the ground, m. */
   rippleSpacing: number;
-  fuze: 'NOSE' | 'TAIL' | 'N/T';
+  fuze: FuzeOption;
   /** Minimum release altitude, m above target. */
   minAltitude: number;
   /** Fuze arming time, s. */
   armingTime: number;
+  /** Name shown on the DSMS and HUD (≤ 8 characters), e.g. 'MK82LD'. Defaults to the store. */
+  name?: string;
 }
 
 /** Sensor point of interest: the one ground point every sensor and weapon can slave to. */
@@ -85,6 +132,79 @@ export interface SteerPoint {
 }
 
 export type MfdPage = 'STAT' | 'DSMS' | 'TGP' | 'MAV' | 'TAD' | 'MSG';
+
+/** A sensor of interest by what it shows: the HUD, or the page on the selected display. */
+export type SoiTarget = 'HUD' | MfdPage;
+
+/**
+ * A HOTAS action for a sensor (targeting pod or Maverick seeker), recorded by `applyCommands` for
+ * the sensors module (wave 2). The list lives for one step: avionics clears it at the start of
+ * every `applyCommands`, and `stepSensors` (step 8) reads the requests of the same step.
+ */
+export interface SensorRequest {
+  sensor: 'TGP' | 'MAV' | 'ALL';
+  action: 'tms' | 'dms' | 'chinaHat' | 'picture' | 'zoom' | 'slaveSpi' | 'slew';
+  /** Hat direction ('fwd'/'aft' for the China hat), '' when none. */
+  dir: HatDir | 'fwd' | 'aft' | '';
+  long: boolean;
+  /** Zoom steps (+ in) for 'zoom'; 0 otherwise. */
+  value: number;
+  /** Sim time of the request, s. */
+  t: number;
+}
+
+/** One station on the stores page (DSMS), stations 1 (left tip) … 11 (right tip). */
+export interface DsmsStationView {
+  station: number;
+  /** Rack or launcher, or null. */
+  rack: string | null;
+  /** The store hanging there (first in release order), or null when empty. */
+  store: string | null;
+  /** Number of stores still on the station. */
+  count: number;
+  /** The station holds the selected profile's store. */
+  selected: boolean;
+}
+
+/** One weapon profile as the DSMS lists it. */
+export interface DsmsProfileView {
+  id: string;
+  name: string;
+  store: string;
+  mode: ProfileMode;
+  release: ReleaseMode;
+  rippleQty: number;
+  rippleSpacing: number;
+  fuze: FuzeOption;
+  minAltitude: number;
+  armingTime: number;
+  /** Stores of this type still loaded. */
+  remaining: number;
+  selected: boolean;
+}
+
+/** Everything the stores page (DSMS) shows. Filled by `buildDsmsView`. */
+export interface DsmsView {
+  stations: DsmsStationView[];
+  profiles: DsmsProfileView[];
+  /** Gun: rounds left, rounds loaded and the ammunition mix. */
+  gunRounds: number;
+  gunLoaded: number;
+  gunLoad: AmmoLoad;
+  masterArm: MasterArm;
+  /** Name of the selected profile, '' when none. */
+  selectedProfile: string;
+}
+
+/** Internal state of the fire-control computer (read-only for other modules). */
+export interface FireControlInternals {
+  /** Time of flight of the previous valid gun solution, s (0 when none). */
+  prevTimeOfFlight: number;
+  /** Predictor integration steps used by the last gun solution (cost diagnostics). */
+  steps: number;
+  /** Ground tests (chord/segment queries) used by the last gun solution. */
+  groundTests: number;
+}
 
 export interface AvionicsState {
   masterArm: MasterArm;
@@ -105,6 +225,27 @@ export interface AvionicsState {
   mfd: { left: MfdPage; right: MfdPage };
   /** Last time each switch changed (for click sounds and the checklist strip). */
   lastSwitch: { name: string; time: number };
-  /** The HUD's validity flags. */
+  /**
+   * The HUD's validity flag for CCIP: in CCIP mode, the CCIP weapon's solution (the selected
+   * store's, or the gun's when the gun is the CCIP weapon) does not exist ("CCIP INVALID").
+   */
   ccipInvalid: boolean;
+
+  // ---- added by the avionics module ----
+  /** The weapon sight the HUD should draw now (see SightMode). */
+  sight: SightMode;
+  /** Selected gun sight (wave 1: always 'CCIP'). */
+  gunSight: GunSightMode;
+  /** Value of the last switch change (pairs with lastSwitch.name). */
+  lastSwitchValue: string;
+  /** HOTAS actions for the sensors module this step (see SensorRequest). */
+  sensorRequests: SensorRequest[];
+  /**
+   * The last "slave to SPI" request (China hat forward long: all sensors; aft long: the pod), so
+   * the sensors module can act on it even if it reads it a step late. -1 = never.
+   */
+  slaveRequest: { sensors: 'ALL' | 'TGP'; time: number };
+  /** Steerpoints, SPI and profiles have been built for this flight (see initAvionics). */
+  initialized: boolean;
+  fc: FireControlInternals;
 }
