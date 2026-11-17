@@ -6,7 +6,8 @@
  *   allocation per frame. The live cap follows the quality preset (`budget`); when full, a new
  *   particle replaces the most faded of a few sampled ones, so fresh effects always show.
  * - Simulated on the CPU in simulated time (`dt` = frameInfo.simDt, so pause freezes it), with
- *   wind that grows with height like `windAt` (power law from the surface wind).
+ *   wind that grows with height like `windAt` (power law from the surface wind). Velocity relaxes
+ *   toward the air exactly over each step, so the motion is the same at 5 fps and at 60.
  * - Sorted back to front with a bucket sort on log depth every frame (premultiplied blending
  *   needs it for dark smoke over bright fire), written into instance attributes relative to a
  *   render origin near the camera (float precision), uploaded with update ranges.
@@ -334,12 +335,26 @@ export class ParticleSystem {
         windF = k.wind * Math.min(2.2, Math.pow((agl > 1 ? agl : 1) / 10, 1 / 7));
       }
       const rise = k.rise > 0 ? k.rise * Math.exp(-a / k.riseTau) : 0;
-      vx[i] += (wx * windF - vx[i]) * kd;
-      vy[i] += (wy * windF + rise - vy[i]) * kd - G * k.gravity * step;
-      vz[i] += (wz * windF - vz[i]) * kd;
-      px[i] += vx[i] * step;
-      py[i] += vy[i] * step;
-      pz[i] += vz[i] * step;
+      // exact over the step for velocity relaxing toward the air (and the terminal velocity
+      // under gravity), so motion does not depend on the frame rate
+      const gz = G * k.gravity;
+      if (k.drag > 0) {
+        const tx = wx * windF;
+        const ty = wy * windF + rise - gz / k.drag;
+        const tz = wz * windF;
+        const f = kd / k.drag;
+        px[i] += tx * step + (vx[i] - tx) * f;
+        py[i] += ty * step + (vy[i] - ty) * f;
+        pz[i] += tz * step + (vz[i] - tz) * f;
+        vx[i] = tx + (vx[i] - tx) * (1 - kd);
+        vy[i] = ty + (vy[i] - ty) * (1 - kd);
+        vz[i] = tz + (vz[i] - tz) * (1 - kd);
+      } else {
+        px[i] += vx[i] * step;
+        py[i] += (vy[i] - 0.5 * gz * step) * step;
+        pz[i] += vz[i] * step;
+        vy[i] -= gz * step;
+      }
       this.rot[i] += this.spin[i] * step;
       if (k.ground !== 0 && ground > NO_GROUND) {
         const floor = ground + (k.ground === 1 ? 0.3 * s : 0.25 * s);

@@ -389,7 +389,7 @@ define(
     rise: 0.4,
     riseTau: 4,
     grow: 0.3,
-    fadeIn: 0.01,
+    fadeIn: 0,
     fadeOut: 0.15,
     alpha: 0.7,
     spin: 0.6,

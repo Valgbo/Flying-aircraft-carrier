@@ -446,6 +446,9 @@ export class EffectsDirector {
         const u = (i + R.next()) / n;
         _p.lerpVectors(this.lastMuzzle, _muzzle, u);
         ps.delay = u * dt;
+        // the muzzle blast throws the gas a few metres ahead of the muzzle
+        const ahead = R.range(0.5, 4);
+        _p.addScaledVector(_gunDir, ahead);
         // gun gas: leaves forward with the shell, balloons into a cloud metres wide within
         // milliseconds, is stopped by the air and streams back past the nose and both sides of
         // the canopy as the aircraft flies through it (the pilot flies through his own smoke)
@@ -468,7 +471,7 @@ export class EffectsDirector {
         if (detail > 0.8 || (i & 1) === 0) {
           const side = (this.washSide = -this.washSide);
           // up the windscreen sides to about the pilot's eye level (above the glare shield)
-          _wash.set(side * R.range(1.0, 2.0), R.range(1.6, 2.4), R.range(-0.6, 0.8)).applyQuaternion(ac.orientation);
+          _wash.set(side * R.range(0.4, 2.0), R.range(1.5, 2.3), 0).applyQuaternion(ac.orientation);
           const w = R.range(4, 14);
           const k = ps.spawn(
             PK.gunSmoke,
@@ -478,8 +481,8 @@ export class EffectsDirector {
             v.x + _gunDir.x * w + R.signed(3),
             v.y + _gunDir.y * w + R.signed(3),
             v.z + _gunDir.z * w + R.signed(3),
-            R.range(1.6, 2.4),
-            R.range(6, 9),
+            R.range(2.5, 3.5),
+            R.range(7, 10),
             R.range(2.5, 4),
           );
           ps.opacity(k, R.range(0.6, 0.85));
