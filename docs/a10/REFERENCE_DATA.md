@@ -90,10 +90,19 @@ Filled in from the modules' acceptance tests at each integration (see `tests/uni
 
 | Quantity | Target (plan) | Model | Test |
 |---|---|---|---|
-| Max level speed, clean, sea level | 381 kn ± 3 % | — | flight |
-| Stall speed, clean, 13,600 kg | 120 kn ± 5 % | — | flight |
-| Initial climb rate | ≈6,000 ft/min ± 10 % | — | flight |
+| Max level speed, clean, sea level | 381 kn ± 3 % | 380.5 kn (14,947 kg) | flight |
+| Stall speed, clean, 13,600 kg | 120 kn ± 5 % | 117.8 kn (C<sub>L max</sub> 1.249; V at C<sub>L max</sub>/√n) | flight |
+| Initial climb rate | ≈6,000 ft/min ± 10 % | 5,706 ft/min at 220 KIAS (≈15,200 kg) | flight |
 | Gun rate | 65 ± 1 rds/s; 47–52 in the first second | — | gun |
 | Dispersion | 80 ± 1.5 % inside 5 mrad | — | gun |
-| Recoil, 2 s burst at 18,000 kg | 3.8–4.8 m/s | — | gun / flight |
+| Recoil, 2 s burst at 18,000 kg | 3.8–4.8 m/s | 4.80 m/s for ∓44.5 kN along the gun line (flight); the gun's own burst: — | gun / flight |
 | Gun sight agreement | burst centre within 1.5 mrad of the pipper | — | avionics |
+| Full aft stick, 300 kn, sea level | ≥ +7.33 g at 13,600 kg | 7.76 g at 13,600 kg; 7.22 g at 15,206 kg | flight |
+| Roll rate, 300 kn, full stick | ≈90–140 °/s | 124 °/s | flight |
+| Sustained level turn, 300 kn, sea level, MAX | plausible | 10.3 °/s (71° bank, 3.06 g) | flight |
+| Engine spool, idle → 95 % thrust | 4–8 s | 6.51 s | flight |
+| Static thrust per engine | 40.3 kN | 40.32 kN | flight |
+| Overspeed (Vne 450 kn) | warning and buffet above | warning on at 460 kn, off at 440 kn | flight |
+| Dive recovery from 300 kn, 30°, 4 g once reached | ≈105 m (closed form) | 82.6 m vs 84.8 m closed form from the same state; 143.7 m including the g onset | flight |
+| PAC-1, 30° dive, 300 kn, turbulence 0.6 | large reduction of pipper motion | RMS pipper rate 18.4 → 2.2 mrad/s | flight |
+| Trimmed straight and level, hands off 60 s | ± 30 m | 5.8 m | flight |
