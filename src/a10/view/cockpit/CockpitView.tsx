@@ -13,7 +13,7 @@
  */
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
-import { PCFSoftShadowMap, type ShadowMapType } from 'three';
+import { PCFSoftShadowMap, type ShadowMapType, type WebGLRenderer } from 'three';
 import { onAircraftTemplates } from '../../assets';
 import { pushCommand } from '../../core/sim';
 import type { Sim } from '../../core/types';
@@ -37,7 +37,9 @@ import {
 export const cockpitHandle: {
   current: CockpitModel | null;
   vision: VisionState | null;
-} = { current: null, vision: null };
+  /** The renderer (for frame statistics in development). */
+  gl: WebGLRenderer | null;
+} = { current: null, vision: null, gl: null };
 
 /**
  * Build the cockpit (once the aircraft models are loaded), register its render passes and drive
@@ -45,6 +47,7 @@ export const cockpitHandle: {
  */
 export function useCockpit(source: () => Sim | null): void {
   const size = useThree((s) => s.size);
+  cockpitHandle.gl = useThree((s) => s.gl);
   const sizeRef = useRef(size);
   sizeRef.current = size;
   const state = useMemo(
@@ -55,6 +58,8 @@ export function useCockpit(source: () => Sim | null): void {
       lastClick: null as object | null,
       sim: null as Sim | null,
       halfRate: false,
+      input: { sim: null as unknown as Sim, simDt: 0, shadows: false, shadowMapSize: 1024 },
+      pointer: { x: 0, y: 0 },
     }),
     [],
   );
@@ -67,8 +72,9 @@ export function useCockpit(source: () => Sim | null): void {
       state.model = model;
       cockpitHandle.current = model;
       if (import.meta.env.DEV && typeof window !== 'undefined')
-        (window as unknown as { __A10_COCKPIT_VIEW__?: typeof cockpitHandle }).__A10_COCKPIT_VIEW__ =
-          cockpitHandle;
+        (
+          window as unknown as { __A10_COCKPIT_VIEW__?: typeof cockpitHandle }
+        ).__A10_COCKPIT_VIEW__ = cockpitHandle;
     });
     return () => {
       off();
@@ -144,6 +150,7 @@ export function useCockpit(source: () => Sim | null): void {
       state.sim = sim;
       resetVision(state.vision);
       state.lastClick = null;
+      state.model?.resetForFlight();
     }
     const simDt = frameInfo.simDt;
     stepVision(state.vision, sim.aircraft.gLoad, simDt);
@@ -154,17 +161,19 @@ export function useCockpit(source: () => Sim | null): void {
     }
     const q = getA10Quality();
     state.halfRate = q.level !== 'high';
-    model.update({
-      sim,
-      simDt,
-      shadows: q.shadows,
-      shadowMapSize: q.level === 'high' ? 2048 : 1024,
-    });
+    const input = state.input;
+    input.sim = sim;
+    input.simDt = simDt;
+    input.shadows = q.shadows;
+    input.shadowMapSize = q.level === 'high' ? 2048 : 1024;
+    model.update(input);
 
     // the free cursor: hover highlight and clicks
     const height = sizeRef.current.height;
     if (viewInput.cursorFree) {
-      model.hover(cockpitCamera, { x: viewInput.pointerX, y: viewInput.pointerY }, height);
+      state.pointer.x = viewInput.pointerX;
+      state.pointer.y = viewInput.pointerY;
+      model.hover(cockpitCamera, state.pointer, height);
       const click = viewInput.click;
       if (click && click !== state.lastClick) {
         state.lastClick = click;

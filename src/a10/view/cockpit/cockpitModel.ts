@@ -16,6 +16,7 @@ import {
   Box3,
   Color,
   Group,
+  Matrix3,
   Mesh,
   Object3D,
   Quaternion,
@@ -39,11 +40,12 @@ import {
 import type { Sim } from '../../core/types';
 import { a10Env } from '../environment/env';
 import { a10Lights } from '../environment/envState';
+import { AltimeterCounter } from './altimeterCounter';
 import { createDisplaySurfaces, disposeDisplaySurfaces, type DisplaySurface } from './displays';
 import { createCanopyGlass, createCombinerGlass, updateGlass } from './glass';
 import { HotspotBox } from './hotspots';
-import { createInstrumentDriver, resetGMeter, type InstrumentDriver } from './instruments';
-import { CockpitLights } from './lighting';
+import { createInstrumentDriver, PROP, resetGMeter, type InstrumentDriver } from './instruments';
+import { CockpitLights, type CockpitLightingInput } from './lighting';
 import {
   boundsInFrame,
   pickTarget,
@@ -94,6 +96,8 @@ export class CockpitModel {
   readonly highlight: PickHighlight;
   readonly targets: PickTarget[] = [];
   readonly displays: { left: DisplaySurface; right: DisplaySurface };
+  /** The altimeter's drum counter (the stand-in altimeter has no numerals). */
+  readonly altimeter: AltimeterCounter;
   readonly switchState = createSwitchState();
   /** The control under the free cursor (null when none). */
   hovered: PickTarget | null = null;
@@ -101,11 +105,25 @@ export class CockpitModel {
   private readonly combinerGlass: ShaderMaterial;
   private readonly ownMaterials: Material[] = [];
   private readonly ownTextures: Texture[] = [];
+  private readonly ownGeometries: BufferGeometry[] = [];
   private readonly glow: MeshStandardMaterial[] = [];
   private readonly airframeHidden: Object3D[] = [];
   private readonly receivers: Mesh[] = [];
   private receiving = false;
   private lastNight = -1;
+  private readonly lightingInput: CockpitLightingInput = {
+    orientation: new Quaternion(),
+    env: a10Env,
+    hemiSky: a10Lights.hemiSky,
+    hemiGround: a10Lights.hemiGround,
+    ambient: a10Lights.ambient,
+    shadows: false,
+    shadowMapSize: 1024,
+  };
+  /** The hover label: rebuilt only when the control or its position changes. */
+  private hoverId: string | null = null;
+  private hoverState = '';
+  private hoverText = '';
 
   constructor(scene: Scene, templates: AircraftTemplates) {
     const meta = templates.meta;
@@ -172,11 +190,8 @@ export class CockpitModel {
     });
     scene.add(this.airframe.root);
 
-    // the ejection seat (the pilot file without the pilot)
-    const seat = templates.pilot.clone(true);
-    const pilot = seat.getObjectByName('Pilot');
-    if (pilot) pilot.visible = false;
-    seat.name = 'cockpit-seat';
+    // the ejection seat (the pilot file without the pilot, nor what hangs where the pilot sits)
+    const seat = buildSeat(templates.pilot, this.ownGeometries);
     scene.add(seat);
     this.seat = seat;
     seat.traverse((o) => {
@@ -188,6 +203,10 @@ export class CockpitModel {
     this.lights.setProxy(buildShadowProxy(root, this.airframe.root, seat));
 
     this.displays = createDisplaySurfaces(scene, meta.displays.tv?.corners);
+
+    this.altimeter = new AltimeterCounter();
+    scene.add(this.altimeter.group);
+    for (const m of this.altimeter.materials) this.glow.push(m);
 
     this.box = new HotspotBox();
     scene.add(this.box.group);
@@ -231,16 +250,13 @@ export class CockpitModel {
     const ac = sim.aircraft;
     readSwitchState(sim, this.switchState);
     this.driver.update(sim, f.simDt);
+    this.altimeter.update(this.driver.values[PROP.altitudeFt]);
 
-    this.lights.update({
-      orientation: ac.orientation,
-      env: a10Env,
-      hemiSky: a10Lights.hemiSky,
-      hemiGround: a10Lights.hemiGround,
-      ambient: a10Lights.ambient,
-      shadows: f.shadows,
-      shadowMapSize: f.shadowMapSize,
-    });
+    const li = this.lightingInput;
+    li.orientation = ac.orientation;
+    li.shadows = f.shadows;
+    li.shadowMapSize = f.shadowMapSize;
+    this.lights.update(li);
     if (this.receiving !== this.lights.shadows) {
       this.receiving = this.lights.shadows;
       for (const m of this.receivers) m.receiveShadow = this.receiving;
@@ -289,7 +305,18 @@ export class CockpitModel {
       return;
     }
     const state = controlStateText(t.id, this.switchState);
-    this.highlight.show(t, state ? `${t.label}  ${state}` : t.label, camera, screenHeight);
+    if (t.id !== this.hoverId || state !== this.hoverState) {
+      this.hoverId = t.id;
+      this.hoverState = state;
+      this.hoverText = state ? `${t.label}  ${state}` : t.label;
+    }
+    this.highlight.show(t, this.hoverText, camera, screenHeight);
+  }
+
+  /** A new flight: the accelerometer's markers and the instrument lags start afresh. */
+  resetForFlight(): void {
+    this.driver.memory.primed = false;
+    this.hovered = null;
   }
 
   /** Cockpit-only actions of a control (no simulation command). Returns true if handled. */
@@ -312,10 +339,12 @@ export class CockpitModel {
     disposeAircraftInstance(this.airframe);
     this.lights.dispose();
     this.box.dispose();
+    this.altimeter.dispose();
     this.highlight.dispose();
     disposeDisplaySurfaces();
     for (const m of this.ownMaterials) m.dispose();
     for (const t of this.ownTextures) t.dispose();
+    for (const g of this.ownGeometries) g.dispose();
   }
 }
 
@@ -371,6 +400,87 @@ export function buildShadowProxy(
   g.setAttribute('position', new BufferAttribute(new Float32Array(out), 3));
   g.computeBoundingSphere();
   return g;
+}
+
+/**
+ * Where the pilot sits (BODY): in front of the seat back, above the cushion — the pilot is not
+ * drawn from inside, so what the pilot model holds there (the oxygen hose up to the mask) would
+ * hang in the air beside the eye — and the headrest, which the head would be against: looking
+ * back over a shoulder, its frame would fill the view a hand's width from the eye.
+ */
+const PILOT_SPACE = new Box3(new Vector3(-0.32, 0.62, -5.2), new Vector3(0.32, 1.6, -4.31));
+const HEADREST = new Box3(new Vector3(-0.34, 1.02, -4.31), new Vector3(0.34, 1.8, -3.9));
+
+/**
+ * The ejection seat for the cockpit: the pilot file's meshes without the pilot, and without the
+ * triangles in PILOT_SPACE (the seat's static parts are one merged mesh, so they are filtered,
+ * not hidden). Baked into BODY coordinates; materials stay the template's.
+ */
+export function buildSeat(pilot: Object3D, own: BufferGeometry[]): Group {
+  const group = new Group();
+  group.name = 'cockpit-seat';
+  pilot.updateMatrixWorld(true);
+  const p = new Vector3();
+  const c = new Vector3();
+  const tri = [new Vector3(), new Vector3(), new Vector3()];
+  pilot.traverse((o) => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh) return;
+    for (let q: Object3D | null = mesh; q; q = q.parent) if (q.name === 'Pilot') return;
+    const g = mesh.geometry as BufferGeometry;
+    const pos = g.getAttribute('position');
+    const nrm = g.getAttribute('normal');
+    const uv = g.getAttribute('uv');
+    const col = g.getAttribute('color');
+    if (!pos) return;
+    const idx = g.getIndex();
+    const n = idx ? idx.count : pos.count;
+    const keep: number[] = [];
+    for (let i = 0; i + 2 < n; i += 3) {
+      c.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) {
+        tri[k]
+          .fromBufferAttribute(pos, idx ? idx.getX(i + k) : i + k)
+          .applyMatrix4(mesh.matrixWorld);
+        c.add(tri[k]);
+      }
+      c.multiplyScalar(1 / 3);
+      if (!PILOT_SPACE.containsPoint(c) && !HEADREST.containsPoint(c)) keep.push(i);
+    }
+    if (!keep.length) return;
+    const P = new Float32Array(keep.length * 9);
+    const N = nrm ? new Float32Array(keep.length * 9) : null;
+    const U = uv ? new Float32Array(keep.length * 6) : null;
+    const C = col ? new Float32Array(keep.length * 3 * col.itemSize) : null;
+    const nm = new Matrix3().getNormalMatrix(mesh.matrixWorld);
+    keep.forEach((i, t) => {
+      for (let k = 0; k < 3; k++) {
+        const vi = idx ? idx.getX(i + k) : i + k;
+        p.fromBufferAttribute(pos, vi).applyMatrix4(mesh.matrixWorld);
+        P.set([p.x, p.y, p.z], t * 9 + k * 3);
+        if (N && nrm) {
+          p.fromBufferAttribute(nrm, vi).applyMatrix3(nm).normalize();
+          N.set([p.x, p.y, p.z], t * 9 + k * 3);
+        }
+        if (U && uv) U.set([uv.getX(vi), uv.getY(vi)], t * 6 + k * 2);
+        if (C && col)
+          for (let j = 0; j < col.itemSize; j++)
+            C[(t * 3 + k) * col.itemSize + j] = col.getComponent(vi, j);
+      }
+    });
+    const out = new BufferGeometry();
+    out.setAttribute('position', new BufferAttribute(P, 3));
+    if (N) out.setAttribute('normal', new BufferAttribute(N, 3));
+    if (U) out.setAttribute('uv', new BufferAttribute(U, 2));
+    if (C && col) out.setAttribute('color', new BufferAttribute(C, col.itemSize));
+    out.computeBoundingSphere();
+    own.push(out);
+    const m = new Mesh(out, mesh.material);
+    m.name = `${mesh.name}-seat`;
+    m.matrixAutoUpdate = false;
+    group.add(m);
+  });
+  return group;
 }
 
 function isDrawn(o: Object3D): boolean {

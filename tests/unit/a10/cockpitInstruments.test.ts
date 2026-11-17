@@ -11,6 +11,7 @@ import { createSim } from '../../../src/a10/core/sim';
 import type { Sim } from '../../../src/a10/core/types';
 import { DEG, FT, KT, LB, NM } from '../../../src/a10/core/units';
 import { createFlatTerrain } from '../../../src/a10/core/world';
+import { altimeterDrums } from '../../../src/a10/view/cockpit/altimeterCounter';
 import {
   COCKPIT_PROPS,
   createCockpitLamps,
@@ -209,6 +210,24 @@ describe('FlightGear drum semantics (simgear textranslate)', () => {
     expect(
       textranslateShift({ factor: 0.01, offset: -10, step: 10, scroll: 0.5, table: null }, 120),
     ).toBeCloseTo(1.1, 9);
+  });
+});
+
+describe('the altimeter counter', () => {
+  it('shows 10,000 / 1,000 / 100 ft drums, rolling on like an odometer', () => {
+    const d = new Float64Array(3);
+    altimeterDrums(8350, d);
+    expect(Math.floor(d[0])).toBe(0);
+    expect(Math.floor(d[1])).toBe(8);
+    expect(d[2]).toBeCloseTo(3.5, 9);
+    altimeterDrums(12400, d);
+    expect([Math.floor(d[0]), Math.floor(d[1]), Math.floor(d[2])]).toEqual([1, 2, 4]);
+    // in the last 100 ft before 10,000 the upper drums roll together
+    altimeterDrums(9950, d);
+    expect(d[1]).toBeCloseTo(9.5, 6);
+    expect(d[0]).toBeCloseTo(0.5, 6);
+    altimeterDrums(-200, d);
+    expect([...d]).toEqual([0, 0, 0]);
   });
 });
 

@@ -111,7 +111,12 @@ export function useCameraRig(source: () => Sim | null): void {
         head.restoring = false;
       },
     };
-    return { head, outside, input, outsideInput, handle, sim: null as Sim | null };
+    const state = { head, outside, input, outsideInput, handle, sim: null as Sim | null, groundAt };
+    /** Ground height under a point (the flight's terrain), for the outside cameras. */
+    function groundAt(x: number, z: number): number {
+      return state.sim ? state.sim.world.terrain.heightAt(x, z) : -Infinity;
+    }
+    return state;
   }, []);
 
   useEffect(() => {
@@ -201,14 +206,7 @@ export function useCameraRig(source: () => Sim | null): void {
       o.lookRateX = viewInput.lookX;
       o.lookRateY = viewInput.lookY;
       o.zoomSteps = zoom;
-      const terrain = sim.world.terrain;
-      rig.handle.shownView = rig.outside.update(
-        view as OutsideView,
-        sim,
-        o,
-        (x, z) => terrain.heightAt(x, z),
-        _pose,
-      );
+      rig.handle.shownView = rig.outside.update(view as OutsideView, sim, o, rig.groundAt, _pose);
       camera.position.copy(_pose.position);
       camera.quaternion.copy(_pose.quaternion);
       setPerspective(camera, _pose.fov, WORLD_NEAR_OUTSIDE);

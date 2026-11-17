@@ -40,10 +40,18 @@ export const HEAD = {
    * in front of the pivot (m), so looking around moves the eyes a little, as it does.
    */
   neckToEye: new Vector3(0, 0.1, -0.075),
+  /**
+   * The neck turns the head this far; beyond it the shoulders twist (the lean below), so the
+   * eyes never swing back into the headrest when looking behind.
+   */
+  neckYawLimit: 60 * DEG,
+  /** …and pitches it this far up and down; looking further, the back and shoulders move. */
+  neckPitchUp: 40 * DEG,
+  neckPitchDown: -60 * DEG,
   /** Lean when looking far back (from 60° to 150° of azimuth): sideways, up, forward (m). */
   leanSide: 0.2,
-  leanUp: 0.025,
-  leanForward: 0.05,
+  leanUp: 0.05,
+  leanForward: 0.07,
   /** Lean forward and down when looking down at the consoles (from −20° to −70°), m. */
   leanDownForward: 0.08,
   leanDownDrop: 0.035,
@@ -409,7 +417,12 @@ export function headPose(
   const az = h.az;
   const el = h.el;
   // neck pivot: eye = pivot + R(look) · neckToEye, with the pivot fixed at eye − neckToEye
-  lookQuaternion(az, el, 0, _q);
+  lookQuaternion(
+    clamp(az, -HEAD.neckYawLimit, HEAD.neckYawLimit),
+    clamp(el, HEAD.neckPitchDown, HEAD.neckPitchUp),
+    0,
+    _q,
+  );
   _v.copy(HEAD.neckToEye).applyQuaternion(_q).sub(HEAD.neckToEye);
   outPos.set(eye.x, eye.y, eye.z).add(_v);
   // lean out to look back, forward to look down

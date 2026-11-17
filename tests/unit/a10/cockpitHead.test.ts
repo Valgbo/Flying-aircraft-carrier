@@ -223,6 +223,20 @@ describe('head pose', () => {
     expect(p.y).toBeLessThan(EYE.y);
   });
 
+  it('never swings the eyes back into the headrest, wherever the head looks', () => {
+    const h = createHeadState(50);
+    const p = new Vector3();
+    const q = new Quaternion();
+    for (let az = -155; az <= 155; az += 5)
+      for (let el = -75; el <= 89; el += 8) {
+        h.az = az * DEG;
+        h.el = el * DEG;
+        headPose(h, EYE, p, q);
+        expect(p.z, `${az},${el}`).toBeLessThan(EYE.z + 0.09);
+        expect(Math.abs(p.x), `${az},${el}`).toBeLessThan(0.34);
+      }
+  });
+
   it('builds the look quaternion as yaw then pitch', () => {
     const q = lookQuaternion(90 * DEG, 0, 0, new Quaternion());
     const fwd = new Vector3(0, 0, -1).applyQuaternion(q);

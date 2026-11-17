@@ -14,8 +14,10 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
+  Box3,
   CanvasTexture,
   Color,
+  Group,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -23,12 +25,17 @@ import {
   Raycaster,
   RepeatWrapping,
   SRGBColorSpace,
+  Vector2,
   Vector3,
   type WebGLRenderer,
 } from 'three';
 import { loadAircraftModels } from '../../assets';
 import { applyCommands } from '../../core/avionics';
-import { bodyDirFromHudAngles, quaternionFromAttitude } from '../../core/frames';
+import {
+  bodyDirFromHudAngles,
+  hudAnglesFromBodyDir,
+  quaternionFromAttitude,
+} from '../../core/frames';
 import { createSim } from '../../core/sim';
 import type { Sim } from '../../core/types';
 import { DEG, FT, KT, LB } from '../../core/units';
@@ -49,7 +56,7 @@ import { cockpitCamera } from '../../view/cockpit/cockpitCamera';
 import { cockpitHandle, useCockpit } from '../../view/cockpit/CockpitView';
 import Environment from '../../view/environment/Environment';
 import { environmentOverrides } from '../../view/environment/envState';
-import { A10_PRIORITY } from '../../view/frame';
+import { A10_PRIORITY, frameInfo } from '../../view/frame';
 import { useHudPass } from '../../view/hud/HudView';
 import RenderPipeline from '../../view/RenderPipeline';
 
@@ -96,6 +103,7 @@ interface Params {
   shadows: boolean;
   clickMode: boolean;
   vision: number;
+  redout: number;
   view: ViewMode;
 }
 
@@ -138,6 +146,7 @@ const DEFAULTS: Params = {
   shadows: true,
   clickMode: false,
   vision: -1,
+  redout: -1,
   view: 'cockpit',
 };
 
@@ -212,6 +221,34 @@ if (typeof window !== 'undefined')
     /** Free the cursor at a pointer position (NDC); null puts it away. */
     cursor: (x: number | null, y = 0) => {
       sandboxCursor = x === null ? null : { x, y };
+    },
+    /** What the cockpit camera sees through a screen point (NDC), the seat included. */
+    probeNdc: (x: number, y: number) => {
+      const m = cockpitHandle.current;
+      if (!m) return null;
+      const rc = new Raycaster();
+      rc.setFromCamera(new Vector2(x, y), cockpitCamera);
+      const roots = [m.root, m.airframe.root, m.box.group];
+      if (m.seat) roots.push(m.seat as Group);
+      const hit = rc.intersectObjects(roots, true).find((h) => isShown(h.object));
+      if (!hit) return null;
+      const r = (v: number) => Math.round(v * 1000) / 1000;
+      return {
+        p: [r(hit.point.x), r(hit.point.y), r(hit.point.z)],
+        o: hit.object.name,
+        d: r(hit.distance),
+      };
+    },
+    /** Look at a node of the cockpit model (its bounds' centre) with a field of view. */
+    lookAtNode: (name: string, fov = 12) => {
+      const m = cockpitHandle.current;
+      const o = m?.root.getObjectByName(name) ?? m?.airframe.root.getObjectByName(name);
+      if (!o) return false;
+      const c = new Box3().setFromObject(o).getCenter(new Vector3());
+      const e = A10_GEOMETRY.eye;
+      const a = hudAnglesFromBodyDir(c.sub(new Vector3(e.x, e.y, e.z)), { az: 0, el: 0 });
+      Object.assign(P, { headAz: a.az / DEG, headEl: a.el / DEG, fov, manualHead: true });
+      return true;
     },
     /** Renderer statistics of the last frame (all passes: info.autoReset is on per render). */
     info: () => {
@@ -473,13 +510,18 @@ function SandboxDriver() {
   useFrame((_s, delta) => {
     const sim = fakeSim;
     if (!sim) return;
+    // no SimDriver here: the fake flight's clock drives the instrument lags, the g spring and shake
+    const dt = Math.min(0.05, delta);
+    frameInfo.simDt = dt;
+    frameInfo.realDt = dt;
+    frameInfo.steps = 1;
     // clicks queued commands: the stand-in avionics apply theirs, the sandbox the rest
     if (sim.commands.length > 0) {
       applyExtraCommands(sim);
       applyCommands(sim);
       readBack(sim);
     }
-    applyParams(sim, Math.min(0.05, delta));
+    applyParams(sim, dt);
     environmentOverrides.timeOfDay = P.hours;
     const store = useA10Store.getState();
     if (store.view !== P.view) store.setView(P.view);
@@ -502,6 +544,7 @@ function SandboxDriver() {
   useFrame(() => {
     const v = cockpitHandle.vision;
     if (v && P.vision >= 0) v.level = P.vision;
+    if (v && P.redout >= 0) v.red = P.redout;
   }, 0);
   return null;
 }
@@ -656,6 +699,12 @@ function Panel() {
           <Check label="shadows (Medium)" k="shadows" />
         </div>
         <Slider label="vision (−1 auto)" k="vision" min={-1} max={1} step={0.05} />
+        <Slider label="red-out (−1 auto)" k="redout" min={-1} max={1} step={0.05} />
+        <div>
+          <button type="button" onClick={() => cockpitHandle.current?.displays.left.show(true)}>
+            show the left MFD placeholder
+          </button>
+        </div>
       </Section>
       <Section title="Flight">
         <Slider label="heading °" k="headingDeg" min={0} max={359} />
