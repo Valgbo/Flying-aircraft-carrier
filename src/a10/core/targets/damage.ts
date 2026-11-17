@@ -30,10 +30,9 @@ import { penetrationMm } from '../weapons/penetration';
 import { RoundType } from '../weapons/types';
 import { plateNormalWorld, rayVehicle, partOfPlate, type PartHit } from './hit';
 import {
-  createPose,
   hullDirToTurret,
   hullToTurret,
-  poseOf,
+  vehiclePose,
   worldDirToHull,
   worldToHull,
   type Pose,
@@ -217,7 +216,15 @@ function boxDistance(b: ComponentBox, x: number, y: number, z: number): number {
 }
 
 /** Set the hull-frame (and turret-frame) origin and direction of a world ray. */
-function frameRay(pose: Pose, x: number, y: number, z: number, dx: number, dy: number, dz: number): void {
+function frameRay(
+  pose: Pose,
+  x: number,
+  y: number,
+  z: number,
+  dx: number,
+  dy: number,
+  dz: number,
+): void {
   worldToHull(pose, x, y, z, _hb);
   worldDirToHull(pose, dx, dy, dz, _hd);
   hullToTurret(pose, _hb.x, _hb.y, _hb.z, _tb);
@@ -373,7 +380,6 @@ export function strikeNear(
 
 // ---- resolveRoundHit ---------------------------------------------------------------------------
 
-const _pose = createPose();
 const _ph: PartHit = { t: 0, part: -1, plate: null, exit: 0 };
 const _nrm: V3 = { x: 0, y: 0, z: 0 };
 
@@ -437,7 +443,7 @@ export function resolveRoundHit(
   const list = out.damaged;
   const r = sim.rng.damage;
   const E = ROUND_EFFECTS;
-  poseOf(v, model.turretZ, _pose);
+  const pose = vehiclePose(v, model.turretZ);
   v.hits++;
   v.lastHitTime = sim.time;
   v.internal.lastWeapon = weapon;
@@ -462,7 +468,8 @@ export function resolveRoundHit(
   out.penetrationMm = pen;
   let decidingPlate = plate.index;
   let outcome: RoundOutcome = 'stopped';
-  const cause: DamageCause = type === RoundType.API ? 'api' : type === RoundType.HEI ? 'hei' : 'fragment';
+  const cause: DamageCause =
+    type === RoundType.API ? 'api' : type === RoundType.HEI ? 'hei' : 'fragment';
   const px = hit.point.x;
   const py = hit.point.y;
   const pz = hit.point.z;
@@ -482,7 +489,19 @@ export function resolveRoundHit(
     rt.heiZ = pz;
     const part = model.parts[partIndex];
     const skin = !part.spaced && pen > plate.thicknessMm / cosT;
-    strikeNear(sim, v, _pose, px, py, pz, E.heiBurstRadius, skin ? E.heiInteriorRadius : 0, 1, 'hei', list);
+    strikeNear(
+      sim,
+      v,
+      pose,
+      px,
+      py,
+      pz,
+      E.heiBurstRadius,
+      skin ? E.heiInteriorRadius : 0,
+      1,
+      'hei',
+      list,
+    );
   } else {
     // API / TP: through any spaced layers to the main armour
     let cap = pen;
@@ -493,14 +512,29 @@ export function resolveRoundHit(
       const part = model.parts[partIndex];
       const eff = plate.thicknessMm / cosT;
       if (layer > 0) {
-        if (Math.acos(Math.min(1, cosT)) > E.ricochetObliquity && plate.thicknessMm >= E.ricochetMinThicknessMm) {
+        if (
+          Math.acos(Math.min(1, cosT)) > E.ricochetObliquity &&
+          plate.thicknessMm >= E.ricochetMinThicknessMm
+        ) {
           outcome = 'stopped';
           decidingPlate = plate.index;
           break;
         }
       }
       // what the round strikes on the outside (sights, tanks, the track itself)
-      strikeNear(sim, v, _pose, ax, ay, az, E.directHitRadius, 0, E.kineticExternalFactor, cause, list);
+      strikeNear(
+        sim,
+        v,
+        pose,
+        ax,
+        ay,
+        az,
+        E.directHitRadius,
+        0,
+        E.kineticExternalFactor,
+        cause,
+        list,
+      );
       decidingPlate = plate.index;
       if (cap <= eff) {
         outcome = 'stopped';
@@ -509,12 +543,15 @@ export function resolveRoundHit(
       cap -= eff;
       if (!part.spaced) {
         outcome = 'penetrated';
-        traceInterior(sim, v, _pose, ax, ay, az, dx, dy, dz, cap, cause, false, 1, list);
+        traceInterior(sim, v, pose, ax, ay, az, dx, dy, dz, cap, cause, false, 1, list);
         break;
       }
       // through a spaced layer: is there armour behind it?
       const L = E.spacedSearch;
-      if (!rayVehicle(sim, v, _pose, ax, ay, az, dx * L, dy * L, dz * L, 1e-5, 1, partIndex, _ph) || !_ph.plate) {
+      if (
+        !rayVehicle(sim, v, pose, ax, ay, az, dx * L, dy * L, dz * L, 1e-5, 1, partIndex, _ph) ||
+        !_ph.plate
+      ) {
         outcome = 'passedThrough';
         break;
       }
@@ -523,7 +560,7 @@ export function resolveRoundHit(
       ax += dx * L * _ph.t;
       ay += dy * L * _ph.t;
       az += dz * L * _ph.t;
-      plateNormalWorld(_pose, model.parts[partIndex], plate, _nrm);
+      plateNormalWorld(pose, model.parts[partIndex], plate, _nrm);
       cosT = Math.max(1e-3, -(dx * _nrm.x + dy * _nrm.y + dz * _nrm.z));
       outcome = 'stopped';
     }

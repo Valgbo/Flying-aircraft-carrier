@@ -76,6 +76,35 @@ export function poseOf(v: Vehicle, turretZ: number, out: Pose): Pose {
   return out;
 }
 
+/**
+ * The pose of `v`, cached on the vehicle and recomputed only when its position, attitude or
+ * turret yaw changed (so code that moves a vehicle by hand needs no notification).
+ */
+export function vehiclePose(v: Vehicle, turretZ: number): Pose {
+  const rt = v.internal;
+  const k = rt.poseKey;
+  const p = v.position;
+  if (
+    k[0] !== v.heading ||
+    k[1] !== v.pitch ||
+    k[2] !== v.roll ||
+    k[3] !== v.turretYaw ||
+    k[4] !== p.x ||
+    k[5] !== p.y ||
+    k[6] !== p.z
+  ) {
+    poseOf(v, turretZ, rt.pose);
+    k[0] = v.heading;
+    k[1] = v.pitch;
+    k[2] = v.roll;
+    k[3] = v.turretYaw;
+    k[4] = p.x;
+    k[5] = p.y;
+    k[6] = p.z;
+  }
+  return rt.pose;
+}
+
 /** A plain 3-vector for the transforms below. */
 export interface V3 {
   x: number;

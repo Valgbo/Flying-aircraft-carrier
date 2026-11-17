@@ -106,6 +106,8 @@ function createInternal(kind: VehicleKind): VehicleInternal {
     groundPitch: 0,
     groundRoll: 0,
     slopeTimer: 0,
+    pose: createPose(),
+    poseKey: new Float64Array(7).fill(NaN),
   };
 }
 
@@ -342,7 +344,8 @@ export function setCondition(sim: Sim, v: Vehicle, cond: VehicleCondition, weapo
     });
   } else {
     const kills = sim.debrief.kills;
-    for (let i = 0; i < kills.length; i++) if (kills[i].vehicleId === v.id) kills[i].catastrophic = true;
+    for (let i = 0; i < kills.length; i++)
+      if (kills[i].vehicleId === v.id) kills[i].catastrophic = true;
   }
   sim.events.push({
     type: 'vehicleDestroyed',
@@ -372,7 +375,8 @@ export function evaluateCondition(sim: Sim, v: Vehicle, weapon: string): void {
     if (b.id === 'engine') engineDead = true;
     else failures++;
   }
-  if (HAS[v.kind].runningGear && v.components.runningGear <= KILL_RULES.runningGearKill) mobility = true;
+  if (HAS[v.kind].runningGear && v.components.runningGear <= KILL_RULES.runningGearKill)
+    mobility = true;
   if (engineDead) v.engineOn = false;
   v.mobilityKill = mobility;
   v.firepowerKill = firepower && HAS[v.kind].gun;
@@ -460,7 +464,8 @@ export function explode(sim: Sim, v: Vehicle, weapon: string): void {
   const boxes = VEHICLE_MODELS[v.kind].components;
   for (let i = 0; i < boxes.length; i++) {
     const id = boxes[i].id;
-    if (id === 'ammo' || id === 'crew' || (v.kind === 'truckFuel' && id === 'fuel')) rt.boxHealth[i] = 0;
+    if (id === 'ammo' || id === 'crew' || (v.kind === 'truckFuel' && id === 'fuel'))
+      rt.boxHealth[i] = 0;
   }
   updateComponentHealth(v);
   v.mobilityKill = true;

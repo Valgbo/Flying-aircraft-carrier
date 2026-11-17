@@ -101,7 +101,8 @@ function scanEvents(sim: Sim): void {
   if (start > ev.length || (start > 0 && ev[start - 1] !== g.lastEvent)) start = 0;
   for (let i = start; i < ev.length; i++) {
     const e = ev[i];
-    if (e.type === 'roundImpact' || e.type === 'detonation') alertNear(sim, e.position.x, e.position.z);
+    if (e.type === 'roundImpact' || e.type === 'detonation')
+      alertNear(sim, e.position.x, e.position.z);
   }
   g.eventIndex = ev.length;
   g.lastEvent = ev.length > 0 ? ev[ev.length - 1] : null;
@@ -201,7 +202,10 @@ function gradeFactor(sim: Sim, v: Vehicle): number {
   const t = sim.world.terrain;
   const fx = Math.sin(v.heading) * 5;
   const fz = -Math.cos(v.heading) * 5;
-  const grade = (t.heightAt(v.position.x + fx, v.position.z + fz) - t.heightAt(v.position.x - fx, v.position.z - fz)) / 10;
+  const grade =
+    (t.heightAt(v.position.x + fx, v.position.z + fz) -
+      t.heightAt(v.position.x - fx, v.position.z - fz)) /
+    10;
   const f = 1 - MOBILITY.gradeSlow * Math.max(0, grade - MOBILITY.gradeStart);
   return f < MOBILITY.gradeMinFactor ? MOBILITY.gradeMinFactor : f > 1 ? 1 : f;
 }
@@ -231,7 +235,8 @@ function drive(sim: Sim, v: Vehicle, heading: number, dt: number): void {
 /** Keep a vehicle on the ground and let the hull follow the slope. */
 function settle(sim: Sim, v: Vehicle, dt: number, moving: boolean): void {
   const rt = v.internal;
-  v.position.y = sim.world.terrain.heightAt(v.position.x, v.position.z) - (v.dugIn ? rt.digDepth : 0);
+  v.position.y =
+    sim.world.terrain.heightAt(v.position.x, v.position.z) - (v.dugIn ? rt.digDepth : 0);
   if (v.dugIn) return;
   if (moving && --rt.slopeTimer <= 0) {
     rt.slopeTimer = SLOPE_EVERY;
@@ -265,12 +270,15 @@ function stepColumn(sim: Sim, g: VehicleGroup, dt: number): boolean {
       lead = false;
       continue;
     }
-    const offset = g.route[legAt(g, rt.s)].loop ? 0 : MOBILITY.roadKeepRight * g.route[legAt(g, rt.s)].road.width;
+    const offset = g.route[legAt(g, rt.s)].loop
+      ? 0
+      : MOBILITY.roadKeepRight * g.route[legAt(g, rt.s)].road.width;
     let target = g.speed * gradeFactor(sim, v);
     if (lead) {
       if (rt.s + MOBILITY.lookAhead + 40 > routeEnd(g)) extendRoute(sim, g);
       const left = routeEnd(g) - rt.s;
-      if (left < 60) target = Math.min(target, Math.sqrt(2 * MOBILITY.brake * Math.max(0, left - 10)));
+      if (left < 60)
+        target = Math.min(target, Math.sqrt(2 * MOBILITY.brake * Math.max(0, left - 10)));
     } else {
       const gap = prevS - rt.s;
       target = Math.max(0, Math.min(1.3 * g.speed, target + 0.3 * (gap - g.spacing)));
@@ -284,7 +292,9 @@ function stepColumn(sim: Sim, g: VehicleGroup, dt: number): boolean {
       moved = true;
       // keep the route distance matched to where the vehicle really is
       routePoint(g, rt.s, offset, _rq);
-      const e = (v.position.x - _rq.x) * Math.sin(_rq.heading) - (v.position.z - _rq.z) * Math.cos(_rq.heading);
+      const e =
+        (v.position.x - _rq.x) * Math.sin(_rq.heading) -
+        (v.position.z - _rq.z) * Math.cos(_rq.heading);
       if (Math.abs(e) < 10) rt.s += e;
     }
     rt.leg = legAt(g, rt.s);
@@ -320,7 +330,8 @@ function stepGoal(sim: Sim, v: Vehicle, dt: number): boolean {
     if (v.speed > 0) drive(sim, v, v.heading, dt);
     return v.speed > 0;
   }
-  const vMax = (tracked(v) ? MOBILITY.offRoadTracked : MOBILITY.offRoadWheeled) * gradeFactor(sim, v);
+  const vMax =
+    (tracked(v) ? MOBILITY.offRoadTracked : MOBILITY.offRoadWheeled) * gradeFactor(sim, v);
   approachSpeed(v, Math.min(vMax, Math.sqrt(2 * MOBILITY.brake * Math.max(0, d - 3))), dt);
   drive(sim, v, headingOf(dx, dz), dt);
   return true;
@@ -386,7 +397,9 @@ function stepHeat(sim: Sim, v: Vehicle): void {
   const sun = Math.max(0, Math.sin((Math.PI * (tod - 6)) / 12));
   const engine = v.engineOn ? (moving ? THERMAL.engineLoad : THERMAL.engineIdle) : 0;
   const exhaust = v.engineOn ? (moving ? THERMAL.exhaustLoad : THERMAL.exhaustIdle) : 0;
-  const running = moving ? Math.min(THERMAL.runningMax, THERMAL.runningPerSpeed * Math.abs(v.speed)) : 0;
+  const running = moving
+    ? Math.min(THERMAL.runningMax, THERMAL.runningPerSpeed * Math.abs(v.speed))
+    : 0;
   h.engine = toward(h.engine, engine, K.engineWarm, K.engineCool);
   h.exhaust = toward(h.exhaust, exhaust, K.exhaustWarm, K.exhaustCool);
   h.running = toward(h.running, running, K.runningWarm, K.runningCool);
@@ -438,7 +451,12 @@ function stepFire(sim: Sim, v: Vehicle, dt: number): void {
   if (rt.fireIn >= KILL_RULES.fireKill && isAlive(v)) evaluateCondition(sim, v, rt.lastWeapon);
   // a fire inside may cook off the ammunition (or burst a tanker's load) later
   const fx = AMMO_EFFECTS[v.kind];
-  if (fx && !rt.cookOffDecided && rt.fireIn >= FIRE_MODEL.cookOffFire && v.condition !== 'catastrophic') {
+  if (
+    fx &&
+    !rt.cookOffDecided &&
+    rt.fireIn >= FIRE_MODEL.cookOffFire &&
+    v.condition !== 'catastrophic'
+  ) {
     rt.cookOffDecided = true;
     const load = v.kind === 'truckFuel' ? v.components.fuel : v.components.ammo;
     if (load > 0 && sim.rng.damage.chance(fx.pCookOff))
@@ -506,7 +524,8 @@ function stepGroups(sim: Sim): void {
   let alive = 0;
   for (const g of t.groups) if (!g.wipedOut && g.reacts) alive++;
   if (alive < t.huntGroups && t.respawnTime < 0) {
-    t.respawnTime = sim.time + sim.rng.targets.range(SCENARIO.respawnDelayMin, SCENARIO.respawnDelayMax);
+    t.respawnTime =
+      sim.time + sim.rng.targets.range(SCENARIO.respawnDelayMin, SCENARIO.respawnDelayMax);
   }
   if (t.respawnTime >= 0 && sim.time >= t.respawnTime) {
     t.respawnTime = -1;
@@ -564,9 +583,9 @@ export function stepTargets(sim: Sim, dt: number): void {
   }
   if (moved) {
     t.internal.dirty = true;
-    for (let i = 0; i < groups.length; i++) if (!groups[i].wipedOut) updateGroupBounds(sim, groups[i]);
+    for (let i = 0; i < groups.length; i++)
+      if (!groups[i].wipedOut) updateGroupBounds(sim, groups[i]);
   }
   if (sim.stepCount % 60 === 0) stepGroups(sim);
   if (sim.stepCount % 600 === 0) cleanupWrecks(sim);
 }
-

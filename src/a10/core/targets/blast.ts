@@ -27,7 +27,7 @@ import type { Sim } from '../types';
 import { densityAt } from '../world/atmosphere';
 import { damageBox, strikeNear, traceInterior } from './damage';
 import { plateNormalWorld, rayVehicle, type PartHit } from './hit';
-import { createPose, hullToWorld, poseOf, worldToHull, type V3 } from './pose';
+import { hullToWorld, vehiclePose, worldToHull, type V3 } from './pose';
 import {
   alertGroup,
   emitDamaged,
@@ -41,7 +41,10 @@ import {
 import type { ComponentId, Vehicle, VehicleKind } from './types';
 
 /** Bounds of each class's body (every part but the gun barrel), hull frame. */
-const BODY = {} as Record<VehicleKind, { min: [number, number, number]; max: [number, number, number] }>;
+const BODY = {} as Record<
+  VehicleKind,
+  { min: [number, number, number]; max: [number, number, number] }
+>;
 for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
   const min: [number, number, number] = [Infinity, Infinity, Infinity];
   const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
@@ -57,7 +60,7 @@ for (const kind of Object.keys(VEHICLE_MODELS) as VehicleKind[]) {
 
 /** Side-on impulse of a surface burst, Pa·s (W kg TNT, Z m/kg^(1/3)). */
 export function blastImpulse(chargeKg: number, z: number): number {
-  return Math.cbrt(chargeKg) * BLAST.impulseCoeff / Math.pow(Math.max(z, 1e-3), BLAST.impulseExp);
+  return (Math.cbrt(chargeKg) * BLAST.impulseCoeff) / Math.pow(Math.max(z, 1e-3), BLAST.impulseExp);
 }
 
 export type BlastLevelName = 'catastrophic' | 'destroyed' | 'heavy' | 'light' | 'none';
@@ -75,7 +78,8 @@ export function blastLevel(
   const row = BLAST_THRESHOLDS[kind];
   if (!row || chargeKg <= 0) return 'none';
   const i = blastImpulse(chargeKg, zCentre);
-  if (row.catastrophic && z <= row.catastrophic.z && i >= row.catastrophic.impulse) return 'catastrophic';
+  if (row.catastrophic && z <= row.catastrophic.z && i >= row.catastrophic.impulse)
+    return 'catastrophic';
   if (z <= row.destroyed.z && i >= row.destroyed.impulse) return 'destroyed';
   if (z <= row.heavy.z && i >= row.heavy.impulse) return 'heavy';
   if (z <= row.light.z && i >= row.light.impulse) return 'light';
@@ -106,7 +110,9 @@ export function fragmentSpeed(v0: number, m: number, range: number, rho: number)
 
 /** Steel penetrated by a fragment of mass m (kg) at speed v (m/s), mm RHA. */
 export function fragmentPenetration(m: number, v: number): number {
-  return FRAGMENTS.penCoeff * Math.cbrt(m * 1000) * Math.pow(Math.max(0, v) / 1000, FRAGMENTS.penExp);
+  return (
+    FRAGMENTS.penCoeff * Math.cbrt(m * 1000) * Math.pow(Math.max(0, v) / 1000, FRAGMENTS.penExp)
+  );
 }
 
 function poisson(r: Rng, lambda: number): number {
@@ -122,7 +128,6 @@ function poisson(r: Rng, lambda: number): number {
   return k - 1;
 }
 
-const _pose = createPose();
 const _b: V3 = { x: 0, y: 0, z: 0 };
 const _c: V3 = { x: 0, y: 0, z: 0 };
 const _n: V3 = { x: 0, y: 0, z: 0 };
@@ -147,7 +152,8 @@ function strikeAll(
     }
     const vul = COMPONENT_VULNERABILITY[id];
     const r = sim.rng.damage;
-    if (r.chance(Math.min(1, vul.pHit * scale))) damageBox(sim, v, i, r.range(vul.damageMin, vul.damageMax), 'blast', scale, _list);
+    if (r.chance(Math.min(1, vul.pHit * scale)))
+      damageBox(sim, v, i, r.range(vul.damageMin, vul.damageMax), 'blast', scale, _list);
   }
 }
 
@@ -179,14 +185,16 @@ export function applyBlast(
   const fragRange =
     fragmentKg > 0
       ? Math.max(0, Math.log(v0 / FRAGMENTS.minVelocity)) *
-        ((2 * Math.cbrt(Math.max(4 * mu, FRAGMENTS.minMass))) / (FRAGMENTS.dragCoeff * rho * FRAGMENTS.shapeFactor))
+        ((2 * Math.cbrt(Math.max(4 * mu, FRAGMENTS.minMass))) /
+          (FRAGMENTS.dragCoeff * rho * FRAGMENTS.shapeFactor))
       : 0;
   const blastRange = W > 0 ? 14 * w13 : 0;
   const reach = Math.min(1500, Math.max(fragRange, blastRange)) + 10;
   const list = sim.targets.vehicles;
   for (let vi = 0; vi < list.length; vi++) {
     const v = list[vi];
-    if (Math.abs(v.position.x - position.x) > reach || Math.abs(v.position.z - position.z) > reach) continue;
+    if (Math.abs(v.position.x - position.x) > reach || Math.abs(v.position.z - position.z) > reach)
+      continue;
     const rt = v.internal;
     // HEI already resolved on this vehicle by resolveRoundHit
     if (
@@ -215,8 +223,8 @@ function applyToVehicle(
 ): void {
   const model = VEHICLE_MODELS[v.kind];
   const body = BODY[v.kind];
-  poseOf(v, model.turretZ, _pose);
-  worldToHull(_pose, position.x, position.y, position.z, _b);
+  const pose = vehiclePose(v, model.turretZ);
+  worldToHull(pose, position.x, position.y, position.z, _b);
   // distance to the body's nearest surface (hull frame)
   const qx = Math.max(body.min[0] - _b.x, 0, _b.x - body.max[0]);
   const qy = Math.max(body.min[1] - _b.y, 0, _b.y - body.max[1]);
@@ -258,13 +266,24 @@ function applyToVehicle(
     } else if (row) {
       // light: external components near the burst, more the closer it is
       const radius = row.light.z * w13;
-      strikeNear(sim, v, _pose, position.x, position.y, position.z, radius, 0, 0.9 * (1 - z / row.light.z), 'blast', _list);
+      strikeNear(
+        sim,
+        v,
+        pose,
+        position.x,
+        position.y,
+        position.z,
+        radius,
+        0,
+        0.9 * (1 - z / row.light.z),
+        'blast',
+        _list,
+      );
     }
   }
 
   // ---- fragments ----
   let fragHits = 0;
-  let fragPen = 0;
   let firstPlate = -1;
   let firstSpeed = 0;
   let firstObliquity = 0;
@@ -303,7 +322,7 @@ function applyToVehicle(
         const m = mu * (s0 - Math.log(u)) ** 2;
         // aim at a random point of the body
         hullToWorld(
-          _pose,
+          pose,
           body.min[0] + sx * r.next(),
           body.min[1] + sy * r.next(),
           body.min[2] + sz * r.next(),
@@ -315,7 +334,24 @@ function applyToVehicle(
         const len = Math.hypot(dx, dy, dz);
         if (len < 1e-6) continue;
         const ext = (len + 2) / len;
-        if (!rayVehicle(sim, v, _pose, position.x, position.y, position.z, dx * ext, dy * ext, dz * ext, 0, 1, -1, _ph) || !_ph.plate)
+        if (
+          !rayVehicle(
+            sim,
+            v,
+            pose,
+            position.x,
+            position.y,
+            position.z,
+            dx * ext,
+            dy * ext,
+            dz * ext,
+            0,
+            1,
+            -1,
+            _ph,
+          ) ||
+          !_ph.plate
+        )
           continue;
         const dist = _ph.t * len * ext;
         const speed = fragmentSpeed(v0, m, dist, rho);
@@ -323,7 +359,7 @@ function applyToVehicle(
         fragHits += per;
         const part = model.parts[_ph.part];
         const plate = _ph.plate;
-        plateNormalWorld(_pose, part, plate, _n);
+        plateNormalWorld(pose, part, plate, _n);
         const ix = dx / len;
         const iy = dy / len;
         const iz = dz / len;
@@ -341,16 +377,58 @@ function applyToVehicle(
         const hx = position.x + dx * ext * _ph.t;
         const hy = position.y + dy * ext * _ph.t;
         const hz = position.z + dz * ext * _ph.t;
-        if (theta > ROUND_EFFECTS.ricochetObliquity && plate.thicknessMm >= ROUND_EFFECTS.ricochetMinThicknessMm) continue;
+        if (
+          theta > ROUND_EFFECTS.ricochetObliquity &&
+          plate.thicknessMm >= ROUND_EFFECTS.ricochetMinThicknessMm
+        )
+          continue;
         if (pen > eff) {
-          fragPen += per;
           if (part.spaced) {
-            strikeNear(sim, v, _pose, hx, hy, hz, ROUND_EFFECTS.directHitRadius, 0, scale, 'fragment', _list);
+            strikeNear(
+              sim,
+              v,
+              pose,
+              hx,
+              hy,
+              hz,
+              ROUND_EFFECTS.directHitRadius,
+              0,
+              scale,
+              'fragment',
+              _list,
+            );
           } else {
-            traceInterior(sim, v, _pose, hx, hy, hz, ix, iy, iz, pen - eff, 'fragment', true, scale, _list);
+            traceInterior(
+              sim,
+              v,
+              pose,
+              hx,
+              hy,
+              hz,
+              ix,
+              iy,
+              iz,
+              pen - eff,
+              'fragment',
+              true,
+              scale,
+              _list,
+            );
           }
         } else {
-          strikeNear(sim, v, _pose, hx, hy, hz, ROUND_EFFECTS.directHitRadius, 0, scale * 0.3, 'fragment', _list);
+          strikeNear(
+            sim,
+            v,
+            pose,
+            hx,
+            hy,
+            hz,
+            ROUND_EFFECTS.directHitRadius,
+            0,
+            scale * 0.3,
+            'fragment',
+            _list,
+          );
         }
       }
     }

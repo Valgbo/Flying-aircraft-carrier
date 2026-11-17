@@ -56,7 +56,8 @@ export function rebuildGrid(t: TargetsState): void {
   g.keys.fill(-1);
   g.entryCount = 0;
   const list = t.vehicles;
-  if (g.stamps.length < list.length) g.stamps = new Int32Array(Math.max(list.length, g.stamps.length * 2));
+  if (g.stamps.length < list.length)
+    g.stamps = new Int32Array(Math.max(list.length, g.stamps.length * 2));
   for (let i = 0; i < list.length; i++) {
     const v = list[i];
     const r = VEHICLE_MODELS[v.kind].sphereR + 0.5;

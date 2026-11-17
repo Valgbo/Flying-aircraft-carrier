@@ -178,7 +178,11 @@ export const T72_ARMOUR_NOTES: Record<keyof typeof T72_ARMOUR, SourceNote> = {
     note: 'steel road-wheel discs and track links in the line of fire',
   },
   fender: { source: 'plan', confidence: 'estimate' },
-  fenderStowage: { source: 'plan', confidence: 'estimate', note: 'sheet-steel fuel cells and boxes' },
+  fenderStowage: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'sheet-steel fuel cells and boxes',
+  },
   fuelDrum: { source: 'plan', confidence: 'estimate', note: '200 l steel drum wall' },
   gunBarrel: {
     source: 'plan',
@@ -219,7 +223,11 @@ export const BMP_ARMOUR_NOTES: Record<keyof typeof BMP_ARMOUR, SourceNote> = {
     note: 'BMP-1/2 upper front 7 mm at ≈80° (War Thunder wiki BMP-2, Wikipedia BMP-2)',
   },
   frontTop: { source: 'plan', confidence: 'estimate' },
-  lowerFront: { source: 'plan', confidence: 'approximate', note: 'BMP-2 lower front ≈19 mm at 57°' },
+  lowerFront: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'BMP-2 lower front ≈19 mm at 57°',
+  },
   sideUpper: { source: 'plan', confidence: 'approximate', note: 'BMP-2 upper side ≈16 mm' },
   sideLower: { source: 'plan', confidence: 'approximate', note: 'BMP-2 lower side ≈18 mm' },
   rear: { source: 'plan', confidence: 'approximate', note: 'rear doors are hollow fuel tanks' },
@@ -392,7 +400,11 @@ function slope(
 ): PlateDef {
   const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const ax: V3 = axis === 'x' ? [1, 0, 0] : axis === 'y' ? [0, 1, 0] : [0, 0, 1];
-  let n: V3 = [d[1] * ax[2] - d[2] * ax[1], d[2] * ax[0] - d[0] * ax[2], d[0] * ax[1] - d[1] * ax[0]];
+  let n: V3 = [
+    d[1] * ax[2] - d[2] * ax[1],
+    d[2] * ax[0] - d[0] * ax[2],
+    d[0] * ax[1] - d[1] * ax[0],
+  ];
   if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) n = [-n[0], -n[1], -n[2]];
   return plane(name, face, mm, n, a);
 }
@@ -473,21 +485,25 @@ function turretPart(
     const cs = Math.cos(sideSlope);
     const ss = Math.sin(sideSlope);
     plates.push(
-      plane(`${name} ${s.face} ${s.deg}°`, s.face, s.side, [dx * cs, ss, dz * cs], [
-        dx * r0,
-        y0,
-        cz + dz * r0,
-      ]),
+      plane(
+        `${name} ${s.face} ${s.deg}°`,
+        s.face,
+        s.side,
+        [dx * cs, ss, dz * cs],
+        [dx * r0, y0, cz + dz * r0],
+      ),
     );
     const rs = r0 - (shoulderY - y0) * Math.tan(sideSlope);
     const ch = Math.cos(shoulderSlope);
     const sh = Math.sin(shoulderSlope);
     plates.push(
-      plane(`${name} upper ${s.face} ${s.deg}°`, s.face, s.shoulder, [dx * ch, sh, dz * ch], [
-        dx * rs,
-        shoulderY,
-        cz + dz * rs,
-      ]),
+      plane(
+        `${name} upper ${s.face} ${s.deg}°`,
+        s.face,
+        s.shoulder,
+        [dx * ch, sh, dz * ch],
+        [dx * rs, shoulderY, cz + dz * rs],
+      ),
     );
   }
   plates.push(plane(`${name} roof`, 'top', roofMm, [0, 1, 0], [0, roofY, 0]));
@@ -594,7 +610,10 @@ function compile(
     let h = 0;
     for (const x of [def.min[0], def.max[0]]) {
       for (const z of [def.min[2], def.max[2]]) {
-        h = Math.max(h, def.turret ? Math.abs(turretZ) + Math.hypot(x, z - turretZ) : Math.hypot(x, z));
+        h = Math.max(
+          h,
+          def.turret ? Math.abs(turretZ) + Math.hypot(x, z - turretZ) : Math.hypot(x, z),
+        );
       }
     }
     sphereR = Math.max(sphereR, Math.hypot(h, vy));
@@ -649,28 +668,28 @@ function buildMbt(kind: VehicleKind, s: VehicleShape, drums: boolean, internals:
           bottom: A.belly,
         }),
         slope('upper glacis', 'front', A.glacis, [0, yN + 0.02, zF], [0, top, zG], 'x', [0, 1, -1]),
-        slope('lower front', 'front', A.lowerFront, [0, C, zF + 0.5], [0, yN - 0.05, zF], 'x', [
-          0, -1, -1,
-        ]),
+        slope(
+          'lower front',
+          'front',
+          A.lowerFront,
+          [0, C, zF + 0.5],
+          [0, yN - 0.05, zF],
+          'x',
+          [0, -1, -1],
+        ),
       ],
       [-wl, C, zF],
       [wl, top, zE],
     ),
   );
   defs.push(
-    boxPart(
-      'engine compartment',
-      'hull',
-      [-wl, C, zE],
-      [wl, top, zR],
-      {
-        front: A.bulkhead,
-        rear: A.hullRear,
-        side: A.hullSideOverEngine,
-        top: A.engineDeck,
-        bottom: A.belly,
-      },
-    ),
+    boxPart('engine compartment', 'hull', [-wl, C, zE], [wl, top, zR], {
+      front: A.bulkhead,
+      rear: A.hullRear,
+      side: A.hullSideOverEngine,
+      top: A.engineDeck,
+      bottom: A.belly,
+    }),
   );
   for (const side of [-1, 1]) {
     const x0 = side < 0 ? -xo : xi;
@@ -774,19 +793,42 @@ function buildMbt(kind: VehicleKind, s: VehicleShape, drums: boolean, internals:
       comp('crew', 'driver', [-0.45, C + 0.1, zF + 0.65], [0.45, C + 1.05, zF + 1.6], {
         effect: 'mobility',
       }),
-      comp('fuel', 'front fuel tank', [0.45, C + 0.08, zF + 0.55], [wl - 0.03, top - 0.15, zF + 1.65]),
-      comp('ammo', 'front ammunition racks', [-wl + 0.03, C + 0.08, zF + 0.55], [-0.45, top - 0.2, zF + 1.6], {
-        weight: 0.6,
-      }),
+      comp(
+        'fuel',
+        'front fuel tank',
+        [0.45, C + 0.08, zF + 0.55],
+        [wl - 0.03, top - 0.15, zF + 1.65],
+      ),
+      comp(
+        'ammo',
+        'front ammunition racks',
+        [-wl + 0.03, C + 0.08, zF + 0.55],
+        [-0.45, top - 0.2, zF + 1.6],
+        {
+          weight: 0.6,
+        },
+      ),
       comp('ammo', 'autoloader carousel', [-1.0, C + 0.05, tz - 1.0], [1.0, C + 0.4, tz + 1.0], {
         weight: 1.4,
       }),
-      comp('ammo', 'hull ammunition racks', [wl - 0.33, C + 0.4, tz - 1.0], [wl - 0.03, top - 0.12, tz + 0.9], {
-        weight: 0.5,
-      }),
-      comp('fuel', 'fighting-compartment fuel tanks', [-wl + 0.03, C + 0.4, tz - 1.0], [-wl + 0.33, top - 0.12, tz + 0.9], {
-        weight: 0.8,
-      }),
+      comp(
+        'ammo',
+        'hull ammunition racks',
+        [wl - 0.33, C + 0.4, tz - 1.0],
+        [wl - 0.03, top - 0.12, tz + 0.9],
+        {
+          weight: 0.5,
+        },
+      ),
+      comp(
+        'fuel',
+        'fighting-compartment fuel tanks',
+        [-wl + 0.03, C + 0.4, tz - 1.0],
+        [-wl + 0.33, top - 0.12, tz + 0.9],
+        {
+          weight: 0.8,
+        },
+      ),
       comp('crew', 'gunner', [-0.95, C + 0.48, tz - 0.55], [-0.25, top + 0.55, tz + 0.45], {
         turret: true,
         effect: 'firepower',
@@ -799,37 +841,79 @@ function buildMbt(kind: VehicleKind, s: VehicleShape, drums: boolean, internals:
         absorb: 40,
         effect: 'firepower',
       }),
-      comp('engine', 'engine and transmission', [-wl + 0.05, C + 0.05, zE + 0.08], [wl - 0.05, top - 0.08, zR - 0.12], {
-        absorb: 45,
+      comp(
+        'engine',
+        'engine and transmission',
+        [-wl + 0.05, C + 0.05, zE + 0.08],
+        [wl - 0.05, top - 0.08, zR - 0.12],
+        {
+          absorb: 45,
+          effect: 'mobility',
+        },
+      ),
+      comp(
+        'optics',
+        "gunner's sight",
+        [-0.62, top + Ht - 0.12, tz - 0.75],
+        [-0.22, top + Ht + 0.15, tz - 0.3],
+        {
+          turret: true,
+          external: true,
+          effect: 'firepower',
+        },
+      ),
+      comp(
+        'optics',
+        "commander's sights",
+        [0.22, top + Ht - 0.15, tz - 0.2],
+        [0.7, top + Ht + 0.16, tz + 0.35],
+        {
+          turret: true,
+          external: true,
+          weight: 0.5,
+        },
+      ),
+      comp(
+        'optics',
+        "driver's periscope",
+        [-0.25, top - 0.02, zG - 0.15],
+        [0.25, top + 0.12, zG + 0.1],
+        {
+          external: true,
+          weight: 0.3,
+        },
+      ),
+      comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], {
+        external: true,
         effect: 'mobility',
       }),
-      comp('optics', "gunner's sight", [-0.62, top + Ht - 0.12, tz - 0.75], [-0.22, top + Ht + 0.15, tz - 0.3], {
-        turret: true,
+      comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], {
         external: true,
-        effect: 'firepower',
+        effect: 'mobility',
       }),
-      comp('optics', "commander's sights", [0.22, top + Ht - 0.15, tz - 0.2], [0.7, top + Ht + 0.16, tz + 0.35], {
-        turret: true,
-        external: true,
-        weight: 0.5,
-      }),
-      comp('optics', "driver's periscope", [-0.25, top - 0.02, zG - 0.15], [0.25, top + 0.12, zG + 0.1], {
-        external: true,
-        weight: 0.3,
-      }),
-      comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], { external: true, effect: 'mobility' }),
-      comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], { external: true, effect: 'mobility' }),
-      comp('fuel', 'fender fuel cells', [wl + 0.03, yF + 0.02, -1.11], [xo - 0.03, yF + 0.42, 2.56], {
-        external: true,
-        weight: 0.4,
-      }),
+      comp(
+        'fuel',
+        'fender fuel cells',
+        [wl + 0.03, yF + 0.02, -1.11],
+        [xo - 0.03, yF + 0.42, 2.56],
+        {
+          external: true,
+          weight: 0.4,
+        },
+      ),
     );
     if (drums) {
       comps.push(
-        comp('fuel', 'rear fuel drums', [-1.0, top - 0.56, zR + 0.02], [1.0, top + 0.02, zR + 0.6], {
-          external: true,
-          weight: 0.3,
-        }),
+        comp(
+          'fuel',
+          'rear fuel drums',
+          [-1.0, top - 0.56, zR + 0.02],
+          [1.0, top + 0.02, zR + 0.6],
+          {
+            external: true,
+            weight: 0.3,
+          },
+        ),
       );
     }
   }
@@ -865,7 +949,15 @@ function buildIfv(s: VehicleShape) {
   // so the nose runs smoothly into it.
   const zKnee = zF + 1.7;
   const glacis = () =>
-    slope('upper glacis', 'front', A.upperFront, [0, yN + 0.01, zF], [0, yMid, zKnee], 'x', [0, 1, -1]);
+    slope(
+      'upper glacis',
+      'front',
+      A.upperFront,
+      [0, yN + 0.01, zF],
+      [0, yMid, zKnee],
+      'x',
+      [0, 1, -1],
+    );
   const upperSides = () => [
     slope('right upper side', 'side', A.sideUpper, [W / 2, yF, 0], [wT, top, 0], 'z', [1, 1, 0]),
     slope('left upper side', 'side', A.sideUpper, [-W / 2, yF, 0], [-wT, top, 0], 'z', [-1, 1, 0]),
@@ -882,7 +974,15 @@ function buildIfv(s: VehicleShape) {
           top: A.sponsonFloor,
           bottom: A.belly,
         }),
-        slope('lower front', 'front', A.lowerFront, [0, C, zF + 0.55], [0, yN, zF], 'x', [0, -1, -1]),
+        slope(
+          'lower front',
+          'front',
+          A.lowerFront,
+          [0, C, zF + 0.55],
+          [0, yN, zF],
+          'x',
+          [0, -1, -1],
+        ),
         glacis(),
       ],
       [-wl, C, zF],
@@ -916,7 +1016,15 @@ function buildIfv(s: VehicleShape) {
           top: A.roof,
           bottom: A.sponsonFloor,
         }),
-        slope('front roof', 'front', A.frontTop, [0, yMid, zKnee], [0, top, zF + 2.35], 'x', [0, 1, -1]),
+        slope(
+          'front roof',
+          'front',
+          A.frontTop,
+          [0, yMid, zKnee],
+          [0, top, zF + 2.35],
+          'x',
+          [0, 1, -1],
+        ),
         ...upperSides(),
       ],
       [-W / 2, yF, zKnee],
@@ -984,9 +1092,15 @@ function buildIfv(s: VehicleShape) {
       turret: true,
     }),
     comp('crew', 'troop compartment', [-1.0, C + 0.08, 0.6], [1.0, C + 1.33, zR - 0.35]),
-    comp('fuel', 'rear-door fuel tanks', [-0.95, C + 0.13, zR - 0.33], [0.95, C + 1.13, zR - 0.03], {
-      weight: 0.6,
-    }),
+    comp(
+      'fuel',
+      'rear-door fuel tanks',
+      [-0.95, C + 0.13, zR - 0.33],
+      [0.95, C + 1.13, zR - 0.03],
+      {
+        weight: 0.6,
+      },
+    ),
     comp('fuel', 'centre fuel tank', [-0.25, C + 0.08, 0.6], [0.25, C + 0.88, zR - 0.45], {
       weight: 0.8,
     }),
@@ -997,17 +1111,35 @@ function buildIfv(s: VehicleShape) {
       absorb: 15,
       effect: 'firepower',
     }),
-    comp('optics', "gunner's sight", [-0.42, top + Ht - 0.05, tz - 0.45], [-0.15, top + Ht + 0.15, tz - 0.1], {
-      turret: true,
+    comp(
+      'optics',
+      "gunner's sight",
+      [-0.42, top + Ht - 0.05, tz - 0.45],
+      [-0.15, top + Ht + 0.15, tz - 0.1],
+      {
+        turret: true,
+        external: true,
+        effect: 'firepower',
+      },
+    ),
+    comp(
+      'optics',
+      "driver's periscopes",
+      [-0.85, glacisY(-2.4) - 0.03, -2.4],
+      [-0.35, glacisY(-2.15) + 0.12, -2.15],
+      {
+        external: true,
+        weight: 0.3,
+      },
+    ),
+    comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], {
       external: true,
-      effect: 'firepower',
+      effect: 'mobility',
     }),
-    comp('optics', "driver's periscopes", [-0.85, glacisY(-2.4) - 0.03, -2.4], [-0.35, glacisY(-2.15) + 0.12, -2.15], {
+    comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], {
       external: true,
-      weight: 0.3,
+      effect: 'mobility',
     }),
-    comp('runningGear', 'left track', [-xo, 0, zF], [-xi, yT, zR], { external: true, effect: 'mobility' }),
-    comp('runningGear', 'right track', [xi, 0, zF], [xo, yT, zR], { external: true, effect: 'mobility' }),
   ];
   return compile('ifv', defs, comps, tz);
 }
@@ -1066,21 +1198,69 @@ function buildApc(s: VehicleShape) {
         slope('left lower side', 'side', A.sideLower, [-xB, C, 0], [-xW, yW, 0], 'z', [-1, -1, 0]),
         slope('right upper side', 'side', A.sideUpper, [xW, yW, 0], [xT, top, 0], 'z', [1, 1, 0]),
         slope('left upper side', 'side', A.sideUpper, [-xW, yW, 0], [-xT, top, 0], 'z', [-1, 1, 0]),
-        slope('upper front', 'front', A.upperFront, [0, C + 0.62, zF], [0, top, zF + 1.6], 'x', [
-          0, 1, -1,
-        ]),
-        slope('lower front', 'front', A.lowerFront, [0, C + 0.08, zF + 0.7], [0, C + 0.5, zF], 'x', [
-          0, -1, -1,
-        ]),
-        slope('right front quarter', 'front', A.frontQuarter, [xW, 0, zF + 1.6], [W / 2 - 0.3, 0, zF + 0.7], 'y', [
-          1, 0, -1,
-        ]),
-        slope('left front quarter', 'front', A.frontQuarter, [-xW, 0, zF + 1.6], [-(W / 2 - 0.3), 0, zF + 0.7], 'y', [
-          -1, 0, -1,
-        ]),
-        slope('engine deck', 'top', A.engineDeck, [0, top, zR - 1.7], [0, top - 0.32, zR], 'x', [0, 1, 1]),
-        slope('right rear quarter', 'side', A.rear, [xW, 0, zR - 1.7], [W / 2 - 0.12, 0, zR], 'y', [1, 0, 1]),
-        slope('left rear quarter', 'side', A.rear, [-xW, 0, zR - 1.7], [-(W / 2 - 0.12), 0, zR], 'y', [-1, 0, 1]),
+        slope(
+          'upper front',
+          'front',
+          A.upperFront,
+          [0, C + 0.62, zF],
+          [0, top, zF + 1.6],
+          'x',
+          [0, 1, -1],
+        ),
+        slope(
+          'lower front',
+          'front',
+          A.lowerFront,
+          [0, C + 0.08, zF + 0.7],
+          [0, C + 0.5, zF],
+          'x',
+          [0, -1, -1],
+        ),
+        slope(
+          'right front quarter',
+          'front',
+          A.frontQuarter,
+          [xW, 0, zF + 1.6],
+          [W / 2 - 0.3, 0, zF + 0.7],
+          'y',
+          [1, 0, -1],
+        ),
+        slope(
+          'left front quarter',
+          'front',
+          A.frontQuarter,
+          [-xW, 0, zF + 1.6],
+          [-(W / 2 - 0.3), 0, zF + 0.7],
+          'y',
+          [-1, 0, -1],
+        ),
+        slope(
+          'engine deck',
+          'top',
+          A.engineDeck,
+          [0, top, zR - 1.7],
+          [0, top - 0.32, zR],
+          'x',
+          [0, 1, 1],
+        ),
+        slope(
+          'right rear quarter',
+          'side',
+          A.rear,
+          [xW, 0, zR - 1.7],
+          [W / 2 - 0.12, 0, zR],
+          'y',
+          [1, 0, 1],
+        ),
+        slope(
+          'left rear quarter',
+          'side',
+          A.rear,
+          [-xW, 0, zR - 1.7],
+          [-(W / 2 - 0.12), 0, zR],
+          'y',
+          [-1, 0, 1],
+        ),
       ],
       [-W / 2, C, zF],
       [W / 2, top, zR],
@@ -1095,8 +1275,15 @@ function buildApc(s: VehicleShape) {
       const name = `${side < 0 ? 'left' : 'right'} wheel ${i + 1}`;
       const min: V3 = [side * xw - ww / 2, 0, z - r];
       const max: V3 = [side * xw + ww / 2, 2 * r, z + r];
-      defs.push(boxPart(name, 'wheels', min, max, uniform(A.wheel), { spaced: true, component: 'runningGear' }));
-      comps.push(comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }));
+      defs.push(
+        boxPart(name, 'wheels', min, max, uniform(A.wheel), {
+          spaced: true,
+          component: 'runningGear',
+        }),
+      );
+      comps.push(
+        comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }),
+      );
     }
   });
   defs.push(
@@ -1109,7 +1296,11 @@ function buildApc(s: VehicleShape) {
       () => 0.97 * R,
       35 * DEG,
       55 * DEG,
-      SECTORS([A.turretFront, A.turretRoof], [A.turretSide, A.turretRoof], [A.turretSide, A.turretRoof]),
+      SECTORS(
+        [A.turretFront, A.turretRoof],
+        [A.turretSide, A.turretRoof],
+        [A.turretSide, A.turretRoof],
+      ),
       A.turretRoof,
       A.turretSide,
     ),
@@ -1128,7 +1319,9 @@ function buildApc(s: VehicleShape) {
   );
   const frontY = (z: number) => C + 0.62 + ((z - zF) * (top - C - 0.62)) / 1.6;
   comps.push(
-    comp('crew', 'driver', [-1.0, C + 0.18, zF + 0.8], [0.0, C + 1.38, zF + 1.9], { effect: 'mobility' }),
+    comp('crew', 'driver', [-1.0, C + 0.18, zF + 0.8], [0.0, C + 1.38, zF + 1.9], {
+      effect: 'mobility',
+    }),
     comp('crew', 'commander', [0.0, C + 0.18, zF + 0.8], [1.0, C + 1.38, zF + 1.9]),
     comp('crew', 'gunner', [-0.4, C + 0.63, tz - 0.4], [0.4, top + 0.35, tz + 0.4], {
       turret: true,
@@ -1147,15 +1340,27 @@ function buildApc(s: VehicleShape) {
       absorb: 8,
       effect: 'firepower',
     }),
-    comp('optics', "gunner's sight", [-0.32, top + Ht - 0.05, tz - 0.35], [-0.1, top + Ht + 0.12, tz - 0.12], {
-      turret: true,
-      external: true,
-      effect: 'firepower',
-    }),
-    comp('optics', "driver's vision blocks", [-0.8, frontY(-3.05) - 0.05, -3.05], [0.8, frontY(-2.85) + 0.1, -2.85], {
-      external: true,
-      weight: 0.4,
-    }),
+    comp(
+      'optics',
+      "gunner's sight",
+      [-0.32, top + Ht - 0.05, tz - 0.35],
+      [-0.1, top + Ht + 0.12, tz - 0.12],
+      {
+        turret: true,
+        external: true,
+        effect: 'firepower',
+      },
+    ),
+    comp(
+      'optics',
+      "driver's vision blocks",
+      [-0.8, frontY(-3.05) - 0.05, -3.05],
+      [0.8, frontY(-2.85) + 0.1, -2.85],
+      {
+        external: true,
+        weight: 0.4,
+      },
+    ),
   );
   return compile('apc', defs, comps, tz);
 }
@@ -1195,10 +1400,17 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       top: T.cabSheet,
       bottom: T.cabFloor,
     }),
-    boxPart('fuel tank', 'tank', [-1.19, C - 0.39, zCabRear - 0.1], [-0.71, C + 0.09, zCabRear + 0.9], uniform(T.fuelTank), {
-      spaced: true,
-      component: 'fuel',
-    }),
+    boxPart(
+      'fuel tank',
+      'tank',
+      [-1.19, C - 0.39, zCabRear - 0.1],
+      [-0.71, C + 0.09, zCabRear + 0.9],
+      uniform(T.fuelTank),
+      {
+        spaced: true,
+        component: 'fuel',
+      },
+    ),
   ];
   const comps: ComponentBox[] = [
     comp('engine', 'engine', [-0.5, C + 0.1, zF + 0.25], [0.5, C + 0.85, zBonnet - 0.05], {
@@ -1208,9 +1420,15 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
     comp('crew', 'cab', [-1.05, C + 0.4, zBonnet + 0.1], [1.05, cabTop - 0.1, zCabRear - 0.08], {
       effect: 'mobility',
     }),
-    comp('fuel', 'fuel tank', [-1.19, C - 0.39, zCabRear - 0.1], [-0.71, C + 0.09, zCabRear + 0.9], {
-      external: true,
-    }),
+    comp(
+      'fuel',
+      'fuel tank',
+      [-1.19, C - 0.39, zCabRear - 0.1],
+      [-0.71, C + 0.09, zCabRear + 0.9],
+      {
+        external: true,
+      },
+    ),
   ];
   if (kind === 'truckCargo') {
     defs.push(
@@ -1225,15 +1443,40 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
         'canvas tilt',
         'cargo',
         [
-          ...boxPlates('tilt', [-W / 2 + 0.02, yBed + 0.6, zBed + 0.02], [W / 2 - 0.02, top, zR - 0.02], uniform(T.canvas)),
-          slope('right tilt shoulder', 'top', T.canvas, [W / 2 - 0.02, top - 0.32, 0], [W / 2 - 0.4, top, 0], 'z', [1, 1, 0]),
-          slope('left tilt shoulder', 'top', T.canvas, [-W / 2 + 0.02, top - 0.32, 0], [-W / 2 + 0.4, top, 0], 'z', [-1, 1, 0]),
+          ...boxPlates(
+            'tilt',
+            [-W / 2 + 0.02, yBed + 0.6, zBed + 0.02],
+            [W / 2 - 0.02, top, zR - 0.02],
+            uniform(T.canvas),
+          ),
+          slope(
+            'right tilt shoulder',
+            'top',
+            T.canvas,
+            [W / 2 - 0.02, top - 0.32, 0],
+            [W / 2 - 0.4, top, 0],
+            'z',
+            [1, 1, 0],
+          ),
+          slope(
+            'left tilt shoulder',
+            'top',
+            T.canvas,
+            [-W / 2 + 0.02, top - 0.32, 0],
+            [-W / 2 + 0.4, top, 0],
+            'z',
+            [-1, 1, 0],
+          ),
         ],
         [-W / 2 + 0.02, yBed + 0.6, zBed + 0.02],
         [W / 2 - 0.02, top, zR - 0.02],
       ),
     );
-    comps.push(comp('cargo', 'cargo', [-1.15, yBed + 0.05, zBed + 0.1], [1.15, top - 0.15, zR - 0.1], { absorb: 8 }));
+    comps.push(
+      comp('cargo', 'cargo', [-1.15, yBed + 0.05, zBed + 0.1], [1.15, top - 0.15, zR - 0.1], {
+        absorb: 8,
+      }),
+    );
   } else if (kind === 'truckFuel') {
     const yb = yBed + 0.08;
     const rv = (top - yb) / 2;
@@ -1251,11 +1494,25 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       const sn = Math.sin(a);
       const face: ArmourFace = sn > 0.5 ? 'top' : sn < -0.5 ? 'bottom' : 'side';
       // tangent plane of the elliptical shell at angle a (outward normal ∝ (cos a / rh, sin a / rv))
-      plates.push(plane(`tank shell ${k}`, face, T.tankerShell, [c / rh, sn / rv, 0], [rh * c, yc + rv * sn, 0]));
+      plates.push(
+        plane(
+          `tank shell ${k}`,
+          face,
+          T.tankerShell,
+          [c / rh, sn / rv, 0],
+          [rh * c, yc + rv * sn, 0],
+        ),
+      );
     }
     defs.push(part('tank body', 'tank', plates, [-rh, yb, z0], [rh, top, z1]));
     comps.push(
-      comp('fuel', 'tank load', [-rh + 0.1, yb + 0.1, z0 + 0.05], [rh - 0.1, top - 0.1, z1 - 0.05], { weight: 3 }),
+      comp(
+        'fuel',
+        'tank load',
+        [-rh + 0.1, yb + 0.1, z0 + 0.05],
+        [rh - 0.1, top - 0.1, z1 - 0.05],
+        { weight: 3 },
+      ),
     );
   } else {
     const chh = Math.min(0.5, (top - yBed - 0.3) / 3);
@@ -1269,13 +1526,25 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
         top: 0,
         bottom: T.bedFloor,
       }),
-      boxPart('ammunition crates', 'cargo', [-W / 2 + 0.125, yBed + 0.06, zBed + 0.125], [W / 2 - 0.125, cTop, zR - 0.125], uniform(T.crates)),
+      boxPart(
+        'ammunition crates',
+        'cargo',
+        [-W / 2 + 0.125, yBed + 0.06, zBed + 0.125],
+        [W / 2 - 0.125, cTop, zR - 0.125],
+        uniform(T.crates),
+      ),
     );
     comps.push(
-      comp('ammo', 'ammunition load', [-W / 2 + 0.2, yBed + 0.1, zBed + 0.2], [W / 2 - 0.2, cTop - 0.05, zR - 0.2], {
-        absorb: 25,
-        weight: 2,
-      }),
+      comp(
+        'ammo',
+        'ammunition load',
+        [-W / 2 + 0.2, yBed + 0.1, zBed + 0.2],
+        [W / 2 - 0.2, cTop - 0.05, zR - 0.2],
+        {
+          absorb: 25,
+          weight: 2,
+        },
+      ),
     );
   }
   const ww = Math.min(0.42, r * 0.72);
@@ -1287,8 +1556,15 @@ function buildTruck(kind: 'truckCargo' | 'truckFuel' | 'truckAmmo', s: VehicleSh
       const name = `${side < 0 ? 'left' : 'right'} wheel ${i + 1}`;
       const min: V3 = [side * xw - ww / 2, 0, z - r];
       const max: V3 = [side * xw + ww / 2, 2 * r, z + r];
-      defs.push(boxPart(name, 'wheels', min, max, uniform(T.tyre), { spaced: true, component: 'runningGear' }));
-      comps.push(comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }));
+      defs.push(
+        boxPart(name, 'wheels', min, max, uniform(T.tyre), {
+          spaced: true,
+          component: 'runningGear',
+        }),
+      );
+      comps.push(
+        comp('runningGear', name, min, max, { external: true, weight: 1 / (2 * zs.length) }),
+      );
     }
   });
   return compile(kind, defs, comps, 0);
@@ -1300,7 +1576,15 @@ function buildPanel(s: VehicleShape) {
   const t = Math.min(0.12, s.hullLength * 0.4) / 2;
   return compile(
     'panel',
-    [boxPart('panel', 'panel', [-w, s.hullClearance, -t], [w, s.hullClearance + s.hullHeight, t], uniform(0))],
+    [
+      boxPart(
+        'panel',
+        'panel',
+        [-w, s.hullClearance, -t],
+        [w, s.hullClearance + s.hullHeight, t],
+        uniform(0),
+      ),
+    ],
     [],
     0,
   );
@@ -1358,7 +1642,11 @@ export const ROUND_EFFECTS = {
 } as const;
 
 export const ROUND_EFFECTS_NOTES: Record<keyof typeof ROUND_EFFECTS, SourceNote> = {
-  ricochetObliquity: { source: 'plan', confidence: 'approximate', note: 'docs/a10/ARCHITECTURE.md §5' },
+  ricochetObliquity: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'docs/a10/ARCHITECTURE.md §5',
+  },
   ricochetMinThicknessMm: { source: 'plan', confidence: 'estimate' },
   ricochetTangential: {
     source: 'plan',
@@ -1442,7 +1730,11 @@ export const KILL_RULES = {
 
 export const KILL_RULES_NOTES: Record<keyof typeof KILL_RULES, SourceNote> = {
   boxDead: { source: 'plan', confidence: 'estimate' },
-  crewKill: { source: 'plan', confidence: 'estimate', note: 'PLAN §9: crew casualties → destroyed' },
+  crewKill: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'PLAN §9: crew casualties → destroyed',
+  },
   runningGearKill: { source: 'plan', confidence: 'estimate' },
   fireKill: { source: 'plan', confidence: 'estimate', note: 'PLAN §9: destroyed and burning' },
   truckFailures: { source: 'plan', confidence: 'estimate' },
@@ -1583,7 +1875,11 @@ export const AMMO_EFFECTS_NOTES: Partial<Record<VehicleKind, SourceNote>> = {
   },
   ifv: { source: 'plan', confidence: 'estimate' },
   apc: { source: 'plan', confidence: 'estimate', note: '14.5 / 7.62 mm ammunition only' },
-  truckAmmo: { source: 'plan', confidence: 'estimate', note: 'PLAN §9: large secondary explosions' },
+  truckAmmo: {
+    source: 'plan',
+    confidence: 'estimate',
+    note: 'PLAN §9: large secondary explosions',
+  },
   truckFuel: { source: 'plan', confidence: 'estimate', note: 'tanker load bursting in a fireball' },
 };
 
@@ -1654,7 +1950,12 @@ export interface BlastLevel {
  */
 export const BLAST_THRESHOLDS: Record<
   VehicleKind,
-  { catastrophic: BlastLevel | null; destroyed: BlastLevel; heavy: BlastLevel; light: BlastLevel } | null
+  {
+    catastrophic: BlastLevel | null;
+    destroyed: BlastLevel;
+    heavy: BlastLevel;
+    light: BlastLevel;
+  } | null
 > = {
   mbt: {
     catastrophic: { z: 0.45, impulse: 2200 },
@@ -1760,10 +2061,18 @@ export const FRAGMENTS_NOTES: Record<keyof typeof FRAGMENTS, SourceNote> = {
   },
   mottCaseRef: { source: 'plan', confidence: 'estimate' },
   mottScaleExp: { source: 'plan', confidence: 'estimate', note: 'μ ∝ t^(5/6)·d^(2/3) ∝ M^(1/2)' },
-  gurney: { source: 'plan', confidence: 'approximate', note: 'Gurney (1943): TNT √(2E) ≈ 2.44 km/s' },
+  gurney: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'Gurney (1943): TNT √(2E) ≈ 2.44 km/s',
+  },
   minMass: { source: 'plan', confidence: 'estimate' },
   groundFactor: { source: 'plan', confidence: 'estimate' },
-  dragCoeff: { source: 'plan', confidence: 'approximate', note: 'irregular steel fragments, supersonic' },
+  dragCoeff: {
+    source: 'plan',
+    confidence: 'approximate',
+    note: 'irregular steel fragments, supersonic',
+  },
   shapeFactor: { source: 'plan', confidence: 'approximate', note: 'mean presented area of a cube' },
   penCoeff: {
     source: 'plan',

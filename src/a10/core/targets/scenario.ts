@@ -106,7 +106,14 @@ function newGroup(
   return g;
 }
 
-function add(sim: Sim, g: VehicleGroup, kind: VehicleKind, x: number, z: number, heading: number): Vehicle {
+function add(
+  sim: Sim,
+  g: VehicleGroup,
+  kind: VehicleKind,
+  x: number,
+  z: number,
+  heading: number,
+): Vehicle {
   const v = createVehicle(sim, kind, x, z, heading, g.id);
   g.vehicleIds.push(v.id);
   return v;
@@ -154,7 +161,10 @@ function placeOpen(sim: Sim, spot: Spot, template: string, name: string): Vehicl
   const reach = Math.max(60, spot.radius * 0.6);
   kinds.forEach((kind, i) => {
     for (let tries = 0; tries < 16; tries++) {
-      const across = (i - (kinds.length - 1) / 2) * spacing + r.range(-10, 10) + (tries > 4 ? r.range(-reach, reach) : 0);
+      const across =
+        (i - (kinds.length - 1) / 2) * spacing +
+        r.range(-10, 10) +
+        (tries > 4 ? r.range(-reach, reach) : 0);
       const along = r.range(-25, 25) + (tries > 4 ? r.range(-reach, reach) : 0);
       const x = spot.x + Math.cos(h) * across + fx * along;
       const z = spot.z + Math.sin(h) * across + fz * along;
@@ -214,7 +224,8 @@ function placeTreeline(sim: Sim, spot: Spot, template: string, name: string): Ve
     if (!placed) {
       px += rx * side * (edge - 8);
       pz += rz * side * (edge - 8);
-      if (groundOk(sim, px, pz, true) && !tooClose(sim, px, pz, 12)) add(sim, g, kind, px, pz, face);
+      if (groundOk(sim, px, pz, true) && !tooClose(sim, px, pz, 12))
+        add(sim, g, kind, px, pz, face);
     }
   });
   if (g.vehicleIds.length === 0) {
@@ -236,7 +247,8 @@ function placeDugIn(sim: Sim, spot: Spot, template: string, name: string): Vehic
   g.spacing = SCENARIO.dugInSpacing;
   kinds.forEach((kind, i) => {
     for (let tries = 0; tries < 12; tries++) {
-      const across = (i - (kinds.length - 1) / 2) * SCENARIO.dugInSpacing + r.range(-8, 8) * (1 + tries);
+      const across =
+        (i - (kinds.length - 1) / 2) * SCENARIO.dugInSpacing + r.range(-8, 8) * (1 + tries);
       const along = r.range(-10, 10) * (1 + tries * 0.5);
       const x = spot.x + Math.cos(h) * across + fx * along;
       const z = spot.z + Math.sin(h) * across + fz * along;
@@ -417,7 +429,14 @@ function placeGroup(sim: Sim, spot: Spot, placement: Placement): VehicleGroup | 
 }
 
 /** A made-up spot on valid ground between `minD` and `maxD` from (x, z). */
-function freeSpot(sim: Sim, x: number, z: number, minD: number, maxD: number, id: number): Spot | null {
+function freeSpot(
+  sim: Sim,
+  x: number,
+  z: number,
+  minD: number,
+  maxD: number,
+  id: number,
+): Spot | null {
   const r = sim.rng.targets;
   for (let k = 0; k < 60; k++) {
     const a = r.range(0, Math.PI * 2);
@@ -453,7 +472,17 @@ function roadSpot(sim: Sim, x: number, z: number, minD: number): Spot | null {
     const d = r.range(400, L - 400);
     const p = pointAlongRoad(road, d, _rp);
     if (Math.hypot(p.x - x, p.z - z) < minD) continue;
-    return { id: -1, name: 'ROAD', kind: 'road', x: p.x, z: p.z, radius: 600, heading: p.heading, roadId: ri, roadDistance: d };
+    return {
+      id: -1,
+      name: 'ROAD',
+      kind: 'road',
+      x: p.x,
+      z: p.z,
+      radius: 600,
+      heading: p.heading,
+      roadId: ri,
+      roadDistance: d,
+    };
   }
   return null;
 }
@@ -491,7 +520,8 @@ function populateFreeHunt(sim: Sim): void {
   // a column or two on the roads
   for (let c = 0; c < columns && placed < n; c++) {
     const spot =
-      take((s) => s.kind === 'road' && s.roadId >= 0) ?? roadSpot(sim, ax, az, SCENARIO.minDistance);
+      take((s) => s.kind === 'road' && s.roadId >= 0) ??
+      roadSpot(sim, ax, az, SCENARIO.minDistance);
     if (spot && placeGroup(sim, spot, 'column')) placed++;
   }
   // one of each other kind for variety
@@ -518,14 +548,22 @@ export function spawnHuntGroup(sim: Sim): VehicleGroup | null {
   const r = sim.rng.targets;
   const ax = sim.aircraft.position.x;
   const az = sim.aircraft.position.z;
-  const busy = (id: number) => sim.targets.groups.some((g) => !g.wipedOut && g.areaId === id && id >= 0);
+  const busy = (id: number) =>
+    sim.targets.groups.some((g) => !g.wipedOut && g.areaId === id && id >= 0);
   const spots = sim.world.terrain.targetAreas
-    .filter((a) => a.kind !== 'range' && Math.hypot(a.x - ax, a.z - az) > SCENARIO.minDistance && !busy(a.id))
+    .filter(
+      (a) =>
+        a.kind !== 'range' && Math.hypot(a.x - ax, a.z - az) > SCENARIO.minDistance && !busy(a.id),
+    )
     .map(spotOf);
   shuffle(r, spots);
-  const columnAlive = sim.targets.groups.some((g) => !g.wipedOut && g.behaviour === 'column' && g.reacts);
+  const columnAlive = sim.targets.groups.some(
+    (g) => !g.wipedOut && g.behaviour === 'column' && g.reacts,
+  );
   if (!columnAlive) {
-    const road = spots.find((s) => s.kind === 'road' && s.roadId >= 0) ?? roadSpot(sim, ax, az, SCENARIO.minDistance);
+    const road =
+      spots.find((s) => s.kind === 'road' && s.roadId >= 0) ??
+      roadSpot(sim, ax, az, SCENARIO.minDistance);
     if (road) {
       const g = placeGroup(sim, road, 'column');
       if (g) return g;
@@ -598,7 +636,17 @@ function rangeSpot(sim: Sim, name: string): Spot {
   const s = sim.world.terrain.start;
   const x = s.x + Math.sin(s.heading) * 10000;
   const z = s.z - Math.cos(s.heading) * 10000;
-  return { id: -1, name, kind: 'range', x, z, radius: 400, heading: s.heading, roadId: -1, roadDistance: 0 };
+  return {
+    id: -1,
+    name,
+    kind: 'range',
+    x,
+    z,
+    radius: 400,
+    heading: s.heading,
+    roadId: -1,
+    roadDistance: 0,
+  };
 }
 
 function populateStrafePit(sim: Sim): void {
@@ -619,7 +667,14 @@ function populateStrafePit(sim: Sim): void {
   for (let i = 0; i < RANGE_LAYOUT.strafeHulks; i++) {
     const across = (i - (RANGE_LAYOUT.strafeHulks - 1) / 2) * RANGE_LAYOUT.panelSpacing * 1.5;
     const along = RANGE_LAYOUT.hulksBehind;
-    add(sim, g, 'hulk', spot.x + rx * across + fx * along, spot.z + rz * across + fz * along, r.range(0, Math.PI * 2));
+    add(
+      sim,
+      g,
+      'hulk',
+      spot.x + rx * across + fx * along,
+      spot.z + rz * across + fz * along,
+      r.range(0, Math.PI * 2),
+    );
   }
   updateGroupBounds(sim, g);
 }
@@ -633,8 +688,18 @@ function populateBombCircle(sim: Sim): void {
   const rMax = Math.min(RANGE_LAYOUT.circleRadiusMax, spot.radius * 0.8);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + r.range(-0.3, 0.3);
-    const d = r.range(RANGE_LAYOUT.circleRadiusMin, Math.max(RANGE_LAYOUT.circleRadiusMin + 10, rMax));
-    add(sim, g, 'hulk', spot.x + Math.cos(a) * d, spot.z + Math.sin(a) * d, r.range(0, Math.PI * 2));
+    const d = r.range(
+      RANGE_LAYOUT.circleRadiusMin,
+      Math.max(RANGE_LAYOUT.circleRadiusMin + 10, rMax),
+    );
+    add(
+      sim,
+      g,
+      'hulk',
+      spot.x + Math.cos(a) * d,
+      spot.z + Math.sin(a) * d,
+      r.range(0, Math.PI * 2),
+    );
   }
   updateGroupBounds(sim, g);
 }
@@ -678,4 +743,3 @@ export function populateScenario(sim: Sim): void {
       break;
   }
 }
-

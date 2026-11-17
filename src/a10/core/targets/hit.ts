@@ -14,12 +14,11 @@ import { VEHICLE_MODELS } from '../../data/vehicles';
 import type { Sim } from '../types';
 import { forEachNear } from './grid';
 import {
-  createPose,
   hullDirToWorld,
   hullDirToTurret,
   hullToTurret,
-  poseOf,
   turretDirToHull,
+  vehiclePose,
   worldDirToHull,
   worldToHull,
   type Pose,
@@ -183,7 +182,6 @@ export function plateNormalWorld(
 
 // ---- segmentHitVehicle -------------------------------------------------------------------------
 
-const _pose = createPose();
 const _ph: PartHit = { t: 0, part: -1, plate: null, exit: 0 };
 const _n: V3 = { x: 0, y: 0, z: 0 };
 
@@ -219,9 +217,12 @@ function visitSegment(i: number): boolean {
   const ey = oy + qdy * s;
   const ez = oz + qdz * s;
   if (ex * ex + ey * ey + ez * ez > r * r) return true;
-  poseOf(v, model.turretZ, _pose);
-  if (rayVehicle(sim, v, _pose, qx, qy, qz, qdx, qdy, qdz, 0, Math.min(1, qBest), -1, _ph)) {
-    if (_ph.t < qBest || (_ph.t === qBest && qVehicle >= 0 && v.id < sim.targets.vehicles[qVehicle].id)) {
+  const pose = vehiclePose(v, model.turretZ);
+  if (rayVehicle(sim, v, pose, qx, qy, qz, qdx, qdy, qdz, 0, Math.min(1, qBest), -1, _ph)) {
+    if (
+      _ph.t < qBest ||
+      (_ph.t === qBest && qVehicle >= 0 && v.id < sim.targets.vehicles[qVehicle].id)
+    ) {
       qBest = _ph.t;
       qVehicle = i;
       qPart = _ph.part;
@@ -251,7 +252,14 @@ export function segmentHitVehicle(sim: Sim, p0: Vector3, p1: Vector3, out: Vehic
   qVehicle = -1;
   qPart = -1;
   qPlate = null;
-  forEachNear(t, Math.min(p0.x, p1.x), Math.min(p0.z, p1.z), Math.max(p0.x, p1.x), Math.max(p0.z, p1.z), visitSegment);
+  forEachNear(
+    t,
+    Math.min(p0.x, p1.x),
+    Math.min(p0.z, p1.z),
+    Math.max(p0.x, p1.x),
+    Math.max(p0.z, p1.z),
+    visitSegment,
+  );
   qSim = null;
   return finishHit(sim, p0, out);
 }
@@ -266,8 +274,7 @@ function finishHit(sim: Sim, p0: Vector3, out: VehicleHit): boolean {
   const v = t.vehicles[vi];
   const model = VEHICLE_MODELS[v.kind];
   const part = model.parts[qPart];
-  poseOf(v, model.turretZ, _pose);
-  plateNormalWorld(_pose, part, plate, _n);
+  plateNormalWorld(vehiclePose(v, model.turretZ), part, plate, _n);
   out.vehicleId = v.id;
   out.t = qBest;
   out.point.set(p0.x + qdx * qBest, p0.y + qdy * qBest, p0.z + qdz * qBest);
@@ -308,7 +315,12 @@ export function segmentHitVehicleAll(sim: Sim, p0: Vector3, p1: Vector3, out: Ve
 export function partOfPlate(model: VehicleClassModel, plateIndex: number): number {
   for (let i = 0; i < model.parts.length; i++) {
     const plates = model.parts[i].plates;
-    if (plates.length && plateIndex >= plates[0].index && plateIndex <= plates[plates.length - 1].index) return i;
+    if (
+      plates.length &&
+      plateIndex >= plates[0].index &&
+      plateIndex <= plates[plates.length - 1].index
+    )
+      return i;
   }
   return 0;
 }

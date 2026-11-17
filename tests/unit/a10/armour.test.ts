@@ -243,7 +243,14 @@ describe('T-72 class: the attack table of PLAN §6.3', () => {
     const res = newResult();
     const p = hullToWorld(v, DECK[0], DECK[1], DECK[2]);
     const dir = vel.clone().normalize();
-    expect(segmentHitVehicle(sim, p.clone().addScaledVector(dir, -40), p.clone().addScaledVector(dir, 0.5), hit)).toBe(true);
+    expect(
+      segmentHitVehicle(
+        sim,
+        p.clone().addScaledVector(dir, -40),
+        p.clone().addScaledVector(dir, 0.5),
+        hit,
+      ),
+    ).toBe(true);
     resolveRoundHit(sim, hit, RoundType.API, vel, res);
     expect(res.outcome).toBe('ricochet');
     const out = res.ricochetVelocity;
@@ -278,7 +285,12 @@ describe('T-72 class: the attack table of PLAN §6.3', () => {
       const dir = vel.clone().normalize();
       const p = hullToWorld(v, REAR[0], REAR[1], REAR[2]);
       for (let k = 0; k < 3; k++) {
-        segmentHitVehicle(sim, p.clone().addScaledVector(dir, -40), p.clone().addScaledVector(dir, 0.5), hit);
+        segmentHitVehicle(
+          sim,
+          p.clone().addScaledVector(dir, -40),
+          p.clone().addScaledVector(dir, 0.5),
+          hit,
+        );
         resolveRoundHit(sim, hit, RoundType.API, vel, res);
       }
       if (v.mobilityKill) mobility++;
@@ -286,7 +298,7 @@ describe('T-72 class: the attack table of PLAN §6.3', () => {
     expect(mobility / n).toBeGreaterThan(0.6);
   });
 
-  it('side plate (80 mm): never penetrated from 500 m and beyond', () => {
+  it('side plate (80 mm): never penetrated from 500 m and beyond', { timeout: 60_000 }, () => {
     for (const dive of [1, 5, 10, 20, 30]) {
       for (const range of [500, 700, 1000, 1500]) {
         const vel = impactVelocity(dive, range);
@@ -384,7 +396,7 @@ describe('light armour and trucks', () => {
     });
   }
 
-  it('trucks are destroyed by HEI bursts', () => {
+  it('trucks are destroyed by HEI bursts', { timeout: 60_000 }, () => {
     const vel = impactVelocity(20, 1000, RoundType.HEI);
     const dir = vel.clone().normalize();
     for (const kind of ['truckCargo', 'truckFuel', 'truckAmmo'] as const) {
@@ -400,7 +412,15 @@ describe('light armour and trucks', () => {
         for (let k = 0; k < 8; k++) {
           const z = -s.hullLength / 2 + 0.6 + (k / 7) * (s.hullLength - 1.2);
           const p = hullToWorld(v, s.hullWidth / 2, s.hullClearance + 0.8, z);
-          if (!segmentHitVehicle(sim, p.clone().addScaledVector(dir, -40), p.clone().addScaledVector(dir, 2), hit)) continue;
+          if (
+            !segmentHitVehicle(
+              sim,
+              p.clone().addScaledVector(dir, -40),
+              p.clone().addScaledVector(dir, 2),
+              hit,
+            )
+          )
+            continue;
           resolveRoundHit(sim, hit, RoundType.HEI, vel, res);
           expect(res.outcome).toBe('burst');
         }

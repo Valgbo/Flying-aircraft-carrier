@@ -8,6 +8,7 @@
  */
 import type { Vector3 } from 'three';
 import type { RoadPolyline } from '../world/types';
+import type { Pose } from './pose';
 
 export type VehicleKind =
   | 'mbt' // main battle tank, T-72 class
@@ -224,6 +225,9 @@ export interface VehicleInternal {
   groundRoll: number;
   /** Steps until the next ground-slope sample. */
   slopeTimer: number;
+  /** Cached pose for the hit tests and what it was computed from (pose.ts, vehiclePose). */
+  pose: Pose;
+  poseKey: Float64Array;
 }
 
 export type GroupBehaviour = 'parked' | 'column' | 'dugIn' | 'scatter' | 'static';
