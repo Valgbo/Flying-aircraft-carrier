@@ -17,7 +17,6 @@ import {
 } from 'three';
 import { a10Env } from '../environment/env';
 
-
 const VERTEX = /* glsl */ `
   attribute vec4 iA;
   attribute vec4 iB;
@@ -112,7 +111,15 @@ export class RingPool {
   }
 
   /** A shell growing to `radius` (m) in `duration` (s); strength 0..1; colour linear. */
-  add(x: number, y: number, z: number, radius: number, duration: number, strength: number, color: Vector3): void {
+  add(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    duration: number,
+    strength: number,
+    color: Vector3,
+  ): void {
     let i = 0;
     let oldest = Infinity;
     let pick = 0;
@@ -183,7 +190,11 @@ export class RingPool {
     u.uHazeDensity.value = a10Env.hazeDensity;
     // ambient plus some sun, as a pale shell of disturbed air and dust (irradiance / π)
     const light = u.uLight.value as Color;
-    light.copy(a10Env.sunColor).multiplyScalar(0.6).add(a10Env.ambientColor).multiplyScalar(1 / Math.PI);
+    light
+      .copy(a10Env.sunColor)
+      .multiplyScalar(0.6)
+      .add(a10Env.ambientColor)
+      .multiplyScalar(1 / Math.PI);
     this.geometry.instanceCount = n;
     if (n > 0) {
       this.aA.needsUpdate = true;

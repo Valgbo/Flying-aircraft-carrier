@@ -26,14 +26,30 @@ import { getA10Quality } from '../../view/quality';
 import { windingErrors, buildVehicleGeometry, VEHICLE_KINDS } from '../../view/vehicles/models';
 import { setThermalMode, type ThermalMode } from '../../view/vehicles/thermal';
 import { getVehicleRenderer } from '../../view/vehicles/VehiclesView';
-import { KitStage, numParam, params, SandboxWorld, useSandboxQuality, vecParam, type CameraPose } from './effectsKit';
+import {
+  KitStage,
+  numParam,
+  params,
+  SandboxWorld,
+  useSandboxQuality,
+  vecParam,
+  type CameraPose,
+} from './effectsKit';
 
 const CONDITIONS: VehicleCondition[] = ['intact', 'damaged', 'destroyed', 'catastrophic'];
 const SPACING_X = 15;
 const SPACING_Z = 13;
 const COLUMN_RADIUS = 150;
 const COLUMN_CENTRE = new Vector3(0, 0, -260);
-const COLUMN_KINDS: VehicleKind[] = ['mbt', 'mbt', 'ifv', 'apc', 'truckCargo', 'truckFuel', 'truckAmmo'];
+const COLUMN_KINDS: VehicleKind[] = [
+  'mbt',
+  'mbt',
+  'ifv',
+  'apc',
+  'truckCargo',
+  'truckFuel',
+  'truckAmmo',
+];
 const COLUMN_SPEED = 9.5;
 
 function gridPos(kindIndex: number, condIndex: number): Vector3 {
@@ -52,15 +68,20 @@ function setCondition(v: Vehicle, cond: VehicleCondition, fires: boolean, time: 
     v.mobilityKill = v.kind !== 'panel';
     v.firepowerKill = true;
   }
-  if (cond === 'destroyed') v.fire = fires ? 0.55 + 0.25 * ((v.id % 3) / 2) : 0;
+  // a shot-up scoring panel does not burn
+  const burns = fires && v.kind !== 'panel';
+  if (cond === 'destroyed') v.fire = burns ? 0.55 + 0.25 * ((v.id % 3) / 2) : 0;
   if (cond === 'catastrophic') {
-    v.fire = fires ? 0.9 : 0;
+    v.fire = burns ? 0.9 : 0;
     v.mobilityKill = true;
     if (v.kind === 'mbt' || v.kind === 'ifv' || v.kind === 'hulk' || v.kind === 'apc') {
       // the turret came down beside the hull, upside down
       const side = new Vector3(Math.cos(v.heading), 0, Math.sin(v.heading)).multiplyScalar(4.2);
       v.thrownTurret = {
-        position: v.position.clone().add(side).add(new Vector3(0, 0.75, 1.5)),
+        position: v.position
+          .clone()
+          .add(side)
+          .add(new Vector3(0, 0.75, 1.5)),
         velocity: new Vector3(),
         spin: new Vector3(),
         angle: new Vector3(Math.PI - 0.25, -v.heading + 0.7, 0.15),
@@ -79,7 +100,8 @@ function buildScene(fires: boolean, surface: SurfaceKind | null): Scene {
   const world = new SandboxWorld();
   if (surface) {
     // the flat test ground: one surface kind everywhere
-    (world.sim.world.terrain as { surfaceAt: (x: number, z: number) => SurfaceKind }).surfaceAt = () => surface;
+    (world.sim.world.terrain as { surfaceAt: (x: number, z: number) => SurfaceKind }).surfaceAt =
+      () => surface;
   }
   const grid: Vehicle[][] = [];
   const kinds = params.get('kinds')?.split(',') ?? null;
@@ -102,7 +124,11 @@ function buildScene(fires: boolean, surface: SurfaceKind | null): Scene {
     if (!v || v.kind === 'panel') continue;
     const s = Math.sin(v.heading);
     const c = Math.cos(v.heading);
-    const local = (x: number, y: number, z: number) => ({ x: v.position.x + x * c - z * s, y: v.position.y + y, z: v.position.z + x * s + z * c });
+    const local = (x: number, y: number, z: number) => ({
+      x: v.position.x + x * c - z * s,
+      y: v.position.y + y,
+      z: v.position.z + x * s + z * c,
+    });
     world.schedule(0.05, {
       type: 'roundImpact',
       t: 0,
@@ -136,7 +162,11 @@ function buildScene(fires: boolean, surface: SurfaceKind | null): Scene {
   const placeColumn = (t: number) => {
     column.forEach((v, i) => {
       const a = (t * COLUMN_SPEED) / COLUMN_RADIUS - (i * 26) / COLUMN_RADIUS;
-      v.position.set(COLUMN_CENTRE.x + Math.cos(a) * COLUMN_RADIUS, 0, COLUMN_CENTRE.z + Math.sin(a) * COLUMN_RADIUS);
+      v.position.set(
+        COLUMN_CENTRE.x + Math.cos(a) * COLUMN_RADIUS,
+        0,
+        COLUMN_CENTRE.z + Math.sin(a) * COLUMN_RADIUS,
+      );
       // moving counter-clockwise seen from above: velocity direction (-sin a, 0, cos a)
       const dx = -Math.sin(a);
       const dz = Math.cos(a);
@@ -155,19 +185,41 @@ function pose(view: string): CameraPose {
   if (cam && tgt) return { position: cam, target: tgt, fov: numParam('fov', 45) };
   if (view === 'close') {
     const ki = Math.max(0, VEHICLE_KINDS.indexOf((params.get('kind') as VehicleKind) ?? 'mbt'));
-    const ci = Math.max(0, CONDITIONS.indexOf((params.get('cond') as VehicleCondition) ?? 'intact'));
+    const ci = Math.max(
+      0,
+      CONDITIONS.indexOf((params.get('cond') as VehicleCondition) ?? 'intact'),
+    );
     const p = gridPos(ki, ci);
     const az = numParam('az', 35) * (Math.PI / 180);
     const r = numParam('r', 13);
-    return { position: [p.x + Math.sin(az) * r, numParam('h', 4.5), p.z + Math.cos(az) * r], target: [p.x, 1.3, p.z], fov: numParam('fov', 40) };
+    return {
+      position: [p.x + Math.sin(az) * r, numParam('h', 4.5), p.z + Math.cos(az) * r],
+      target: [p.x, 1.3, p.z],
+      fov: numParam('fov', 40),
+    };
   }
-  if (view === 'column') return { position: [COLUMN_CENTRE.x + 260, 120, COLUMN_CENTRE.z + 260], target: [COLUMN_CENTRE.x, 0, COLUMN_CENTRE.z], fov: numParam('fov', 45) };
-  if (view === 'far') return { position: [COLUMN_CENTRE.x + 900, 1300, COLUMN_CENTRE.z + 1300], target: [COLUMN_CENTRE.x, 0, COLUMN_CENTRE.z], fov: numParam('fov', 62) };
+  if (view === 'column')
+    return {
+      position: [COLUMN_CENTRE.x + 260, 120, COLUMN_CENTRE.z + 260],
+      target: [COLUMN_CENTRE.x, 0, COLUMN_CENTRE.z],
+      fov: numParam('fov', 45),
+    };
+  if (view === 'far')
+    return {
+      position: [COLUMN_CENTRE.x + 900, 1300, COLUMN_CENTRE.z + 1300],
+      target: [COLUMN_CENTRE.x, 0, COLUMN_CENTRE.z],
+      fov: numParam('fov', 62),
+    };
   if (view === 'lineup') {
     // the intact column seen from the side, kinds left to right
-    return { position: [-SPACING_X * 1.5 - 34, 9, 0], target: [-SPACING_X * 1.5, 1.2, 0], fov: numParam('fov', 75) };
+    return {
+      position: [-SPACING_X * 1.5 - 34, 9, 0],
+      target: [-SPACING_X * 1.5, 1.2, 0],
+      fov: numParam('fov', 75),
+    };
   }
-  if (view === 'top') return { position: [0.01, 150, 0], target: [0, 0, 0], fov: numParam('fov', 50) };
+  if (view === 'top')
+    return { position: [0.01, 150, 0], target: [0, 0, 0], fov: numParam('fov', 50) };
   return { position: [70, 48, 85], target: [0, 0, 2], fov: numParam('fov', 50) };
 }
 
@@ -195,7 +247,10 @@ const btn: CSSProperties = {
 
 /** The sandbox ground and sky go thermal too (cold sky, ground a little above ambient). */
 function ThermalScene({ mode }: { mode: ThermalMode }) {
-  const sky = useMemo(() => new Color().copy(a10Env.horizonColor).lerp(a10Env.zenithColor, 0.25), []);
+  const sky = useMemo(
+    () => new Color().copy(a10Env.horizonColor).lerp(a10Env.zenithColor, 0.25),
+    [],
+  );
   useFrame(({ scene }) => {
     if (scene.background instanceof Color) {
       if (mode === 0) scene.background.copy(sky);
@@ -238,7 +293,14 @@ function Warmup({ scene }: { scene: Scene }) {
     const dt = 1 / 30;
     for (let t = 0; t < at; t += dt) {
       scene.world.advance(dt);
-      getVehicleRenderer()?.update(scene.world.sim, dt, state.camera, getA10Quality(), fx.ps, fx.ctx.detail);
+      getVehicleRenderer()?.update(
+        scene.world.sim,
+        dt,
+        state.camera,
+        getA10Quality(),
+        fx.ps,
+        fx.ctx.detail,
+      );
       updateFx(fx, dt, state.camera);
     }
     if (params.get('freeze') === '1') scene.world.timeScale = 0;
@@ -252,7 +314,9 @@ export default function VehiclesSandbox() {
   const surfaceParam = params.get('surface') as SurfaceKind | null;
   const scene = useMemo(() => buildScene(fires, surfaceParam), [fires, surfaceParam]);
   const [view, setView] = useState(params.get('view') ?? 'grid');
-  const [thermal, setThermal] = useState<ThermalMode>(() => Math.min(2, Math.max(0, numParam('thermal', 0))) as ThermalMode);
+  const [thermal, setThermal] = useState<ThermalMode>(
+    () => Math.min(2, Math.max(0, numParam('thermal', 0))) as ThermalMode,
+  );
   const camPose = useMemo(() => pose(view), [view]);
 
   useEffect(() => {
@@ -266,7 +330,10 @@ export default function VehiclesSandbox() {
         const g = buildVehicleGeometry(kind, lod, 1);
         const bad = windingErrors(g);
         const tris = g.getAttribute('position').count / 3;
-        if (bad > 0.002) console.warn(`[vehicles] ${kind} lod${lod}: ${(bad * 100).toFixed(1)}% of ${tris} triangles wound inward`);
+        if (bad > 0.002)
+          console.warn(
+            `[vehicles] ${kind} lod${lod}: ${(bad * 100).toFixed(1)}% of ${tris} triangles wound inward`,
+          );
         else console.info(`[vehicles] ${kind} lod${lod}: ${tris} triangles`);
         g.dispose();
       }
@@ -282,7 +349,11 @@ export default function VehiclesSandbox() {
         </div>
         <div>
           {['grid', 'column', 'far', 'top'].map((v) => (
-            <button key={v} style={{ ...btn, background: v === view ? '#3d5a72' : btn.background }} onClick={() => setView(v)}>
+            <button
+              key={v}
+              style={{ ...btn, background: v === view ? '#3d5a72' : btn.background }}
+              onClick={() => setView(v)}
+            >
               {v}
             </button>
           ))}
@@ -290,7 +361,11 @@ export default function VehiclesSandbox() {
         <div>
           Picture:{' '}
           {(['visible', 'white-hot', 'black-hot'] as const).map((label, i) => (
-            <button key={label} style={{ ...btn, background: i === thermal ? '#3d5a72' : btn.background }} onClick={() => setThermal(i as ThermalMode)}>
+            <button
+              key={label}
+              style={{ ...btn, background: i === thermal ? '#3d5a72' : btn.background }}
+              onClick={() => setThermal(i as ThermalMode)}
+            >
               {label}
             </button>
           ))}

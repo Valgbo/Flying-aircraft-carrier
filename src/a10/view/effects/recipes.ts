@@ -127,7 +127,15 @@ export function sparks(
 }
 
 /** A short bright flash (additive): size in metres, life in seconds. */
-export function flash(ctx: FxContext, x: number, y: number, z: number, size: number, life: number, brightness = 1): void {
+export function flash(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  size: number,
+  life: number,
+  brightness = 1,
+): void {
   const i = ctx.ps.spawn(PK.flash, x, y, z, 0, 0, 0, size * 0.55, size, life);
   ctx.ps.emissive(i, brightness);
 }
@@ -235,7 +243,8 @@ export function impactGround(
       R.range(6.5, 9.5) * (0.8 + 0.25 * s.dustiness),
       R.range(2.6, 4.6),
     );
-    if (hei) ps.color(i, s.dust[0] * 0.45 + 0.01, s.dust[1] * 0.45 + 0.01, s.dust[2] * 0.45 + 0.01, 0.9);
+    if (hei)
+      ps.color(i, s.dust[0] * 0.45 + 0.01, s.dust[1] * 0.45 + 0.01, s.dust[2] * 0.45 + 0.01, 0.9);
     else ps.color(i, s.dust[0], s.dust[1], s.dust[2], 0.85);
   }
   if (s.fleck && lod > 0.5) {
@@ -243,12 +252,35 @@ export function impactGround(
     for (let j = 0; j < n; j++) {
       cone(nx, ny, nz, 0.9, _dir);
       const v = R.range(5, 14);
-      const i = ps.spawn(PK.fleck, x, y + 0.2, z, _dir.x * v, _dir.y * v, _dir.z * v, R.range(0.15, 0.3), 0.25, R.range(1, 2));
+      const i = ps.spawn(
+        PK.fleck,
+        x,
+        y + 0.2,
+        z,
+        _dir.x * v,
+        _dir.y * v,
+        _dir.z * v,
+        R.range(0.15, 0.3),
+        0.25,
+        R.range(1, 2),
+      );
       ps.color(i, s.fleck[0], s.fleck[1], s.fleck[2]);
     }
   }
   if (s.sparks > 0) {
-    sparks(ctx, x, y + 0.05, z, rx * 0.6 + nx * 0.4, ny * 0.6, rz * 0.6 + nz * 0.4, count(ctx, 6 * s.sparks, lod), 0.9, 15, 55);
+    sparks(
+      ctx,
+      x,
+      y + 0.05,
+      z,
+      rx * 0.6 + nx * 0.4,
+      ny * 0.6,
+      rz * 0.6 + nz * 0.4,
+      count(ctx, 6 * s.sparks, lod),
+      0.9,
+      15,
+      55,
+    );
     flash(ctx, x, y + 0.2, z, 0.7, 0.04, 0.4);
   }
   if (round === 1) heiBurst(ctx, x, y + 0.3, z, nx, ny, nz, lod, false);
@@ -256,7 +288,18 @@ export function impactGround(
     // the round skips on: a streak of dust or, on hard ground, a spark along the new path
     const v = speed * 0.55;
     if (s.sparks > 0) {
-      const i = ps.spawn(PK.streak, x, y + 0.1, z, rx * v, Math.abs(dn) * v * 0.5, rz * v, 0.12, 0.08, R.range(0.12, 0.25));
+      const i = ps.spawn(
+        PK.streak,
+        x,
+        y + 0.1,
+        z,
+        rx * v,
+        Math.abs(dn) * v * 0.5,
+        rz * v,
+        0.12,
+        0.08,
+        R.range(0.12, 0.25),
+      );
       ps.emissive(i, 0.8);
     }
   }
@@ -305,8 +348,11 @@ export function impactVehicle(
   const api = round === 0;
   const pen = outcome === 'penetrated' || outcome === 'passedThrough';
   if (api) {
-    // depleted uranium burns: a white flash and a sparkle of burning fragments
-    flash(ctx, ox, oy, oz, pen ? 1.5 : 2.1, pen ? 0.06 : 0.08, pen ? 0.9 : 1.2);
+    // depleted uranium burns: a brilliant white flash (it does not cool through orange like a
+    // blast) and a sparkle of burning fragments
+    const size = pen ? 1.5 : 2.1;
+    const w = ps.spawn(PK.glint, ox, oy, oz, 0, 0, 0, size * 0.55, size, pen ? 0.07 : 0.09);
+    ps.emissive(w, pen ? 0.9 : 1.2);
     const glints = count(ctx, pen ? 3 : 6, lod);
     for (let j = 0; j < glints; j++) {
       ps.delay = R.range(0.0, 0.3);
@@ -327,15 +373,54 @@ export function impactVehicle(
     ps.delay = 0;
     // sparks: a fan off the plate when stopped, fewer and back along the path when through
     if (pen) {
-      sparks(ctx, ox, oy, oz, nx * 0.6 - dx * 0.4, ny * 0.6 - dy * 0.4, nz * 0.6 - dz * 0.4, count(ctx, 6, lod), 0.8, 10, 40, 0.3, 0.9);
+      sparks(
+        ctx,
+        ox,
+        oy,
+        oz,
+        nx * 0.6 - dx * 0.4,
+        ny * 0.6 - dy * 0.4,
+        nz * 0.6 - dz * 0.4,
+        count(ctx, 6, lod),
+        0.8,
+        10,
+        40,
+        0.3,
+        0.9,
+      );
       // a moment later the round's flash inside vents out of the hole as smoke
       ps.delay = R.range(0.03, 0.09);
       flash(ctx, ox, oy, oz, 0.9, 0.05, 0.6);
-      const i = ps.spawn(PK.smoke, ox, oy, oz, nx * 4, ny * 4 + 1, nz * 4, 0.3, 1.8, R.range(1.5, 2.5));
+      const i = ps.spawn(
+        PK.smoke,
+        ox,
+        oy,
+        oz,
+        nx * 4,
+        ny * 4 + 1,
+        nz * 4,
+        0.3,
+        1.8,
+        R.range(1.5, 2.5),
+      );
       ps.color(i, GREY_SMOKE[0] * 0.5, GREY_SMOKE[1] * 0.5, GREY_SMOKE[2] * 0.5, 0.7);
       ps.delay = 0;
     } else {
-      sparks(ctx, ox, oy, oz, nx * 0.5 + rx * 0.5, ny * 0.5 + ry * 0.5, nz * 0.5 + rz * 0.5, count(ctx, 13, lod), 1.1, 18, 65, 0.3, 1.0);
+      sparks(
+        ctx,
+        ox,
+        oy,
+        oz,
+        nx * 0.5 + rx * 0.5,
+        ny * 0.5 + ry * 0.5,
+        nz * 0.5 + rz * 0.5,
+        count(ctx, 13, lod),
+        1.1,
+        18,
+        65,
+        0.3,
+        1.0,
+      );
     }
     const puffs = count(ctx, 1.5, lod);
     for (let j = 0; j < puffs; j++) {
@@ -362,13 +447,34 @@ export function impactVehicle(
 }
 
 /** High-explosive incendiary burst: a small flash, a fireball flicker, a grey-black puff. */
-function heiBurst(ctx: FxContext, x: number, y: number, z: number, nx: number, ny: number, nz: number, lod: number, onArmour: boolean): void {
+function heiBurst(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  nx: number,
+  ny: number,
+  nz: number,
+  lod: number,
+  onArmour: boolean,
+): void {
   const { ps } = ctx;
   flash(ctx, x, y, z, 2.0, 0.06, 1.0);
   const fb = count(ctx, 2, lod);
   for (let j = 0; j < fb; j++) {
     cone(nx, ny, nz, 1.2, _dir);
-    const i = ps.spawn(PK.fireball, x, y, z, _dir.x * 4, _dir.y * 4, _dir.z * 4, 0.5, R.range(1.4, 2.0), R.range(0.5, 0.8));
+    const i = ps.spawn(
+      PK.fireball,
+      x,
+      y,
+      z,
+      _dir.x * 4,
+      _dir.y * 4,
+      _dir.z * 4,
+      0.5,
+      R.range(1.4, 2.0),
+      R.range(0.5, 0.8),
+    );
     ps.emissive(i, 0.7);
   }
   const puffs = count(ctx, 2.5, lod);
@@ -413,18 +519,47 @@ export function ricochet(
 }
 
 /** Water: a white column of spray and mist. */
-export function splash(ctx: FxContext, x: number, y: number, z: number, scale: number, lod: number): void {
+export function splash(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  scale: number,
+  lod: number,
+): void {
   const { ps } = ctx;
   ps.groundY = y - 0.3;
   const jets = count(ctx, 5 * scale, lod);
   for (let j = 0; j < jets; j++) {
     cone(0, 1, 0, 0.35, _dir);
     const v = R.range(9, 16) * Math.sqrt(scale);
-    ps.spawn(PK.splash, x, y, z, _dir.x * v, _dir.y * v, _dir.z * v, 0.4 * scale, 1.4 * scale, R.range(1.0, 1.7));
+    ps.spawn(
+      PK.splash,
+      x,
+      y,
+      z,
+      _dir.x * v,
+      _dir.y * v,
+      _dir.z * v,
+      0.4 * scale,
+      1.4 * scale,
+      R.range(1.0, 1.7),
+    );
   }
   const mist = count(ctx, 3 * scale, lod);
   for (let j = 0; j < mist; j++) {
-    ps.spawn(PK.mist, x + R.signed(0.5), y + 0.5, z + R.signed(0.5), R.signed(2), R.range(1, 3), R.signed(2), 0.8 * scale, 3.5 * scale, R.range(1.5, 2.8));
+    ps.spawn(
+      PK.mist,
+      x + R.signed(0.5),
+      y + 0.5,
+      z + R.signed(0.5),
+      R.signed(2),
+      R.range(1, 3),
+      R.signed(2),
+      0.8 * scale,
+      3.5 * scale,
+      R.range(1.5, 2.8),
+    );
   }
 }
 
@@ -432,7 +567,8 @@ export function splash(ctx: FxContext, x: number, y: number, z: number, scale: n
 // Explosions
 // ---------------------------------------------------------------------------------------------
 
-export type DetonationKind = 'bomb' | 'rocket' | 'missile' | 'hei' | 'secondary' | 'whitePhosphorus' | 'dud';
+export type DetonationKind =
+  'bomb' | 'rocket' | 'missile' | 'hei' | 'secondary' | 'whitePhosphorus' | 'dud';
 
 export interface ExplosionOptions {
   /** Detonated on or against a vehicle (more metal, less soil). */
@@ -636,7 +772,21 @@ export function explosion(
   }
 
   if (kind !== 'bomb' || o.onVehicle) {
-    sparks(ctx, x, y + 0.3 * s, z, 0, 1, 0, count(ctx, 8 + 6 * Math.min(s, 4), lod), 1.5, 25, 75 * Math.pow(s, 0.25), 0.3, 1.1);
+    sparks(
+      ctx,
+      x,
+      y + 0.3 * s,
+      z,
+      0,
+      1,
+      0,
+      count(ctx, 8 + 6 * Math.min(s, 4), lod),
+      1.5,
+      25,
+      75 * Math.pow(s, 0.25),
+      0.3,
+      1.1,
+    );
   }
 
   // the pressure ring
@@ -649,8 +799,8 @@ export function explosion(
     if (crater && !o.onVehicle) {
       ctx.decals.add(x, ground, z, o.nx, o.ny, o.nz, Math.max(1.5, 2.6 * s), DECAL.blast, 900);
       ctx.decals.add(x, ground, z, o.nx, o.ny, o.nz, Math.max(0.8, 1.15 * s), DECAL.crater, 900);
-    }
-    else ctx.decals.add(x, ground, z, o.nx, o.ny, o.nz, Math.max(0.6, 1.4 * s), DECAL.scorch, 600);
+    } else
+      ctx.decals.add(x, ground, z, o.nx, o.ny, o.nz, Math.max(0.6, 1.4 * s), DECAL.scorch, 600);
   }
 }
 
@@ -659,7 +809,13 @@ export function explosion(
  * marker, and burning fragments arcing out with smoke trails. Returns nothing; the lingering
  * burn on the ground is a persistent emitter the director adds.
  */
-export function whitePhosphorus(ctx: FxContext, x: number, y: number, z: number, surface: SurfaceKind): void {
+export function whitePhosphorus(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  surface: SurfaceKind,
+): void {
   const { ps } = ctx;
   const lod = lodAt(ctx, x, y, z);
   ps.groundY = ctx.groundAt(x, z);
@@ -685,7 +841,18 @@ export function whitePhosphorus(ctx: FxContext, x: number, y: number, z: number,
   for (let j = 0; j < nFrag; j++) {
     cone(0, 1, 0, 1.15, _dir);
     const v = R.range(14, 32);
-    const i = ps.spawn(PK.wpFragment, x, y + 1, z, _dir.x * v, _dir.y * v, _dir.z * v, R.range(0.25, 0.4), 0.2, R.range(1.4, 2.6));
+    const i = ps.spawn(
+      PK.wpFragment,
+      x,
+      y + 1,
+      z,
+      _dir.x * v,
+      _dir.y * v,
+      _dir.z * v,
+      R.range(0.25, 0.4),
+      0.2,
+      R.range(1.4, 2.6),
+    );
     ps.trail(i, 32 * ctx.detail);
   }
   const sf = surfaceFx(surface);
@@ -693,7 +860,14 @@ export function whitePhosphorus(ctx: FxContext, x: number, y: number, z: number,
 }
 
 /** A dud: a thump of dust and soil, no flash, no smoke. */
-export function dud(ctx: FxContext, x: number, y: number, z: number, surface: SurfaceKind, size = 1): void {
+export function dud(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  surface: SurfaceKind,
+  size = 1,
+): void {
   const { ps } = ctx;
   const sf = surfaceFx(surface);
   const lod = lodAt(ctx, x, y, z);
@@ -723,14 +897,31 @@ export function dud(ctx: FxContext, x: number, y: number, z: number, surface: Su
   for (let j = 0; j < c; j++) {
     cone(0, 1, 0, 0.7, _dir);
     const v = R.range(6, 14);
-    const i = ps.spawn(PK.clod, x, y + 0.2, z, _dir.x * v, _dir.y * v, _dir.z * v, R.range(0.2, 0.4) * size, 0.3, R.range(1, 2));
+    const i = ps.spawn(
+      PK.clod,
+      x,
+      y + 0.2,
+      z,
+      _dir.x * v,
+      _dir.y * v,
+      _dir.z * v,
+      R.range(0.2, 0.4) * size,
+      0.3,
+      R.range(1, 2),
+    );
     ps.color(i, sf.clod[0], sf.clod[1], sf.clod[2]);
   }
   ctx.decals.add(x, ps.groundY, z, 0, 1, 0, 1.0 * size, DECAL.dirt, 300);
 }
 
 /** Small cook-off pop from a burning wreck: sparks, a flash and a dark puff. */
-export function cookOffPop(ctx: FxContext, x: number, y: number, z: number, strength: number): void {
+export function cookOffPop(
+  ctx: FxContext,
+  x: number,
+  y: number,
+  z: number,
+  strength: number,
+): void {
   const { ps } = ctx;
   const lod = lodAt(ctx, x, y, z);
   ps.groundY = ctx.groundAt(x, z);

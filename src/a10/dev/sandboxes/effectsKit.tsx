@@ -210,8 +210,14 @@ function Atmosphere() {
   const sun = a10Env.sunDirection;
   return (
     <>
-      <hemisphereLight args={[new Color().copy(a10Env.ambientColor), new Color(0.14, 0.15, 0.09), 1]} />
-      <directionalLight position={[sun.x * 5000, sun.y * 5000, sun.z * 5000]} intensity={1} color={new Color().copy(a10Env.sunColor)} />
+      <hemisphereLight
+        args={[new Color().copy(a10Env.ambientColor), new Color(0.14, 0.15, 0.09), 1]}
+      />
+      <directionalLight
+        position={[sun.x * 5000, sun.y * 5000, sun.z * 5000]}
+        intensity={1}
+        color={new Color().copy(a10Env.sunColor)}
+      />
     </>
   );
 }

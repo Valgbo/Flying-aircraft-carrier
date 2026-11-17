@@ -26,9 +26,28 @@ import { A10_GEOMETRY } from '../../data/geometry';
 import { GAU8 } from '../../data/gun';
 import { getFx, updateFx } from '../../view/effects/fx';
 import { fxRandom } from '../../view/effects/noise';
-import { KitStage, numParam, params, SandboxWorld, useSandboxQuality, vecParam, type CameraPose } from './effectsKit';
+import {
+  KitStage,
+  numParam,
+  params,
+  SandboxWorld,
+  useSandboxQuality,
+  vecParam,
+  type CameraPose,
+} from './effectsKit';
 
-const SURFACES: SurfaceKind[] = ['dirt', 'grass', 'field', 'sand', 'mud', 'rock', 'concrete', 'road', 'forest', 'water'];
+const SURFACES: SurfaceKind[] = [
+  'dirt',
+  'grass',
+  'field',
+  'sand',
+  'mud',
+  'rock',
+  'concrete',
+  'road',
+  'forest',
+  'water',
+];
 
 /** Where things are: the tank at the origin, ground impacts beside it. */
 const GROUND_POINT = new Vector3(-14, 0, 8);
@@ -63,10 +82,19 @@ function localDir(v: Vehicle, x: number, y: number, z: number): Vector3 {
 function roundVelocity(from: Vector3, speed = 720, dive = 0.5): Vector3 {
   // from the shooter's side, coming down at `dive` rad
   const h = new Vector3(from.x, 0, from.z).normalize();
-  return new Vector3(-h.x * Math.cos(dive), -Math.sin(dive), -h.z * Math.cos(dive)).multiplyScalar(speed);
+  return new Vector3(-h.x * Math.cos(dive), -Math.sin(dive), -h.z * Math.cos(dive)).multiplyScalar(
+    speed,
+  );
 }
 
-function groundImpact(t: number, p: Vector3, vel: Vector3, surface: SurfaceKind, round: 0 | 1 | 2, outcome: 'ground' | 'skip' | 'water' = 'ground'): SimEvent {
+function groundImpact(
+  t: number,
+  p: Vector3,
+  vel: Vector3,
+  surface: SurfaceKind,
+  round: 0 | 1 | 2,
+  outcome: 'ground' | 'skip' | 'water' = 'ground',
+): SimEvent {
   return {
     type: 'roundImpact',
     t,
@@ -79,7 +107,15 @@ function groundImpact(t: number, p: Vector3, vel: Vector3, surface: SurfaceKind,
   };
 }
 
-function vehicleImpact(t: number, v: Vehicle, p: Vector3, n: Vector3, vel: Vector3, round: 0 | 1 | 2, outcome: RoundOutcome): SimEvent {
+function vehicleImpact(
+  t: number,
+  v: Vehicle,
+  p: Vector3,
+  n: Vector3,
+  vel: Vector3,
+  round: 0 | 1 | 2,
+  outcome: RoundOutcome,
+): SimEvent {
   return {
     type: 'roundImpact',
     t,
@@ -92,7 +128,14 @@ function vehicleImpact(t: number, v: Vehicle, p: Vector3, n: Vector3, vel: Vecto
   };
 }
 
-function detonation(t: number, p: Vector3, charge: number, kind: Extract<SimEvent, { type: 'detonation' }>['kind'], vehicleId = 0, surface: SurfaceKind = 'dirt'): SimEvent {
+function detonation(
+  t: number,
+  p: Vector3,
+  charge: number,
+  kind: Extract<SimEvent, { type: 'detonation' }>['kind'],
+  vehicleId = 0,
+  surface: SurfaceKind = 'dirt',
+): SimEvent {
   return { type: 'detonation', t, position: v3(p), charge, kind, vehicleId, surface };
 }
 
@@ -174,7 +217,10 @@ const FX: FxDef[] = [
     label: 'API on armour (stopped)',
     run: ({ world, tank, from }) => {
       const p = local(tank, 0.35, 2.05, -1.55);
-      world.schedule(0, vehicleImpact(0, tank, p, localDir(tank, 0, 0.25, -1), roundVelocity(from), 0, 'stopped'));
+      world.schedule(
+        0,
+        vehicleImpact(0, tank, p, localDir(tank, 0, 0.25, -1), roundVelocity(from), 0, 'stopped'),
+      );
     },
   },
   {
@@ -182,7 +228,18 @@ const FX: FxDef[] = [
     label: 'API on the engine deck (penetrated)',
     run: ({ world, tank, from }) => {
       const p = local(tank, 0.2, 1.73, 2.3);
-      world.schedule(0, vehicleImpact(0, tank, p, new Vector3(0, 1, 0), roundVelocity(from, 700, 0.9), 0, 'penetrated'));
+      world.schedule(
+        0,
+        vehicleImpact(
+          0,
+          tank,
+          p,
+          new Vector3(0, 1, 0),
+          roundVelocity(from, 700, 0.9),
+          0,
+          'penetrated',
+        ),
+      );
     },
   },
   {
@@ -190,7 +247,10 @@ const FX: FxDef[] = [
     label: 'HEI on armour',
     run: ({ world, tank, from }) => {
       const p = local(tank, -1.0, 1.95, -0.9);
-      world.schedule(0, vehicleImpact(0, tank, p, localDir(tank, -0.7, 0.4, -0.6), roundVelocity(from), 1, 'burst'));
+      world.schedule(
+        0,
+        vehicleImpact(0, tank, p, localDir(tank, -0.7, 0.4, -0.6), roundVelocity(from), 1, 'burst'),
+      );
     },
   },
   {
@@ -198,24 +258,40 @@ const FX: FxDef[] = [
     label: 'Ricochet off the glacis',
     run: ({ world, tank, from }) => {
       const p = local(tank, 0.3, 1.25, -3.0);
-      world.schedule(0, vehicleImpact(0, tank, p, localDir(tank, 0, 0.93, -0.37), roundVelocity(from, 760, 0.3), 0, 'ricochet'));
+      world.schedule(
+        0,
+        vehicleImpact(
+          0,
+          tank,
+          p,
+          localDir(tank, 0, 0.93, -0.37),
+          roundVelocity(from, 760, 0.3),
+          0,
+          'ricochet',
+        ),
+      );
     },
   },
   {
     id: 'ground',
     label: 'One round on the ground',
-    run: ({ world, from }, surface) => world.schedule(0, groundImpact(0, GROUND_POINT, roundVelocity(from), surface, 0)),
+    run: ({ world, from }, surface) =>
+      world.schedule(0, groundImpact(0, GROUND_POINT, roundVelocity(from), surface, 0)),
   },
   {
     id: 'hei-ground',
     label: 'HEI on the ground',
-    run: ({ world, from }, surface) => world.schedule(0, groundImpact(0, GROUND_POINT, roundVelocity(from), surface, 1)),
+    run: ({ world, from }, surface) =>
+      world.schedule(0, groundImpact(0, GROUND_POINT, roundVelocity(from), surface, 1)),
   },
   {
     id: 'skip',
     label: 'Round skipping off concrete',
     run: ({ world, from }) =>
-      world.schedule(0, groundImpact(0, GROUND_POINT, roundVelocity(from, 780, 0.1), 'concrete', 0, 'skip')),
+      world.schedule(
+        0,
+        groundImpact(0, GROUND_POINT, roundVelocity(from, 780, 0.1), 'concrete', 0, 'skip'),
+      ),
   },
   {
     id: 'burst',
@@ -235,7 +311,8 @@ const FX: FxDef[] = [
   {
     id: 'det-rocket',
     label: 'Detonation: rocket (M151)',
-    run: ({ world }, surface) => world.schedule(0, detonation(0, GROUND_POINT, 2.3, 'rocket', 0, surface)),
+    run: ({ world }, surface) =>
+      world.schedule(0, detonation(0, GROUND_POINT, 2.3, 'rocket', 0, surface)),
   },
   {
     id: 'det-maverick',
@@ -249,7 +326,11 @@ const FX: FxDef[] = [
   {
     id: 'det-mk82',
     label: 'Mk-82 bomb',
-    run: ({ world }, surface) => world.schedule(0, detonation(0, GROUND_POINT.clone().add(new Vector3(-20, 0, 0)), 90, 'bomb', 0, surface)),
+    run: ({ world }, surface) =>
+      world.schedule(
+        0,
+        detonation(0, GROUND_POINT.clone().add(new Vector3(-20, 0, 0)), 90, 'bomb', 0, surface),
+      ),
   },
   {
     id: 'det-secondary',
@@ -269,12 +350,14 @@ const FX: FxDef[] = [
   {
     id: 'det-wp',
     label: 'White phosphorus rocket',
-    run: ({ world }, surface) => world.schedule(0, detonation(0, GROUND_POINT, 1.0, 'whitePhosphorus', 0, surface)),
+    run: ({ world }, surface) =>
+      world.schedule(0, detonation(0, GROUND_POINT, 1.0, 'whitePhosphorus', 0, surface)),
   },
   {
     id: 'det-dud',
     label: 'Dud bomb',
-    run: ({ world }, surface) => world.schedule(0, detonation(0, GROUND_POINT, 90, 'dud', 0, surface)),
+    run: ({ world }, surface) =>
+      world.schedule(0, detonation(0, GROUND_POINT, 90, 'dud', 0, surface)),
   },
   {
     id: 'burning',
@@ -347,12 +430,18 @@ class GunRun {
         const k = before + i;
         const range = GROUND_POINT.distanceTo(ac.position);
         const tof = range / 820;
-        const p = GROUND_POINT.clone().addScaledVector(new Vector3(this.dir.x, 0, this.dir.z).normalize(), (ft - 0.75) * 40);
+        const p = GROUND_POINT.clone().addScaledVector(
+          new Vector3(this.dir.x, 0, this.dir.z).normalize(),
+          (ft - 0.75) * 40,
+        );
         p.x += fxRandom.gauss() * range * 0.0014;
         p.z += fxRandom.gauss() * range * 0.0014;
         p.y = 0;
         const vel = this.dir.clone().multiplyScalar(700);
-        world.schedule(tof + (i / Math.max(1, n)) * dt, groundImpact(0, p, vel, 'dirt', k % 6 === 5 ? 1 : 0));
+        world.schedule(
+          tof + (i / Math.max(1, n)) * dt,
+          groundImpact(0, p, vel, 'dirt', k % 6 === 5 ? 1 : 0),
+        );
       }
     } else {
       gun.firing = false;
@@ -375,7 +464,11 @@ class GunRun {
     }
     if (view === 'ground') {
       cam.position.set(GROUND_POINT.x + 140, 25, GROUND_POINT.z + 160);
-      cam.lookAt(ac.position.x * 0.3 + GROUND_POINT.x * 0.7, ac.position.y * 0.3, ac.position.z * 0.3 + GROUND_POINT.z * 0.7);
+      cam.lookAt(
+        ac.position.x * 0.3 + GROUND_POINT.x * 0.7,
+        ac.position.y * 0.3,
+        ac.position.z * 0.3 + GROUND_POINT.z * 0.7,
+      );
       cam.fov = 55;
       return true;
     }
@@ -446,7 +539,17 @@ function Stats() {
 }
 
 /** Runs the URL-requested effect once and, with ?at=, pre-simulates and freezes. */
-function AutoRun({ scene, gunRun, trigger, view }: { scene: Scene; gunRun: GunRun; trigger: (id: string) => void; view: string }) {
+function AutoRun({
+  scene,
+  gunRun,
+  trigger,
+  view,
+}: {
+  scene: Scene;
+  gunRun: GunRun;
+  trigger: (id: string) => void;
+  view: string;
+}) {
   const done = useRef(false);
   useFrame((state) => {
     if (done.current) return;
@@ -511,7 +614,9 @@ export default function EffectsSandbox() {
     };
     return { world, tank, ifv, fuel, ammo, hulk, from };
   }, [gunRun]);
-  const [pose, setPose] = useState<CameraPose>(() => poseFor(dist, numParam('elev', DEFAULT_ELEV[dist] ?? 25)));
+  const [pose, setPose] = useState<CameraPose>(() =>
+    poseFor(dist, numParam('elev', DEFAULT_ELEV[dist] ?? 25)),
+  );
   const [gunView, setGunView] = useState(params.get('fx') === 'gun');
 
   const trigger = (id: string) => {
@@ -544,7 +649,16 @@ export default function EffectsSandbox() {
         <div>
           Distance:{' '}
           {[50, 500, 1500].map((d) => (
-            <button key={d} style={{ ...btn, display: 'inline-block', width: 'auto', background: d === dist ? '#3d5a72' : btn.background }} onClick={() => chooseDistance(d)}>
+            <button
+              key={d}
+              style={{
+                ...btn,
+                display: 'inline-block',
+                width: 'auto',
+                background: d === dist ? '#3d5a72' : btn.background,
+              }}
+              onClick={() => chooseDistance(d)}
+            >
               {d} m
             </button>
           ))}
@@ -564,7 +678,11 @@ export default function EffectsSandbox() {
         ))}
         <div style={{ marginTop: 4 }}>
           {[1, 0.25, 0].map((s) => (
-            <button key={s} style={{ ...btn, display: 'inline-block', width: 'auto' }} onClick={() => (scene.world.timeScale = s)}>
+            <button
+              key={s}
+              style={{ ...btn, display: 'inline-block', width: 'auto' }}
+              onClick={() => (scene.world.timeScale = s)}
+            >
               {s === 0 ? 'freeze' : `${s}×`}
             </button>
           ))}

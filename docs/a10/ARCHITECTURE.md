@@ -382,6 +382,15 @@ Rules:
   `#include <colorspace_fragment>`.
 - **Fog/haze.** Anything that fades with distance fades to the environment's horizon colour.
   The environment module owns `scene.fog` and exposes the current haze colour and density.
+- **Terrain hooks (environment + terrain view).** `view/terrain/terrainMaterial.ts`
+  `terrainUniforms.uThermal` (0 visible · 1 white-hot · 2 black-hot; terrain and trees share it;
+  the sensors module sets it around its own render and restores it) and `uThermalParams.z`
+  (picture gain; x and y are written every frame from the time of day). Vehicles have their own
+  thermal hook (`view/vehicles`: `thermalUniforms`, `setThermalMode`). Live numbers:
+  `view/terrain/terrainStats.ts` `terrainStreaming` (pending, tiles, drawCalls,
+  drawnTriangles…). Terrain picking is the core's `Terrain.raycast`. The scene buffer of the
+  post pass has a stencil buffer; bloom starts at luminance 1.7, so the HUD (≈0.9) does not
+  glow.
 - **Render order:** sky dome −1000 (no depth), clouds −10 (no depth write), opaque world 0,
   transparent effects ≥ 0.
 - **Scenes:** the world scene is R3F's default scene. The cockpit module owns a separate
@@ -522,7 +531,10 @@ controls. Default bindings: PLAN §12.
 
 ## 10. Development
 
-- **Sandboxes:** `/a10/?sandbox=<name>` (dev server) renders `src/a10/dev/sandboxes/<name>.tsx`.
+- **Sandboxes:** `/a10/?sandbox=<name>` (dev server) renders `src/a10/dev/sandboxes/<name>.tsx`,
+  e.g. `?sandbox=terrain&preset=3000|1000|300&airbase=<agl>&time=&vis=&thermal=1|2`,
+  `?sandbox=world&seed=N`. Effects (dev server): `window.__A10_FX__ = { warm(s), play(events, s),
+  stats() }` replays events at exact times without stepping the sim.
 - **URL flags** (`state/debugFlags.ts`): `?screen=flight`, `?scenario=`, `?quality=`,
   `?realism=`, `?seed=`, `?time=`, `?view=`, `?start=x,z,aglM,headingDeg,speedKias[,pathDeg]`
   (path angle + climb / − dive), `?arm=1`,
@@ -582,7 +594,7 @@ Several agents edit this tree at once.
 | environment + terrain view | `view/environment/**`, `view/terrain/**`, the sky/cloud/post refactor in `src/scene/**` and `src/engine/**` exports for it, `dev/sandboxes/{terrain,environment}*.tsx` |
 | cockpit | `view/cockpit/**` (cockpit scene and pass, camera rig, clickable switches, instruments), `dev/sandboxes/cockpit*.tsx` |
 | hud | `view/hud/**`, `tests/unit/a10/hud*.test.ts`, `dev/sandboxes/hud*.tsx` |
-| vehicles + effects | `view/vehicles/**`, `view/effects/**`, `dev/sandboxes/{vehicles,effects}*.tsx` |
+| vehicles + effects | `view/vehicles/**`, `view/effects/**`, `dev/sandboxes/{vehicles,effects}*.tsx`, `tests/unit/a10/{effects,vehicles}*.test.ts` |
 | audio | `src/a10/audio/**`, `public/a10/sounds/**`, `scripts/a10/sound*`, `tests/unit/a10/audio*.test.ts` |
 | input | `src/a10/input/**` (except the `viewInput.ts` interface, which it fills), `tests/unit/a10/input*.test.ts` |
 | ui | `src/a10/ui/**`, `tests/unit/a10/ui*.test.ts`, `tests/e2e/a10/**` |

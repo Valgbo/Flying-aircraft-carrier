@@ -28,7 +28,12 @@ import type { ParticleSystem } from '../effects/ParticleSystem';
 import type { A10Quality } from '../quality';
 import { createEmitterState, emitVehicle, type EmitterState } from './emitters';
 import { GroundShadows } from './groundShadows';
-import { createVehicleDepthMaterial, createVehicleMaterial, FLAG, vehicleUniforms } from './material';
+import {
+  createVehicleDepthMaterial,
+  createVehicleMaterial,
+  FLAG,
+  vehicleUniforms,
+} from './material';
 import { buildVehicleGeometry, VEHICLE_KINDS } from './models';
 
 /** Detailed models within this distance at the default 62° field of view (m). */
@@ -117,7 +122,12 @@ export class VehicleRenderer {
     return b;
   }
 
-  private makeBatch(kind: VehicleKind, lod: 0 | 1, geometry: BufferGeometry, capacity: number): Batch {
+  private makeBatch(
+    kind: VehicleKind,
+    lod: 0 | 1,
+    geometry: BufferGeometry,
+    capacity: number,
+  ): Batch {
     const attr = (name: string) => {
       const a = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
       a.setUsage(DynamicDrawUsage);
@@ -138,7 +148,20 @@ export class VehicleRenderer {
     mesh.castShadow = lod === 0 && this.castShadows;
     mesh.receiveShadow = lod === 0 && this.castShadows;
     this.root.add(mesh);
-    return { kind, lod, geometry, mesh, capacity, n: 0, anim, state, heat, spot, wear, attrs: [anim, state, heat, spot, wear] };
+    return {
+      kind,
+      lod,
+      geometry,
+      mesh,
+      capacity,
+      n: 0,
+      anim,
+      state,
+      heat,
+      spot,
+      wear,
+      attrs: [anim, state, heat, spot, wear],
+    };
   }
 
   /** Double a batch's capacity, keeping what was written this frame. */
@@ -221,7 +244,14 @@ export class VehicleRenderer {
    * One frame: place every vehicle, choose its level of detail, write its damage state, emit its
    * dust and exhaust. `dt` is simulated seconds (0 while paused).
    */
-  update(sim: Sim | null, dt: number, camera: Camera, quality: A10Quality, ps: ParticleSystem | null, detailFx: number): void {
+  update(
+    sim: Sim | null,
+    dt: number,
+    camera: Camera,
+    quality: A10Quality,
+    ps: ParticleSystem | null,
+    detailFx: number,
+  ): void {
     this.frame++;
     if (this.detail !== quality.detail) this.rebuild(quality.detail);
     const cast = quality.shadows && quality.level === 'high';
@@ -267,7 +297,16 @@ export class VehicleRenderer {
         const s = VEHICLE_SHAPES[v.kind];
         const height = s.hullClearance + s.hullHeight + (s.turret ? s.turret.height : 0);
         const opacity = v.kind === 'panel' ? 0.35 : v.condition === 'catastrophic' ? 0.7 : 0.55;
-        this.shadows.add(v.position.x, v.position.y, v.position.z, v.heading, s.hullWidth, Math.max(1.2, s.hullLength), height, opacity);
+        this.shadows.add(
+          v.position.x,
+          v.position.y,
+          v.position.z,
+          v.heading,
+          s.hullWidth,
+          Math.max(1.2, s.hullLength),
+          height,
+          opacity,
+        );
       }
     }
     this.finish();
@@ -285,7 +324,7 @@ export class VehicleRenderer {
     let flags = 0;
     const wrecked = v.condition === 'destroyed' || v.condition === 'catastrophic';
     if (isTracked(kind) && v.mobilityKill && v.condition !== 'intact') {
-      const side = st.trackSide || (1 + (v.id & 1));
+      const side = st.trackSide || 1 + (v.id & 1);
       flags |= side === 1 ? FLAG.trackLeft : FLAG.trackRight;
     }
     if (kind === 'truckCargo' && wrecked) flags |= FLAG.tarpGone;
@@ -296,7 +335,8 @@ export class VehicleRenderer {
     let char = 0;
     let scorch = 0;
     if (v.condition === 'damaged') scorch = 0.45;
-    else if (v.condition === 'destroyed') char = 0.55 + 0.4 * Math.min(1, Math.max(0, time - v.conditionTime) / 25);
+    else if (v.condition === 'destroyed')
+      char = 0.55 + 0.4 * Math.min(1, Math.max(0, time - v.conditionTime) / 25);
     else if (v.condition === 'catastrophic') char = 1;
     const gunElevation = wrecked ? -0.09 : 0;
     const hulk = kind === 'hulk';
@@ -307,7 +347,23 @@ export class VehicleRenderer {
 
     quaternionFromAttitude(v.heading, v.pitch, v.roll, _q);
     _m.compose(v.position, _q, _one);
-    this.write(this.batch(kind, lod), _m, v.turretYaw, gunElevation, st.distance, flags, char, scorch, f, st.seed, v, st, rust, dust, fade);
+    this.write(
+      this.batch(kind, lod),
+      _m,
+      v.turretYaw,
+      gunElevation,
+      st.distance,
+      flags,
+      char,
+      scorch,
+      f,
+      st.seed,
+      v,
+      st,
+      rust,
+      dust,
+      fade,
+    );
 
     if (thrown) {
       // the thrown turret: its own instance, turret only, gun bent, placed at the turret's pose
@@ -318,7 +374,23 @@ export class VehicleRenderer {
       _m.compose(thrown.position, _q, _one);
       _m2.makeTranslation(0, -(top + t.height * 0.45), -t.offsetZ);
       _m.multiply(_m2);
-      this.write(this.batch(kind, lod), _m, 0, -0.05, 0, FLAG.turretOnly | FLAG.gunBent, 1, 0, f, st.seed, v, st, rust, dust, fade);
+      this.write(
+        this.batch(kind, lod),
+        _m,
+        0,
+        -0.05,
+        0,
+        FLAG.turretOnly | FLAG.gunBent,
+        1,
+        0,
+        f,
+        st.seed,
+        v,
+        st,
+        rust,
+        dust,
+        fade,
+      );
     }
   }
 

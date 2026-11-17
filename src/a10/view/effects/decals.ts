@@ -156,7 +156,10 @@ export class DecalPool {
     const g = new InstancedBufferGeometry();
     g.setAttribute(
       'position',
-      new BufferAttribute(new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), 3),
+      new BufferAttribute(
+        new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]),
+        3,
+      ),
     );
     g.setIndex([0, 1, 2, 0, 2, 3]);
     const inst = (name: string) => {
@@ -197,7 +200,17 @@ export class DecalPool {
    * Add a decal at a world point on the ground with the ground normal, radius (m), type
    * (DECAL.*) and life (s). Overwrites the oldest when full.
    */
-  add(x: number, y: number, z: number, nx: number, ny: number, nz: number, radius: number, type: number, life: number): void {
+  add(
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    radius: number,
+    type: number,
+    life: number,
+  ): void {
     const i = this.next;
     this.next = (this.next + 1) % this.capacity;
     if (this.used < this.capacity) this.used++;

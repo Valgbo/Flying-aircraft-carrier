@@ -10,7 +10,16 @@ import { buildPanel } from './panel';
 import { buildTracked } from './tracked';
 import { buildApc, buildTruck } from './wheeled';
 
-export const VEHICLE_KINDS: readonly VehicleKind[] = ['mbt', 'ifv', 'apc', 'truckCargo', 'truckFuel', 'truckAmmo', 'hulk', 'panel'];
+export const VEHICLE_KINDS: readonly VehicleKind[] = [
+  'mbt',
+  'ifv',
+  'apc',
+  'truckCargo',
+  'truckFuel',
+  'truckAmmo',
+  'hulk',
+  'panel',
+];
 
 /** Builds the model of a kind at a level of detail (0 near, 1 far); `detail` 0..2 (quality). */
 export function buildVehicleModel(kind: VehicleKind, lod: 0 | 1, detail: number): ModelBuilder {
@@ -36,7 +45,11 @@ export function buildVehicleModel(kind: VehicleKind, lod: 0 | 1, detail: number)
   }
 }
 
-export function buildVehicleGeometry(kind: VehicleKind, lod: 0 | 1, detail: number): BufferGeometry {
+export function buildVehicleGeometry(
+  kind: VehicleKind,
+  lod: 0 | 1,
+  detail: number,
+): BufferGeometry {
   return buildVehicleModel(kind, lod, detail).build();
 }
 

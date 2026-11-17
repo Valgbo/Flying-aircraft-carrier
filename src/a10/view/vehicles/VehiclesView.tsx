@@ -47,7 +47,14 @@ export default function VehiclesView() {
     if (!r) return;
     const quality = getA10Quality();
     const fx = getFx();
-    r.update(viewSim(), frameInfo.simDt, state.camera, quality, fx ? fx.ps : null, detailForBudget(quality.particles));
+    r.update(
+      viewSim(),
+      frameInfo.simDt,
+      state.camera,
+      quality,
+      fx ? fx.ps : null,
+      detailForBudget(quality.particles),
+    );
   });
 
   return null;

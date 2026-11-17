@@ -5,7 +5,13 @@
  * G = thickness (1 at a puff's centre, used to darken thick smoke), B unused.
  * Every tile fades to zero at its border so mipmaps do not bleed between tiles.
  */
-import { DataTexture, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, UnsignedByteType } from 'three';
+import {
+  DataTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  RGBAFormat,
+  UnsignedByteType,
+} from 'three';
 import { CosmeticRandom, fbm } from './noise';
 
 export const ATLAS_TILES_PER_ROW = 4;
@@ -147,13 +153,26 @@ function debrisTile(variant: number): TileFn {
   };
 }
 
-function scatterTile(seed: number, count: number, rMin: number, rMax: number, spread: number, elong: number): TileFn {
+function scatterTile(
+  seed: number,
+  count: number,
+  rMin: number,
+  rMax: number,
+  spread: number,
+  elong: number,
+): TileFn {
   const rnd = new CosmeticRandom(seed);
   const items: number[] = [];
   for (let i = 0; i < count; i++) {
     const a = rnd.range(0, Math.PI * 2);
     const r = Math.sqrt(rnd.next()) * spread;
-    items.push(Math.cos(a) * r, Math.sin(a) * r, rnd.range(rMin, rMax), rnd.range(0, Math.PI), rnd.range(0.3, 1));
+    items.push(
+      Math.cos(a) * r,
+      Math.sin(a) * r,
+      rnd.range(rMin, rMax),
+      rnd.range(0, Math.PI),
+      rnd.range(0.3, 1),
+    );
   }
   return (x, y, out) => {
     let a = 0;
@@ -202,7 +221,8 @@ const dustTile: TileFn = (x, y, out) => {
 
 const sparkTile: TileFn = (x, y, out) => {
   const d2 = x * x + y * y;
-  const a = Math.min(1, Math.exp(-d2 * 28) + 0.25 * Math.exp(-d2 * 6)) * smoothstep(1, 0.8, Math.sqrt(d2));
+  const a =
+    Math.min(1, Math.exp(-d2 * 28) + 0.25 * Math.exp(-d2 * 6)) * smoothstep(1, 0.8, Math.sqrt(d2));
   out[0] = 1;
   out[1] = 1;
   out[3] = a;

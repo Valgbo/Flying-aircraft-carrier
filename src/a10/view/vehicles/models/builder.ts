@@ -14,7 +14,16 @@
  * Vehicle-local frame (docs/a10/ARCHITECTURE.md §2): +X right, +Y up, -Z forward, origin on the
  * ground under the hull centre. Flat-shaded faces for armour plates, smooth for round parts.
  */
-import { BufferGeometry, Color, Float32BufferAttribute, Matrix3, Matrix4, ShapeUtils, Vector2, Vector3 } from 'three';
+import {
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
+  Matrix3,
+  Matrix4,
+  ShapeUtils,
+  Vector2,
+  Vector3,
+} from 'three';
 
 export const PART = {
   hull: 0,
@@ -112,7 +121,15 @@ export class ModelBuilder {
     return new Vector3(x, y, z).applyMatrix4(this.matrix);
   }
 
-  vertex(x: number, y: number, z: number, nx: number, ny: number, nz: number, aux?: readonly number[]): void {
+  vertex(
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    aux?: readonly number[],
+  ): void {
     _v.set(x, y, z).applyMatrix4(this.matrix);
     _n.set(nx, ny, nz).applyMatrix3(this.normalMatrix).normalize();
     this.pos.push(_v.x, _v.y, _v.z);
@@ -210,7 +227,16 @@ export class ModelBuilder {
    * Cylinder along X from x0 to x1 (wheels, drums, rollers): smooth sides, flat caps.
    * `aux` per vertex lets wheels carry their axle for rotation.
    */
-  cylinderX(x0: number, x1: number, cy: number, cz: number, r: number, segs: number, caps = true, aux?: number[]): void {
+  cylinderX(
+    x0: number,
+    x1: number,
+    cy: number,
+    cz: number,
+    r: number,
+    segs: number,
+    caps = true,
+    aux?: number[],
+  ): void {
     for (let i = 0; i < segs; i++) {
       const t0 = (i / segs) * Math.PI * 2;
       const t1 = ((i + 1) / segs) * Math.PI * 2;
@@ -236,7 +262,15 @@ export class ModelBuilder {
   }
 
   /** Disc facing ±X (hub caps, wheel faces). */
-  discX(x: number, cy: number, cz: number, r: number, segs: number, facing: 1 | -1, aux?: number[]): void {
+  discX(
+    x: number,
+    cy: number,
+    cz: number,
+    r: number,
+    segs: number,
+    facing: 1 | -1,
+    aux?: number[],
+  ): void {
     for (let i = 0; i < segs; i++) {
       const t0 = (i / segs) * Math.PI * 2;
       const t1 = ((i + 1) / segs) * Math.PI * 2;
@@ -260,7 +294,18 @@ export class ModelBuilder {
    * Tapered tube along Z from (cx, cy, z0) radius r0 to z1 radius r1 (gun barrels, tanks).
    * z0 < z1. Smooth sides; caps optional.
    */
-  tubeZ(cx: number, cy: number, z0: number, z1: number, r0: number, r1: number, segs: number, capFront = true, capRear = true, ry = 1): void {
+  tubeZ(
+    cx: number,
+    cy: number,
+    z0: number,
+    z1: number,
+    r0: number,
+    r1: number,
+    segs: number,
+    capFront = true,
+    capRear = true,
+    ry = 1,
+  ): void {
     const slope = (r0 - r1) / (z1 - z0);
     for (let i = 0; i < segs; i++) {
       const t0 = (i / segs) * Math.PI * 2;
@@ -269,8 +314,14 @@ export class ModelBuilder {
       const s0 = Math.sin(t0);
       const c1 = Math.cos(t1);
       const s1 = Math.sin(t1);
-      const n0 = _a.set(c0, s0 * ry, slope).normalize().clone();
-      const n1 = _b.set(c1, s1 * ry, slope).normalize().clone();
+      const n0 = _a
+        .set(c0, s0 * ry, slope)
+        .normalize()
+        .clone();
+      const n1 = _b
+        .set(c1, s1 * ry, slope)
+        .normalize()
+        .clone();
       this.vertex(cx + c0 * r0, cy + s0 * r0 * ry, z0, n0.x, n0.y, n0.z);
       this.vertex(cx + c1 * r1, cy + s1 * r1 * ry, z1, n1.x, n1.y, n1.z);
       this.vertex(cx + c0 * r1, cy + s0 * r1 * ry, z1, n0.x, n0.y, n0.z);
@@ -291,7 +342,15 @@ export class ModelBuilder {
   }
 
   /** Vertical cylinder (cupolas, hatches, posts) from y0 to y1. */
-  cylinderY(cx: number, cz: number, y0: number, y1: number, r: number, segs: number, capTop = true): void {
+  cylinderY(
+    cx: number,
+    cz: number,
+    y0: number,
+    y1: number,
+    r: number,
+    segs: number,
+    capTop = true,
+  ): void {
     for (let i = 0; i < segs; i++) {
       const t0 = (i / segs) * Math.PI * 2;
       const t1 = ((i + 1) / segs) * Math.PI * 2;
@@ -318,7 +377,16 @@ export class ModelBuilder {
    * at the base for azimuth theta (0 = forward, -Z; π/2 = right, +X); the profile follows a
    * superellipse so the dome is low and wide (cast tank turrets).
    */
-  dome(cx: number, cz: number, y0: number, height: number, radiusAt: (theta: number) => number, segs: number, rings: number, shape = 0.55): void {
+  dome(
+    cx: number,
+    cz: number,
+    y0: number,
+    height: number,
+    radiusAt: (theta: number) => number,
+    segs: number,
+    rings: number,
+    shape = 0.55,
+  ): void {
     const pt = (ti: number, ri: number, out: Vector3) => {
       const th = (ti / segs) * Math.PI * 2;
       const u = ri / rings; // 0 base … 1 top

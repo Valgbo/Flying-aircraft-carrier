@@ -23,7 +23,15 @@ export interface EmitterState {
 }
 
 export function createEmitterState(): EmitterState {
-  return { dustAcc: R.next(), exhaustAcc: R.next(), surfaceTimer: 0, trail: 0, dust: [0.3, 0.24, 0.16], prevSpeed: 0, side: 1 };
+  return {
+    dustAcc: R.next(),
+    exhaustAcc: R.next(),
+    surfaceTimer: 0,
+    trail: 0,
+    dust: [0.3, 0.24, 0.16],
+    prevSpeed: 0,
+    side: 1,
+  };
 }
 
 /** Local exhaust outlet (x, y, z) and its direction (dx, dy, dz) per kind, from the model layout. */
@@ -101,7 +109,8 @@ export function emitVehicle(
       const sf = surfaceFx(terrain.surfaceAt(px, pz));
       let trail = sf.trail;
       const mt = terrain as MoistureTerrain;
-      if (typeof mt.moistureAt === 'function') trail *= 1 - 0.8 * Math.min(1, Math.max(0, mt.moistureAt(px, pz)));
+      if (typeof mt.moistureAt === 'function')
+        trail *= 1 - 0.8 * Math.min(1, Math.max(0, mt.moistureAt(px, pz)));
       st.trail = trail;
       st.dust[0] = sf.dust[0];
       st.dust[1] = sf.dust[1];

@@ -14,7 +14,7 @@
  * Purely cosmetic randomness (Math.random-like) never feeds back into the simulation.
  */
 import { Vector3 } from 'three';
-import { VEHICLE_SHAPES } from '../../data/vehicles';
+import { AMMO_EFFECTS, SECONDARY_CHARGE, VEHICLE_SHAPES } from '../../data/vehicles';
 import { A10_GEOMETRY } from '../../data/geometry';
 import { GAU8 } from '../../data/gun';
 import type { Sim, SimEvent } from '../../core/types';
@@ -58,28 +58,11 @@ interface FireState {
   turretValid: boolean;
 }
 
-/** Charge (kg TNT equivalent) of the ammunition or fuel that goes up in a catastrophic kill. */
-const SECONDARY_CHARGE: Record<VehicleKind, number> = {
-  mbt: 28,
-  ifv: 10,
-  apc: 6,
-  truckCargo: 4,
-  truckFuel: 45,
-  truckAmmo: 70,
-  hulk: 3,
-  panel: 0.5,
-};
-
-const HAS_AMMO: Record<VehicleKind, boolean> = {
-  mbt: true,
-  ifv: true,
-  apc: true,
-  truckCargo: false,
-  truckFuel: false,
-  truckAmmo: true,
-  hulk: false,
-  panel: false,
-};
+/**
+ * Kinds that carry ammunition (they cook off with pops); a fuel truck burns instead. Taken from
+ * the targets data, like the catastrophic charges (SECONDARY_CHARGE), so the two cannot drift.
+ */
+const hasAmmo = (k: VehicleKind): boolean => AMMO_EFFECTS[k] !== null && k !== 'truckFuel';
 
 const _muzzle = new Vector3();
 const _gunDir = new Vector3();
@@ -159,7 +142,8 @@ export class EffectsDirector {
     this.time = sim.time;
   }
 
-  private groundAt = (x: number, z: number): number => (this.sim ? this.sim.world.terrain.heightAt(x, z) : 0);
+  private groundAt = (x: number, z: number): number =>
+    this.sim ? this.sim.world.terrain.heightAt(x, z) : 0;
 
   /** Wire this to `onSimFrame`. */
   onSimFrame = (events: readonly SimEvent[], sim: Sim, info: FrameInfo): void => {
@@ -185,7 +169,21 @@ export class EffectsDirector {
         if (e.target.kind === 'vehicle') {
           impactVehicle(ctx, p.x, p.y, p.z, v.x, v.y, v.z, n.x, n.y, n.z, e.round, e.outcome);
         } else {
-          impactGround(ctx, p.x, p.y, p.z, v.x, v.y, v.z, n.x, n.y, n.z, e.target.surface, e.round, e.outcome);
+          impactGround(
+            ctx,
+            p.x,
+            p.y,
+            p.z,
+            v.x,
+            v.y,
+            v.z,
+            n.x,
+            n.y,
+            n.z,
+            e.target.surface,
+            e.round,
+            e.outcome,
+          );
         }
         break;
       }
@@ -205,7 +203,8 @@ export class EffectsDirector {
           let reported = false;
           for (let i = 0; i < events.length; i++) {
             const o = events[i];
-            if (o.type === 'detonation' && o.kind === 'secondary' && o.vehicleId === e.vehicleId) reported = true;
+            if (o.type === 'detonation' && o.kind === 'secondary' && o.vehicleId === e.vehicleId)
+              reported = true;
           }
           const last = this.bigBlast.get(e.vehicleId);
           if (!reported && (last === undefined || Math.abs(e.t - last) > 1.5)) {
@@ -270,17 +269,28 @@ export class EffectsDirector {
         cookOffPop(ctx, x, y + 1, z, 1);
         return;
       }
-      const wreckedBefore = (v.condition === 'destroyed' || v.condition === 'catastrophic') && t - v.conditionTime > 0.5;
+      const wreckedBefore =
+        (v.condition === 'destroyed' || v.condition === 'catastrophic') &&
+        t - v.conditionTime > 0.5;
       if (wreckedBefore && charge < 5) {
         // a cook-off the simulation reports (and audio plays): draw it, and invent no more pops
         // for this wreck
         this.fireState(v, t).simPops = true;
-        cookOffPop(ctx, x, y + 0.5, z, Math.min(1, 0.25 + 0.45 * Math.cbrt(Math.max(0.01, charge))));
+        cookOffPop(
+          ctx,
+          x,
+          y + 0.5,
+          z,
+          Math.min(1, 0.25 + 0.45 * Math.cbrt(Math.max(0.01, charge))),
+        );
         this.queueShake(x, y, z, charge, delay);
         return;
       }
       this.bigBlast.set(vehicleId, t);
-      explosion(ctx, x, y, z, charge, kind, surface, { onVehicle: true, fuel: v.kind === 'truckFuel' });
+      explosion(ctx, x, y, z, charge, kind, surface, {
+        onVehicle: true,
+        fuel: v.kind === 'truckFuel',
+      });
       if (v.kind === 'truckAmmo') this.scheduleCookOffs(vehicleId, x, y + 1, z, 10, 25);
     } else {
       explosion(ctx, x, y, z, charge, kind, surface, {
@@ -294,13 +304,25 @@ export class EffectsDirector {
   }
 
   /** The ammunition or fuel of a vehicle going up (catastrophic kill). */
-  private secondary(kind: VehicleKind, x: number, y: number, z: number, sim: Sim, id: number, t: number, delay: number): void {
+  private secondary(
+    kind: VehicleKind,
+    x: number,
+    y: number,
+    z: number,
+    sim: Sim,
+    id: number,
+    t: number,
+    delay: number,
+  ): void {
     const charge = SECONDARY_CHARGE[kind];
     const surface = sim.world.terrain.surfaceAt(x, z);
     this.bigBlast.set(id, t);
-    explosion(this.ctx, x, y + 1.2, z, charge, 'secondary', surface, { onVehicle: true, fuel: kind === 'truckFuel' });
+    explosion(this.ctx, x, y + 1.2, z, charge, 'secondary', surface, {
+      onVehicle: true,
+      fuel: kind === 'truckFuel',
+    });
     if (kind === 'truckAmmo') this.scheduleCookOffs(id, x, y + 1, z, 12, 30);
-    else if (HAS_AMMO[kind]) this.scheduleCookOffs(id, x, y + 1, z, 4, 12);
+    else if (hasAmmo(kind)) this.scheduleCookOffs(id, x, y + 1, z, 4, 12);
     this.queueShake(x, y, z, charge, delay);
   }
 
@@ -313,7 +335,18 @@ export class EffectsDirector {
       const a = R.next() * Math.PI * 2;
       const up = R.range(10, 26);
       const out = R.range(6, 16);
-      const j = ps.spawn(PK.burningDebris, x, y, z, Math.cos(a) * out, up, Math.sin(a) * out, R.range(0.35, 0.7), 0.4, R.range(2.5, 4.5));
+      const j = ps.spawn(
+        PK.burningDebris,
+        x,
+        y,
+        z,
+        Math.cos(a) * out,
+        up,
+        Math.sin(a) * out,
+        R.range(0.35, 0.7),
+        0.4,
+        R.range(2.5, 4.5),
+      );
       ps.trail(j, 16 * this.ctx.detail);
     }
     const fires = kind === 'truckFuel' ? 5 : 3;
@@ -322,7 +355,14 @@ export class EffectsDirector {
       const r = R.range(4, kind === 'truckFuel' ? 16 : 11);
       const gx = x + Math.cos(a) * r;
       const gz = z + Math.sin(a) * r;
-      this.addEmitter(EMIT.groundFire, gx, this.groundAt(gx, gz), gz, R.range(25, 80), R.range(0.3, kind === 'truckFuel' ? 1 : 0.6));
+      this.addEmitter(
+        EMIT.groundFire,
+        gx,
+        this.groundAt(gx, gz),
+        gz,
+        R.range(25, 80),
+        R.range(0.3, kind === 'truckFuel' ? 1 : 0.6),
+      );
     }
   }
 
@@ -334,13 +374,31 @@ export class EffectsDirector {
     const i = ps.spawn(PK.fireball, x, y + top, z, 0, 5, 0, 0.6, 2.4, 0.6);
     ps.emissive(i, 0.8);
     for (let k = 0; k < 4; k++) {
-      const j = ps.spawn(PK.blackSmoke, x + R.signed(1), y + top, z + R.signed(1), R.signed(1.5), R.range(4, 8), R.signed(1.5), 0.8, R.range(4, 6), R.range(5, 8));
+      const j = ps.spawn(
+        PK.blackSmoke,
+        x + R.signed(1),
+        y + top,
+        z + R.signed(1),
+        R.signed(1.5),
+        R.range(4, 8),
+        R.signed(1.5),
+        0.8,
+        R.range(4, 6),
+        R.range(5, 8),
+      );
       ps.opacity(j, 0.9);
     }
   }
 
   /** Pops of ammunition cooking off after a blast (until the simulation reports its own). */
-  private scheduleCookOffs(vehicleId: number, x: number, y: number, z: number, n: number, span: number): void {
+  private scheduleCookOffs(
+    vehicleId: number,
+    x: number,
+    y: number,
+    z: number,
+    n: number,
+    span: number,
+  ): void {
     for (let k = 0; k < n; k++) {
       for (let i = 0; i < this.popT.length; i++) {
         if (this.popT[i] >= 0) continue;
@@ -355,7 +413,14 @@ export class EffectsDirector {
     }
   }
 
-  private addEmitter(kind: number, x: number, y: number, z: number, life: number, strength: number): void {
+  private addEmitter(
+    kind: number,
+    x: number,
+    y: number,
+    z: number,
+    life: number,
+    strength: number,
+  ): void {
     let pick = -1;
     let oldest = -1;
     for (let i = 0; i < this.eKind.length; i++) {
@@ -438,7 +503,9 @@ export class EffectsDirector {
       this.gunAcc -= n;
     } else this.gunAcc = 0;
     if (n > 0 && dt > 0) {
-      _gunDir.set(0, -Math.sin(GAU8.gunLineDepression), -Math.cos(GAU8.gunLineDepression)).applyQuaternion(ac.orientation);
+      _gunDir
+        .set(0, -Math.sin(GAU8.gunLineDepression), -Math.cos(GAU8.gunLineDepression))
+        .applyQuaternion(ac.orientation);
       ps.groundY = this.groundAt(_muzzle.x, _muzzle.z);
       const v = ac.velocity;
       const detail = this.ctx.detail;
@@ -519,7 +586,8 @@ export class EffectsDirector {
       );
       ps.emissive(f, R.range(0.7, 1));
     }
-    if (gun.firing || n > 0) setVibration(0.45 * Math.min(1, Math.max(0.3, gun.rate / GAU8.rate)), GAU8.rate);
+    if (gun.firing || n > 0)
+      setVibration(0.45 * Math.min(1, Math.max(0.3, gun.rate / GAU8.rate)), GAU8.rate);
     this.lastMuzzle.copy(_muzzle);
   }
 
@@ -538,13 +606,20 @@ export class EffectsDirector {
       const shape = VEHICLE_SHAPES[v.kind];
       const top = shape.hullClearance + shape.hullHeight;
       // the fire's source: the engine deck, or the open turret ring after a catastrophic kill
-      const lz = v.condition === 'catastrophic' && shape.turret ? shape.turret.offsetZ : shape.hullLength * 0.28;
+      const lz =
+        v.condition === 'catastrophic' && shape.turret
+          ? shape.turret.offsetZ
+          : shape.hullLength * 0.28;
       const sh = Math.sin(v.heading);
       const ch = Math.cos(v.heading);
       // local (0, top, lz) → world: forward is -Z local = (sin h, 0, -cos h) world
       // the terrain under the vehicle (a dug-in vehicle's position is the floor of its pit)
       const ground = this.groundAt(v.position.x, v.position.z);
-      _src.set(v.position.x - sh * lz, Math.max(v.position.y + top, ground + 0.3), v.position.z + ch * lz);
+      _src.set(
+        v.position.x - sh * lz,
+        Math.max(v.position.y + top, ground + 0.3),
+        v.position.z + ch * lz,
+      );
       const d = Math.hypot(_src.x - camera.x, _src.y - camera.y, _src.z - camera.z);
       ps.groundY = ground;
       ps.delay = 0;
@@ -554,7 +629,17 @@ export class EffectsDirector {
       if (burning) {
         if (!st.scorched) {
           st.scorched = true;
-          this.ctx.decals.add(v.position.x, ground, v.position.z, 0, 1, 0, shape.hullLength * 0.75, DECAL.scorch, 1800);
+          this.ctx.decals.add(
+            v.position.x,
+            ground,
+            v.position.z,
+            0,
+            1,
+            0,
+            shape.hullLength * 0.75,
+            DECAL.scorch,
+            1800,
+          );
         }
         // flames licking out of the hull
         if (near > 0) {
@@ -582,7 +667,18 @@ export class EffectsDirector {
             st.emberAcc += 4 * f * detail * dt;
             while (st.emberAcc >= 1) {
               st.emberAcc -= 1;
-              ps.spawn(PK.ember, _src.x + R.signed(1), _src.y + 0.5, _src.z + R.signed(1), R.signed(2), R.range(3, 8), R.signed(2), 0.1, 0.06, R.range(1.5, 3.5));
+              ps.spawn(
+                PK.ember,
+                _src.x + R.signed(1),
+                _src.y + 0.5,
+                _src.z + R.signed(1),
+                R.signed(2),
+                R.range(3, 8),
+                R.signed(2),
+                0.1,
+                0.06,
+                R.range(1.5, 3.5),
+              );
             }
           }
         }
@@ -625,11 +721,18 @@ export class EffectsDirector {
           ps.opacity(j, 0.5 + 0.4 * f);
         }
         // ammunition cooking off
-        if (HAS_AMMO[v.kind] && !st.simPops && f > 0.25 && sim.time - st.burnSince < 150) {
+        if (hasAmmo(v.kind) && !st.simPops && f > 0.25 && sim.time - st.burnSince < 150) {
           st.popTimer -= dt;
           if (st.popTimer <= 0) {
             st.popTimer = R.range(2, 9) * (1 + (sim.time - st.burnSince) / 50);
-            if (d < 6000) cookOffPop(this.ctx, _src.x + R.signed(1), _src.y + R.range(0, 1), _src.z + R.signed(1), R.range(0.2, 0.7));
+            if (d < 6000)
+              cookOffPop(
+                this.ctx,
+                _src.x + R.signed(1),
+                _src.y + R.range(0, 1),
+                _src.z + R.signed(1),
+                R.range(0.2, 0.7),
+              );
           }
         }
       } else if (wreck) {
@@ -637,7 +740,18 @@ export class EffectsDirector {
         st.smoulderAcc += 0.7 * detail * dt;
         while (st.smoulderAcc >= 1) {
           st.smoulderAcc -= 1;
-          const j = ps.spawn(PK.smoke, _src.x + R.signed(1), _src.y + 0.3, _src.z + R.signed(1), R.signed(0.4), R.range(1, 2), R.signed(0.4), 1, R.range(6, 9), R.range(14, 22));
+          const j = ps.spawn(
+            PK.smoke,
+            _src.x + R.signed(1),
+            _src.y + 0.3,
+            _src.z + R.signed(1),
+            R.signed(0.4),
+            R.range(1, 2),
+            R.signed(0.4),
+            1,
+            R.range(6, 9),
+            R.range(14, 22),
+          );
           ps.color(j, 0.16, 0.155, 0.15, 0.4);
         }
       }
@@ -654,7 +768,18 @@ export class EffectsDirector {
             for (let k = 0; k < n; k++) {
               const u = (k + R.next()) / Math.max(1, n);
               _p.lerpVectors(st.turret, tt.position, u);
-              const j = ps.spawn(PK.trailSmoke, _p.x, _p.y, _p.z, R.signed(1), R.range(0, 1.5), R.signed(1), 0.8, R.range(3, 4.5), R.range(3, 5));
+              const j = ps.spawn(
+                PK.trailSmoke,
+                _p.x,
+                _p.y,
+                _p.z,
+                R.signed(1),
+                R.range(0, 1.5),
+                R.signed(1),
+                0.8,
+                R.range(3, 4.5),
+                R.range(3, 5),
+              );
               ps.opacity(j, 0.9);
               if ((k & 1) === 0) {
                 const fl = ps.spawn(PK.fireball, _p.x, _p.y, _p.z, 0, 1, 0, 0.6, 1.6, 0.45);
@@ -725,7 +850,18 @@ export class EffectsDirector {
         this.eAcc[i] += (0.5 + 3.5 * fade * fade) * s * detail * dt;
         while (this.eAcc[i] >= 1) {
           this.eAcc[i] -= 1;
-          ps.spawn(PK.wpSmoke, x + R.signed(1.5), y + 0.8, z + R.signed(1.5), R.signed(1), R.range(1, 3), R.signed(1), R.range(1.5, 2.5) * (0.5 + s), R.range(8, 14) * (0.5 + 0.5 * s), R.range(25, 45));
+          ps.spawn(
+            PK.wpSmoke,
+            x + R.signed(1.5),
+            y + 0.8,
+            z + R.signed(1.5),
+            R.signed(1),
+            R.range(1, 3),
+            R.signed(1),
+            R.range(1.5, 2.5) * (0.5 + s),
+            R.range(8, 14) * (0.5 + 0.5 * s),
+            R.range(25, 45),
+          );
         }
       } else {
         // ground fire (debris, fuel) or the aircraft's own wreck
@@ -733,10 +869,32 @@ export class EffectsDirector {
         this.eAcc[i] += (6 + 10 * s) * big * fade * detail * dt;
         while (this.eAcc[i] >= 1) {
           this.eAcc[i] -= 1;
-          const j = ps.spawn(PK.flame, x + R.signed(1.2 * big), y + 0.3, z + R.signed(1.2 * big), 0, R.range(1, 2.5), 0, R.range(0.6, 1.1) * (0.6 + s) * big, R.range(1.2, 2.2) * (0.6 + s) * big, R.range(0.5, 0.9));
+          const j = ps.spawn(
+            PK.flame,
+            x + R.signed(1.2 * big),
+            y + 0.3,
+            z + R.signed(1.2 * big),
+            0,
+            R.range(1, 2.5),
+            0,
+            R.range(0.6, 1.1) * (0.6 + s) * big,
+            R.range(1.2, 2.2) * (0.6 + s) * big,
+            R.range(0.5, 0.9),
+          );
           ps.emissive(j, R.range(0.7, 1.1));
           if (R.next() < 0.3) {
-            const k = ps.spawn(PK.blackSmoke, x + R.signed(1), y + 1.5, z + R.signed(1), R.signed(0.5), R.range(2, 4), R.signed(0.5), 1 * big, R.range(5, 8) * big, R.range(6, 11));
+            const k = ps.spawn(
+              PK.blackSmoke,
+              x + R.signed(1),
+              y + 1.5,
+              z + R.signed(1),
+              R.signed(0.5),
+              R.range(2, 4),
+              R.signed(0.5),
+              1 * big,
+              R.range(5, 8) * big,
+              R.range(6, 11),
+            );
             ps.opacity(k, 0.6 + 0.3 * s);
           }
         }
@@ -755,7 +913,8 @@ export class EffectsDirector {
         const x = this.popX[i];
         const y = this.popY[i];
         const z = this.popZ[i];
-        if (Math.hypot(x - c.x, y - c.y, z - c.z) < 7000) cookOffPop(this.ctx, x, y, z, this.popS[i]);
+        if (Math.hypot(x - c.x, y - c.y, z - c.z) < 7000)
+          cookOffPop(this.ctx, x, y, z, this.popS[i]);
       }
     }
   }

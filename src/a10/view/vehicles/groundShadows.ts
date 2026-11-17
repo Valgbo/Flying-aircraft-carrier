@@ -98,7 +98,16 @@ export class GroundShadows {
   }
 
   /** One shadow: ground point, heading (rad), footprint (m), vehicle height (m), opacity. */
-  add(x: number, y: number, z: number, heading: number, width: number, length: number, height: number, opacity: number): void {
+  add(
+    x: number,
+    y: number,
+    z: number,
+    heading: number,
+    width: number,
+    length: number,
+    height: number,
+    opacity: number,
+  ): void {
     if (this.n >= this.capacity) {
       const parent = this.mesh.parent;
       this.capacity *= 2;

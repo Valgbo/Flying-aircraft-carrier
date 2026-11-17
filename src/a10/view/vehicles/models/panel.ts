@@ -28,7 +28,12 @@ export function buildPanel(s: VehicleShape, lod: 0 | 1, detail: number): ModelBu
     const order = nz < 0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3];
     for (const k of order) {
       const [u, v] = corners[k];
-      b.vertex(u * w, y0 + ((v + 1) / 2) * (y1 - y0), z, 0, 0, nz, [nz < 0 ? -u : u, v, 0, PART.panel]);
+      b.vertex(u * w, y0 + ((v + 1) / 2) * (y1 - y0), z, 0, 0, nz, [
+        nz < 0 ? -u : u,
+        v,
+        0,
+        PART.panel,
+      ]);
     }
   };
   face(zf, -1);
@@ -48,7 +53,11 @@ export function buildPanel(s: VehicleShape, lod: 0 | 1, detail: number): ModelBu
       const len = Math.hypot(y1 * 0.6, 1.8);
       const ang = Math.atan2(1.8, y1 * 0.6);
       b.setColor(P.woodDark);
-      b.push(new Matrix4().makeTranslation(x, y1 * 0.3, zb + 0.08 + 0.9).multiply(new Matrix4().makeRotationX(ang)));
+      b.push(
+        new Matrix4()
+          .makeTranslation(x, y1 * 0.3, zb + 0.08 + 0.9)
+          .multiply(new Matrix4().makeRotationX(ang)),
+      );
       b.box(0, 0, 0, 0.1, len, 0.1);
       b.pop();
       b.setColor(P.wood);

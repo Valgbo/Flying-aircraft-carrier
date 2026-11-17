@@ -144,7 +144,10 @@ export class ParticleSystem {
     const g = new InstancedBufferGeometry();
     g.setAttribute(
       'position',
-      new BufferAttribute(new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), 3),
+      new BufferAttribute(
+        new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]),
+        3,
+      ),
     );
     g.setIndex([0, 1, 2, 0, 2, 3]);
     const inst = (name: string) => {
@@ -308,7 +311,7 @@ export class ParticleSystem {
     const wz = this.wind.z;
     const { px, py, pz, vx, vy, vz, age, life, size } = this;
     this.updating = true;
-    for (let i = 0; i < this.count; ) {
+    for (let i = 0; i < this.count;) {
       const a = age[i] + dt;
       if (a >= life[i]) {
         this.kill(i);
@@ -325,7 +328,9 @@ export class ParticleSystem {
       const kd = step < dt ? 1 - Math.exp(-k.drag * step) : this.kdrag[kid];
       const t = a / life[i];
       const g =
-        k.growTau > 0 ? 0.8 * (1 - Math.exp(-a / k.growTau)) + 0.2 * t : 1 - Math.pow(1 - t, k.grow);
+        k.growTau > 0
+          ? 0.8 * (1 - Math.exp(-a / k.growTau)) + 0.2 * t
+          : 1 - Math.pow(1 - t, k.grow);
       const s = this.s0[i] + (this.s1[i] - this.s0[i]) * g;
       size[i] = s;
       const ground = this.gy[i];

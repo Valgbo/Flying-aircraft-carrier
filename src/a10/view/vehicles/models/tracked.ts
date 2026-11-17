@@ -34,7 +34,12 @@ export interface RunningGearLayout {
 }
 
 /** Road wheels, sprocket, idler, return rollers and the track belt on one side (+1 right). */
-function runningGear(b: ModelBuilder, s: VehicleShape, side: 1 | -1, style: 'mbt' | 'ifv'): RunningGearLayout {
+function runningGear(
+  b: ModelBuilder,
+  s: VehicleShape,
+  side: 1 | -1,
+  style: 'mbt' | 'ifv',
+): RunningGearLayout {
   const L = s.hullLength;
   const W = s.hullWidth;
   const C = s.hullClearance;
@@ -63,7 +68,11 @@ function runningGear(b: ModelBuilder, s: VehicleShape, side: 1 | -1, style: 'mbt
   // ---- the belt ----
   const seg = b.seg(7, 3);
   const path: Vector2[] = [];
-  const front = { y: frontDrive ? ys : yi, z: frontDrive ? zs : zi, r: (frontDrive ? rs : ri) + th };
+  const front = {
+    y: frontDrive ? ys : yi,
+    z: frontDrive ? zs : zi,
+    r: (frontDrive ? rs : ri) + th,
+  };
   const rear = { y: frontDrive ? yi : ys, z: frontDrive ? zi : zs, r: (frontDrive ? ri : rs) + th };
   path.push(new Vector2(0, zF), new Vector2(0, zR));
   for (let i = 0; i <= seg; i++) {
@@ -75,7 +84,11 @@ function runningGear(b: ModelBuilder, s: VehicleShape, side: 1 | -1, style: 'mbt
   for (let i = 1; i < nTop; i++) {
     const f = i / nTop;
     const z = rear.z + (front.z - rear.z) * f;
-    const y = rear.y + rear.r + (front.y + front.r - rear.y - rear.r) * f - 0.03 * Math.sin(f * Math.PI * 3) ** 2;
+    const y =
+      rear.y +
+      rear.r +
+      (front.y + front.r - rear.y - rear.r) * f -
+      0.03 * Math.sin(f * Math.PI * 3) ** 2;
     path.push(new Vector2(y, z));
   }
   for (let i = 0; i <= seg; i++) {
@@ -97,16 +110,33 @@ function runningGear(b: ModelBuilder, s: VehicleShape, side: 1 | -1, style: 'mbt
     b.cylinderX(Math.min(outer, inner), Math.max(outer, inner), y, z, r, wseg, false, aux);
     b.setColor(P.paint);
     b.discX(outer + face * 0.004, y, z, r * 0.84, wseg, face, aux);
-    b.discX(inner - face * 0.004, y, z, r * 0.84, wseg, (-face) as 1 | -1, aux);
+    b.discX(inner - face * 0.004, y, z, r * 0.84, wseg, -face as 1 | -1, aux);
     // hub and the holes in the wheel disc show the wheel turning
     b.setColor(P.paintDark);
-    b.cylinderX(Math.min(outer, outer + face * 0.07), Math.max(outer, outer + face * 0.07), y, z, r * 0.25, b.seg(8, 6), true, aux);
+    b.cylinderX(
+      Math.min(outer, outer + face * 0.07),
+      Math.max(outer, outer + face * 0.07),
+      y,
+      z,
+      r * 0.25,
+      b.seg(8, 6),
+      true,
+      aux,
+    );
     if (b.detail > 0.6) {
       b.setColor(P.bareSteel);
       const holes = toothed ? 0 : 6;
       for (let k = 0; k < holes; k++) {
         const a = (k / holes) * Math.PI * 2;
-        b.discX(outer + face * 0.008, y + Math.cos(a) * r * 0.55, z + Math.sin(a) * r * 0.55, r * 0.12, 6, face, aux);
+        b.discX(
+          outer + face * 0.008,
+          y + Math.cos(a) * r * 0.55,
+          z + Math.sin(a) * r * 0.55,
+          r * 0.12,
+          6,
+          face,
+          aux,
+        );
       }
     }
     if (toothed) {
@@ -133,7 +163,16 @@ function runningGear(b: ModelBuilder, s: VehicleShape, side: 1 | -1, style: 'mbt
     const aux = [yr, z, rr, PART.wheel];
     b.setPart(PART.wheel, yr, z, rr);
     b.setColor(P.rubber);
-    b.cylinderX(Math.min(outer, inner) + 0.05, Math.max(outer, inner) - 0.05, yr, z, rr, b.seg(8, 6), true, aux);
+    b.cylinderX(
+      Math.min(outer, inner) + 0.05,
+      Math.max(outer, inner) - 0.05,
+      yr,
+      z,
+      rr,
+      b.seg(8, 6),
+      true,
+      aux,
+    );
   }
 
   // ---- the track lying on the ground beside the hull when it is thrown (mobility kill) ----
@@ -174,7 +213,11 @@ function hullMbt(b: ModelBuilder, s: VehicleShape, opts: TrackedOptions, yTop: n
     const xc = side * (wl + fw / 2);
     b.box(xc, yF, 0.08, fw, 0.035, L - 0.3);
     // front mud flap angled down over the idler
-    b.push(new Matrix4().makeTranslation(xc, yF - 0.12, -L / 2 + 0.05).multiply(new Matrix4().makeRotationX(-38 * DEG)));
+    b.push(
+      new Matrix4()
+        .makeTranslation(xc, yF - 0.12, -L / 2 + 0.05)
+        .multiply(new Matrix4().makeRotationX(-38 * DEG)),
+    );
     b.box(0, 0, 0, fw, 0.03, 0.45);
     b.pop();
     // hull side plate above the fender
@@ -222,7 +265,16 @@ function hullMbt(b: ModelBuilder, s: VehicleShape, opts: TrackedOptions, yTop: n
       b.cylinderX(x - 0.44, x + 0.44, yd, L / 2 + r + 0.02, r, b.seg(12, 6), true);
       if (opts.lod === 0) {
         b.setColor(P.drumBand);
-        for (const dx of [-0.2, 0.2]) b.cylinderX(x + dx - 0.02, x + dx + 0.02, yd, L / 2 + r + 0.02, r + 0.012, b.seg(12, 6), false);
+        for (const dx of [-0.2, 0.2])
+          b.cylinderX(
+            x + dx - 0.02,
+            x + dx + 0.02,
+            yd,
+            L / 2 + r + 0.02,
+            r + 0.012,
+            b.seg(12, 6),
+            false,
+          );
       }
     }
     if (opts.lod === 0) {
@@ -246,7 +298,16 @@ function turretMbt(b: ModelBuilder, s: VehicleShape, opts: TrackedOptions): void
   b.setPart(PART.turret, tz, pivotY, pivotZ).setColor(P.paint).setZone(ZONE.hull);
   b.cylinderY(0, tz, top - 0.02, top + 0.09, R * 0.9, b.seg(18, 8), false);
   const radius = (th: number) => R * (1 + 0.1 * Math.cos(th) - 0.03 * Math.cos(2 * th));
-  b.dome(0, tz, top + 0.06, Ht - 0.06, radius, b.seg(24, 10), opts.lod === 0 ? b.seg(7, 3) : 2, 0.55);
+  b.dome(
+    0,
+    tz,
+    top + 0.06,
+    Ht - 0.06,
+    radius,
+    b.seg(24, 10),
+    opts.lod === 0 ? b.seg(7, 3) : 2,
+    0.55,
+  );
   if (opts.lod === 0) {
     // commander's cupola (right) with its machine gun, gunner's sight (left), searchlight, snorkel
     const domeY = (x: number, z: number) => {
@@ -351,8 +412,10 @@ function hullIfv(b: ModelBuilder, s: VehicleShape, opts: TrackedOptions, yTop: n
   if (opts.lod === 0) {
     // rear doors (fuel tanks inside), roof hatches, the driver's hatch, headlights
     b.setColor(P.paintDark);
-    for (const x of [-0.45, 0.45]) b.box(x, (C + 0.15 + top) / 2 - 0.05, L / 2 + 0.03, 0.72, (top - C) * 0.62, 0.07);
-    for (const x of [-0.42, 0.42]) for (const z of [0.9, 1.9]) b.box(x, top + 0.025, z, 0.6, 0.05, 0.75);
+    for (const x of [-0.45, 0.45])
+      b.box(x, (C + 0.15 + top) / 2 - 0.05, L / 2 + 0.03, 0.72, (top - C) * 0.62, 0.07);
+    for (const x of [-0.42, 0.42])
+      for (const z of [0.9, 1.9]) b.box(x, top + 0.025, z, 0.6, 0.05, 0.75);
     b.cylinderY(-0.55, -L / 2 + 2.15, C + H * 0.67 + 0.05, C + H * 0.67 + 0.12, 0.27, b.seg(10, 6));
     b.setColor(P.lens).setPart(PART.bare);
     for (const x of [-0.75, 0.75]) b.box(x, yN + 0.35, -L / 2 + 1.1, 0.14, 0.12, 0.12);
@@ -372,7 +435,16 @@ function turretIfv(b: ModelBuilder, s: VehicleShape, opts: TrackedOptions): void
   const pivotY = top + Ht * 0.45;
   const pivotZ = front + 0.15;
   b.setPart(PART.turret, tz, pivotY, pivotZ).setColor(P.paint).setZone(ZONE.hull);
-  b.dome(0, tz, top, Ht, (th) => R * (1 + 0.06 * Math.cos(th)), b.seg(14, 8), opts.lod === 0 ? 3 : 1, 1.3);
+  b.dome(
+    0,
+    tz,
+    top,
+    Ht,
+    (th) => R * (1 + 0.06 * Math.cos(th)),
+    b.seg(14, 8),
+    opts.lod === 0 ? 3 : 1,
+    1.3,
+  );
   if (opts.lod === 0) {
     // the anti-tank missile launcher on the roof and the commander's sight
     b.setColor(P.paintDark);
