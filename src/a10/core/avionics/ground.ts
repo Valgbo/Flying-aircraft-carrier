@@ -14,7 +14,7 @@
 import { Vector3 } from 'three';
 import type { Sim } from '../types';
 import type { Terrain, TerrainHit } from '../world/types';
-import { FIRE_CONTROL } from './data';
+import { FIRE_CONTROL } from '../../data/avionics';
 import type { AltSource } from './types';
 
 export interface FireControlGround {

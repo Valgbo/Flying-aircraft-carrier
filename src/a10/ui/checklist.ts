@@ -476,7 +476,11 @@ export function nextChecklistStep(s: ChecklistState, keys: ChecklistKeys): Check
 /** Snapshot the sim for the checklist (the selected weapon follows the master mode). */
 export function checklistStateFromSim(sim: Sim): ChecklistState {
   const av = sim.avionics;
-  const gunMode = av.masterMode === 'NAV' || av.masterMode === 'GUNS';
+  // The gun is the weapon in NAV and GUNS, and in CCIP when it is the CCIP weapon (no profile).
+  const gunMode =
+    av.masterMode === 'NAV' ||
+    av.masterMode === 'GUNS' ||
+    (av.sight === 'GUN' && !av.selectedProfile);
   const profile = gunMode ? undefined : av.profiles.find((p) => p.id === av.selectedProfile);
   const weapon = gunMode ? 'GUN' : (profile?.store ?? '');
   let storesLeft = 0;

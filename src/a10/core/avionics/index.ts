@@ -24,7 +24,12 @@ import { computeReleaseSolution } from './release';
 export type * from './types';
 export { applyCommands, applyCommand, rearm, jettison } from './commands';
 export { createAvionicsState, initAvionics } from './init';
-export { FIRE_CONTROL, FIRE_CONTROL_NOTES, PROFILE_DEFAULTS, PROFILE_DEFAULTS_NOTES } from './data';
+export {
+  FIRE_CONTROL,
+  FIRE_CONTROL_NOTES,
+  PROFILE_DEFAULTS,
+  PROFILE_DEFAULTS_NOTES,
+} from '../../data/avionics';
 export {
   computeGunSolution,
   eyeWorld,

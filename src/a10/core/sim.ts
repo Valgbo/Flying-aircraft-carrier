@@ -2,7 +2,7 @@
  * The simulation: creation and the fixed-order step. FOUNDATION-OWNED.
  * See docs/a10/ARCHITECTURE.md §3 for the step order and why it is in this order.
  */
-import { applyCommands, createAvionicsState, stepFireControl } from './avionics';
+import { applyCommands, createAvionicsState, initAvionics, stepFireControl } from './avionics';
 import { SIM_DT } from './constants';
 import { createDebriefState, stepDebrief } from './debrief';
 import {
@@ -125,6 +125,8 @@ export function createSim(opts: CreateSimOptions): Sim {
   };
   updateMassProperties(sim);
   populateScenario(sim);
+  // Steerpoints, SPI and weapon profiles exist before the first step (paused start, first HUD).
+  initAvionics(sim);
   return sim;
 }
 

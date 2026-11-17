@@ -143,10 +143,16 @@ describe('start of the flight', () => {
     expect(sim.avionics.steerpoints[4].position.toArray()).toEqual([-8000, 120, 9000]);
   });
 
-  it('keeps steerpoints and profiles set up before the first step', () => {
+  it('keeps steerpoints and profiles a set-up replaces after createSim (as the sandboxes do)', () => {
     const sim = makeSim();
     const av = sim.avionics;
+    // createSim already built the flight's steerpoints, SPI and profiles (initAvionics).
+    expect(av.initialized).toBe(true);
+    expect(av.spi.valid).toBe(av.steerpoints.length > 0);
+    av.steerpoints.length = 0;
     av.steerpoints.push({ id: 7, name: 'TGT1', position: new Vector3(10, 0, -20) });
+    av.activeSteerpoint = 0;
+    av.profiles.length = 0;
     av.profiles.push({
       id: 'mk82-ccip',
       store: 'MK-82',
@@ -160,6 +166,7 @@ describe('start of the flight', () => {
     });
     av.selectedProfile = 'mk82-ccip';
     apply(sim);
+    stepFireControl(sim, SIM_DT); // the SPI follows the active steerpoint every step
     expect(av.steerpoints.map((s) => s.name)).toEqual(['TGT1']);
     expect(av.profiles.filter((p) => p.store === 'MK-82').map((p) => p.id)).toEqual(['mk82-ccip']);
     expect(av.selectedProfile).toBe('mk82-ccip');
@@ -245,6 +252,13 @@ describe('master modes and weapon profiles', () => {
     apply(sim, { type: 'masterMode', value: 'CCRP' });
     expect(sim.avionics.masterMode).toBe('CCIP');
     expect(messages(sim)).toEqual(['CCRP NOT AVAILABLE']);
+    // 'previous' (the mode selector's right click) skips the unavailable CCRP too
+    apply(sim, { type: 'masterMode', value: 'previous' });
+    expect(sim.avionics.masterMode).toBe('GUNS');
+    apply(sim, { type: 'masterMode', value: 'previous' });
+    expect(sim.avionics.masterMode).toBe('NAV');
+    apply(sim, { type: 'masterMode', value: 'previous' });
+    expect(sim.avionics.masterMode).toBe('CCIP');
   });
 
   it('tank hunter: NAV → GUNS → CCIP (rockets) → CCRP (laser bomb) → NAV', () => {

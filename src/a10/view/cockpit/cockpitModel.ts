@@ -68,7 +68,7 @@ const NO_GLOW = new Set(['cpt-floor', 'cpt-floor-rivets', 'panel-grey-central-st
 /** Instrument glow colour at full night (× the texture: white markings glow, black faces do not). */
 const GLOW = new Color(0.5, 0.4, 0.27);
 /** Airframe parts invisible from the seat (drawing them would only cost). */
-const AIRFRAME_HIDDEN = ['Cannon__spin', 'L-Wing-Slat__slat'];
+const AIRFRAME_HIDDEN = ['Cannon__spin'];
 /** The box (BODY, m) whose airframe triangles cast shadows into the cockpit. */
 const SHADOW_BOX = new Box3(new Vector3(-1.5, -0.3, -7.4), new Vector3(1.5, 2.7, -2.4));
 

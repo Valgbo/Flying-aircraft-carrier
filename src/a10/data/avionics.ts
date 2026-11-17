@@ -1,11 +1,10 @@
 /**
  * Fire-control and stores-page reference data (PLAN_A10.md §6.2, §6.5, §7). SI units.
- * Every number has a SourceNote (data/sources.ts). Owned by the AVIONICS module; it lives in
- * core/avionics because the avionics module owns no file under data/ (see the module report).
+ * Every number has a SourceNote (data/sources.ts). Owned by the AVIONICS module.
  */
-import type { SourceNote } from '../../data/sources';
-import { FT } from '../units';
-import type { DeliveryMode, FuzeOption, ReleaseMode } from './types';
+import type { SourceNote } from './sources';
+import { FT } from '../core/units';
+import type { DeliveryMode, FuzeOption, ReleaseMode } from '../core/avionics/types';
 
 export const FIRE_CONTROL = {
   /**

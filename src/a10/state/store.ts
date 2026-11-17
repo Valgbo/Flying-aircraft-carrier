@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: A10Settings = {
   realism: 'authentic',
   invertY: false,
   mouseStick: false,
-  fov: 62,
+  fov: 50,
   timeOfDay: 10.5,
   checklist: true,
   showFps: false,

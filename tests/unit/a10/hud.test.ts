@@ -476,7 +476,10 @@ describe('HUD symbology (NAV)', () => {
   it('shows the steerpoint block and radar altitude, and flashes it with the alert', () => {
     const sim = flight({ pitch: 0, alpha: 4 });
     sim.aircraft.agl = 1520 * FT;
+    // createSim builds the flight's steerpoints; this test flies to its own.
+    sim.avionics.steerpoints.length = 0;
     sim.avionics.steerpoints.push({ id: 1, name: 'TGT1', position: new Vector3(0, 0, -4000) });
+    sim.avionics.activeSteerpoint = 0;
     const { has } = build(sim);
     expect(has('R 1520')).toBe(true);
     expect(has('TGT1')).toBe(true);
@@ -504,6 +507,7 @@ describe('HUD symbology (GUNS)', () => {
     const sim = flight({ pitch: -30, alpha: 2.5 });
     const av = sim.avionics;
     av.masterMode = 'GUNS';
+    av.sight = 'GUN';
     av.masterArm = 'ARM';
     av.gunPac = 'ARM';
     av.gun.valid = true;
@@ -598,6 +602,7 @@ describe('HUD symbology (CCIP, CCRP)', () => {
     const sim = flight({ pitch: -30, alpha: 2.5 });
     const av = sim.avionics;
     av.masterMode = 'CCIP';
+    av.sight = 'CCIP';
     av.release.valid = true;
     av.release.az = 0;
     av.release.el = -16 * DEG;
@@ -606,6 +611,7 @@ describe('HUD symbology (CCIP, CCRP)', () => {
     expect(info.pipperBelowGlass).toBe(true);
     expect(rec.segs.some((s) => s[4] === 1.6)).toBe(true); // delay cue
     av.release.valid = false;
+    av.ccipInvalid = true;
     expect(build(sim).has('CCIP INVALID')).toBe(true);
   });
 
@@ -613,6 +619,7 @@ describe('HUD symbology (CCIP, CCRP)', () => {
     const sim = flight({ pitch: 2, alpha: 4 });
     const av = sim.avionics;
     av.masterMode = 'CCRP';
+    av.sight = 'CCRP';
     av.release.valid = true;
     av.release.az = 2 * DEG;
     av.release.el = -20 * DEG;

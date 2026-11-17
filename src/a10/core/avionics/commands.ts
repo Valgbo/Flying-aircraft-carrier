@@ -15,7 +15,6 @@ import {
 import type { Command, Sim } from '../types';
 import { FT } from '../units';
 import * as weapons from '../weapons';
-import type { StoreType } from '../weapons/types';
 import {
   handleChinaHat,
   handleCoolie,
@@ -28,7 +27,13 @@ import { initAvionics, refreshStores } from './init';
 import { pressOsb, selectMfdSoi, setMfdPage } from './mfd';
 import { cycleSteerpoint } from './navigation';
 import { notify, switched } from './notify';
-import { cycleProfile, enterMasterMode, modeAvailable, nextMasterMode } from './profiles';
+import {
+  cycleProfile,
+  enterMasterMode,
+  modeAvailable,
+  nextMasterMode,
+  previousMasterMode,
+} from './profiles';
 import type { AltSource, GunPacSwitch, LaserArm, MasterArm } from './types';
 
 /**
@@ -99,7 +104,12 @@ export function applyCommand(sim: Sim, c: Command): void {
       break;
     }
     case 'masterMode': {
-      const mode = c.value === 'next' ? nextMasterMode(sim) : c.value;
+      const mode =
+        c.value === 'next'
+          ? nextMasterMode(sim)
+          : c.value === 'previous'
+            ? previousMasterMode(sim)
+            : c.value;
       if (modeAvailable(sim, mode)) enterMasterMode(sim, mode);
       else notify(sim, `${mode} NOT AVAILABLE`, 'info');
       break;
@@ -191,48 +201,18 @@ export function applyCommand(sim: Sim, c: Command): void {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Other modules' setters, called if they exist (the weapons and flight engineers are adding
-// them); the fallbacks only use those modules' exported constructors.
+// Other modules' setters (rearm and jettison change the weapons' and the flight's state).
 // ---------------------------------------------------------------------------------------------
-
-interface WeaponsSetters {
-  rearm?: (sim: Sim) => void;
-  jettisonStores?: (sim: Sim, stations: number[] | 'all') => void;
-}
-interface FlightSetters {
-  refuel?: (sim: Sim) => void;
-}
 
 /** Reload the gun and restore the loadout (weapons.rearm), and refuel (flight.refuel). */
 export function rearm(sim: Sim): void {
-  const w = weapons as unknown as WeaponsSetters;
-  if (typeof w.rearm === 'function') w.rearm(sim);
-  else {
-    const gun = weapons.createGunState(sim.options.ammoLoad);
-    gun.totalFired = sim.gun.totalFired;
-    sim.gun = gun;
-    sim.stores = weapons.createStoresState(sim.options.loadoutId, sim.options.customLoadout);
-  }
-  const f = flight as unknown as FlightSetters;
-  if (typeof f.refuel === 'function') f.refuel(sim);
+  weapons.rearm(sim);
+  flight.refuel(sim);
   updateMassProperties(sim);
 }
 
 /** Jettison the stores of some stations, or all (weapons.jettisonStores). */
 export function jettison(sim: Sim, stations: number[] | 'all'): void {
-  const w = weapons as unknown as WeaponsSetters;
-  if (typeof w.jettisonStores === 'function') {
-    w.jettisonStores(sim, stations);
-    return;
-  }
-  const keep: Record<number, StoreType[]> = {};
-  for (const st of sim.stores.stations) {
-    if (stations === 'all' || stations.includes(st.station)) continue;
-    const list: StoreType[] = [];
-    if (st.rack) list.push(st.rack);
-    list.push(...st.stores);
-    if (list.length > 0) keep[st.station] = list;
-  }
-  sim.stores = weapons.createStoresState('custom', keep);
+  weapons.jettisonStores(sim, stations);
   updateMassProperties(sim);
 }

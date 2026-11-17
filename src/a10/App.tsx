@@ -15,7 +15,7 @@ export default function A10App() {
       <Canvas
         dpr={DPR[quality]}
         gl={{ antialias: true, stencil: true, powerPreference: 'high-performance' }}
-        camera={{ fov: 62, near: 1, far: 90000, position: [0, 3000, 0] }}
+        camera={{ fov: 50, near: 1, far: 90000, position: [0, 3000, 0] }}
       >
         <SceneRoot />
       </Canvas>

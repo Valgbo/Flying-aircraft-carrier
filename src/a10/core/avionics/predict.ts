@@ -17,7 +17,7 @@
  */
 import { Vector3 } from 'three';
 import type { TerrainHit } from '../world/types';
-import { FIRE_CONTROL } from './data';
+import { FIRE_CONTROL } from '../../data/avionics';
 import { createTerrainHit, groundSegmentHit, type FireControlGround } from './ground';
 
 /** A body the computer can fly: the weapons module's own integrator for that body. */

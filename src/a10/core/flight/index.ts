@@ -221,6 +221,12 @@ export function setGear(sim: Sim, down: boolean): void {
   sim.aircraft.gearDown = down;
 }
 
+/** Fill the internal tanks (rearm and refuel from the pause menu). */
+export function refuel(sim: Sim): void {
+  sim.aircraft.fuel = A10.internalFuel;
+  updateMassProperties(sim);
+}
+
 /** Altitude alert setting, m above the ground (radar). */
 export function setAltitudeAlert(sim: Sim, metresAgl: number): void {
   if (!Number.isFinite(metresAgl)) return;

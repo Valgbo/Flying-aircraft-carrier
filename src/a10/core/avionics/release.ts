@@ -13,7 +13,7 @@ import type { AircraftState } from '../flight/types';
 import { worldToBody } from '../frames';
 import type { Sim } from '../types';
 import { windAt } from '../world';
-import { FIRE_CONTROL } from './data';
+import { FIRE_CONTROL } from '../../data/avionics';
 import type { FireControlGround } from './ground';
 import { eyeWorld, hudAnglesOfPoint } from './gunsight';
 import {

@@ -18,7 +18,7 @@
  * The weapon sight (`avionics.sight`) the HUD draws follows from the mode and the profile.
  */
 import type { Sim } from '../types';
-import { PROFILE_DEFAULTS } from './data';
+import { PROFILE_DEFAULTS } from '../../data/avionics';
 import { switched } from './notify';
 import type {
   AvionicsState,

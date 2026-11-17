@@ -164,9 +164,8 @@ export function commandForControl(
         value: step(ALT_SOURCE_ORDER, s.altSource, secondary ? -1 : 1, true),
       };
     case 'masterMode':
-      return secondary
-        ? { type: 'masterMode', value: step(MASTER_MODE_ORDER, s.masterMode, -1, true) }
-        : { type: 'masterMode', value: 'next' };
+      // the avionics skip modes that are not available, both ways
+      return { type: 'masterMode', value: secondary ? 'previous' : 'next' };
     case 'flaps': {
       const h = Math.max(
         0,

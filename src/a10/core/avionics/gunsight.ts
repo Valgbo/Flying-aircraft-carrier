@@ -34,7 +34,7 @@ import { DEG, KT } from '../units';
 import { integrateRound, muzzleState, muzzleVelocity } from '../weapons';
 import { RoundType, type AmmoLoad } from '../weapons/types';
 import { windAt } from '../world';
-import { FIRE_CONTROL } from './data';
+import { FIRE_CONTROL } from '../../data/avionics';
 import type { FireControlGround } from './ground';
 import {
   calibrateStep,

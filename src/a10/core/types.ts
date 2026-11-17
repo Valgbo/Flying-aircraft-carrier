@@ -69,7 +69,7 @@ export type Command =
   | { type: 'laserArm'; value: LaserArm | 'cycle' }
   | { type: 'tgpPower'; value: boolean | 'toggle' }
   | { type: 'altSource'; value: AltSource | 'cycle' }
-  | { type: 'masterMode'; value: MasterMode | 'next' }
+  | { type: 'masterMode'; value: MasterMode | 'next' | 'previous' }
   | { type: 'profile'; dir: 1 | -1 }
   | { type: 'soi'; value: Soi }
   | { type: 'mfdPage'; display: 'L' | 'R'; page: MfdPage }

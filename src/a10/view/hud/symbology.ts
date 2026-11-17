@@ -183,8 +183,10 @@ export class HudSymbology {
     this.ladder();
     this.drawTvv(info.tvvX, info.tvvY);
     this.headingTape(sim);
-    switch (sim.avionics.masterMode) {
-      case 'GUNS':
+    // The sight follows avionics.sight (the gun reticle also in CCIP when the gun is the CCIP
+    // weapon), not the master mode alone.
+    switch (sim.avionics.sight) {
+      case 'GUN':
         this.gunCross();
         this.gunReticle(sim);
         break;
@@ -306,16 +308,16 @@ export class HudSymbology {
     this.basisValid = ladderBasis(this.dir, this.up, NOSE, this.basis);
   }
 
-  /** Where the gun (GUNS) or bomb (CCIP) pipper goes, and whether it is below the glass. */
+  /** Where the gun or bomb (CCIP) pipper goes, and whether it is below the glass. */
   private pipper(sim: Sim, eye: Vec3Like): void {
     const av = sim.avionics;
     const info = this.info;
     let az: number;
     let el: number;
-    if (av.masterMode === 'GUNS' && av.gun.valid) {
+    if (av.sight === 'GUN' && av.gun.valid) {
       az = av.gun.pipperAz;
       el = av.gun.pipperEl;
-    } else if (av.masterMode === 'CCIP' && av.release.valid && !av.ccipInvalid) {
+    } else if (av.sight === 'CCIP' && av.release.valid && !av.ccipInvalid) {
       az = av.release.az;
       el = av.release.el;
     } else return;
@@ -327,7 +329,7 @@ export class HudSymbology {
     this.d3.y = this.r.y;
     this.d3.z = -1;
     info.pipperBelowGlass =
-      belowGlass(eye, this.d3, HUD_GLASS) || (av.masterMode === 'CCIP' && av.release.belowGlass);
+      belowGlass(eye, this.d3, HUD_GLASS) || (av.sight === 'CCIP' && av.release.belowGlass);
   }
 
   // ------------------------------------------------------------------------------------------
@@ -424,7 +426,7 @@ export class HudSymbology {
     const av = sim.avionics;
     const L = this.layout;
     const b = this.buf;
-    if (av.masterMode === 'GUNS') {
+    if (av.sight === 'GUN') {
       if (!av.gun.valid) {
         b.clear().str('GUN INVALID');
         this.text(L.centerX, L.warnY, ALIGN_CENTER);
@@ -433,7 +435,7 @@ export class HudSymbology {
         b.clear().fixed(mToFt(av.gun.slantRange) / 1000, 1);
         this.text(this.info.pipperX + S.reticleRadius + 0.3 * DEG, this.info.pipperY, ALIGN_LEFT);
       }
-    } else if (av.masterMode === 'CCIP' && (!av.release.valid || av.ccipInvalid)) {
+    } else if (av.masterMode === 'CCIP' && av.ccipInvalid) {
       b.clear().str('CCIP INVALID');
       this.text(L.centerX, L.warnY, ALIGN_CENTER);
     } else if (av.masterMode === 'CCRP' && !av.release.valid) {

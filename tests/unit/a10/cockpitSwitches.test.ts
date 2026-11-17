@@ -155,18 +155,18 @@ describe('commands for clicks', () => {
     });
   });
 
-  it('master mode: left = next (as the key), right = the previous mode explicitly', () => {
+  it('master mode: left = next (as the key), right = previous (avionics skip unavailable modes)', () => {
     expect(commandForControl('masterMode', LEFT, state({ masterMode: 'NAV' }))).toEqual({
       type: 'masterMode',
       value: 'next',
     });
     expect(commandForControl('masterMode', RIGHT, state({ masterMode: 'NAV' }))).toEqual({
       type: 'masterMode',
-      value: 'CCRP',
+      value: 'previous',
     });
     expect(commandForControl('masterMode', RIGHT, state({ masterMode: 'CCIP' }))).toEqual({
       type: 'masterMode',
-      value: 'GUNS',
+      value: 'previous',
     });
   });
 

@@ -173,7 +173,7 @@ system draws only from its own `sim.rng` stream.
 - **Command values as the input layer queues them** (the avionics module must handle every
   one): `masterArm` and `laserArm` arrive as explicit `'ARM'`/`'SAFE'` (the key toggles from the
   current state); `gunPac` `'cycle'`; `tgpPower` `'toggle'`; `altSource` `'cycle'`;
-  `masterMode` `'next'`; `profile` ±1; `soi` an explicit `'HUD'|'LMFD'|'RMFD'`;
+  `masterMode` `'next'` (or `'previous'`, both skipping modes that are not available); `profile` ±1; `soi` an explicit `'HUD'|'LMFD'|'RMFD'`;
   `tms`/`dms`/`coolie` `{dir, long}`; `chinaHat` `{fwd|aft, long}`; `sensorPicture` `'cycle'`;
   `sensorZoom` ±1; `flaps` `0|1|2` (next position) or `'up'`/`'down'`; `gear` `'toggle'`;
   `autopilot` `'toggle'`/`'mode'`; `altitudeAlert` in metres above the ground, 0 = off (steps
@@ -283,7 +283,28 @@ module's exported setter functions, never by writing the other module's private 
 setters (`setFlapHandle`, `setGear`, `autopilotCommand`, `setAltitudeAlert`) instead of writing
 `sim.aircraft` fields, and emits `switch {name, value}` for each armament-panel switch, master
 mode, profile, SOI, altitude-source and display change (audio clicks on them; nothing else emits
-them).
+them). Switch-event names: `masterArm`, `gunPac`, `laserArm`, `tgpPower`, `altSource`,
+`masterMode`, `profile`, `soi`, `leftMfd`, `rightMfd`, `osb`, `steerpoint`, `spi`, `slave`,
+`gunSight`, `flaps`, `gear`, `autopilot`, `altitudeAlert`, `jettison`.
+`createSim` calls `initAvionics(sim)` (steerpoints from the target areas and the airbase, the
+SPI at the active steerpoint, one default weapon profile per store type from
+`data/avionics.ts` `PROFILE_DEFAULTS`); a set-up that wants its own steerpoints or profiles
+replaces the lists after `createSim`. State a HUD or display reads: `sight` (`'NONE' | 'GUN' |
+'CCIP' | 'CCRP'`: which weapon sight to draw; the gun reticle also in CCIP when the gun is the
+CCIP weapon), `ccipInvalid`, `gunSight`, `spi`, `steerpoints`/`activeSteerpoint`, `mfd`, `soi`,
+`selectedProfile`/`profiles`, `buildDsmsView(sim, out)` for the stores page. `GunSolution` also
+carries `minRange`/`maxRange` (2,000 / 12,000 ft, `FIRE_CONTROL` in `data/avionics.ts`),
+`gunLineAz/El` (the gun cross), `groundSource`/`groundPlane`/`groundValid` (altitude source),
+`roundType`, `impactSpeed`. For the sensors module: `sensorRequests` (HOTAS actions of this
+step: avionics clears the list at the start of `applyCommands`, `stepSensors` reads it in the
+same step) and `slaveRequest` (`{ sensors: 'ALL' | 'TGP', time }`, China hat forward/aft long).
+Store fire control: `registerStoreBallistics(store, model)` (the weapons module registers each
+store's ballistic model: the same integrator that moves the live store bodies) and
+`predictStoreImpact`; the release solution stays invalid for a store without a model. An explicit
+master mode that is not available is refused with a `message`. Also exported: `rearm`,
+`jettison`, `previousMasterMode`/`nextMasterMode`/`modeAvailable`, `cycleProfile`,
+`cycleSteerpoint`, `spiToSteerpoint`, `computeGunSolution`, `predictImpact`, `eyeWorld`,
+`hudAnglesOfPoint`, the OSB and HOTAS tables.
 
 ### Targets — `core/targets`
 
@@ -326,7 +347,8 @@ State constructors and step functions as in their `index.ts`.
   `*_NOTES` record giving its `source` (an id in `data/sources.ts`) and `confidence`
   (`confirmed` · `approximate` · `estimate`). `docs/a10/REFERENCE_DATA.md` explains them.
 - Ownership: `aircraft.ts` flight · `geometry.ts` aircraft/assets · `gun.ts`, `munitions.ts`
-  weapons · `vehicles.ts` targets · `sources.ts` foundation (ask to add a source).
+  weapons · `vehicles.ts` targets · `avionics.ts` avionics (fire control, weapon-profile
+  defaults) · `sources.ts` foundation (ask to add a source).
 - Tests check behaviour against these numbers (PLAN §16), never against magic numbers copied
   into the test.
 
@@ -356,7 +378,7 @@ State constructors and step functions as in their `index.ts`.
 
 ### Canvas and render pipeline
 
-`App.tsx` creates one `<Canvas>` with `gl={{ antialias: true, stencil: true }}`, camera fov 62,
+`App.tsx` creates one `<Canvas>` with `gl={{ antialias: true, stencil: true }}`, camera fov 50 (the default `settings.fov`; at 50° the HUD fills about a third of the screen height),
 near 1, far 90 000. R3F sets sRGB output and ACES Filmic tone mapping on the renderer.
 
 `RenderPipeline` (useFrame priority **1**) owns drawing: R3F's automatic render is therefore off
@@ -404,6 +426,16 @@ Rules:
   camera so the symbology and the glass mask come from the same eye.
 - **Exterior model:** in outside views `AircraftView` draws the aircraft in the world scene; in
   the cockpit view it hides itself and the cockpit pass draws the body-frame instance.
+- **Cockpit display surfaces** (`view/cockpit/displays.ts`, cockpit module):
+  `getDisplaySurfaces()` / `onDisplaySurfaces(fn)` give wave 2's MFDs two screens in the cockpit
+  scene: `right` = the A-10A TV monitor's screen, `left` = its mirror image left of the ADI
+  (hidden until `show(true)`: it covers the A-10A AoA gauge, clock and standby ADI). Each has a
+  512-px canvas + `CanvasTexture` slot (draw, then `texture.needsUpdate = true`) or
+  `setPicture(texture)` for a render target; unlit, not tone-mapped; `corners`, `normal`,
+  `width`, `height` in the body frame. The cockpit passes are `cockpit` (200) and `vision` (450,
+  grey-out / red-out overlay, cockpit view only). The rig's handle `cameraRigHandle.current`
+  (`setLook`, `fovOverride`) and `useCameraRig(source)` / `useCockpit(source)` let sandboxes
+  drive them with their own simulation.
 
 ### Cameras (cockpit module)
 
@@ -589,7 +621,7 @@ Several agents edit this tree at once.
 | flight | `core/flight/**`, `data/aircraft.ts`, `tests/unit/a10/flight*.test.ts`, `dev/sandboxes/flight*.tsx` |
 | weapons | `core/weapons/**`, `data/gun.ts`, `data/munitions.ts`, `tests/unit/a10/{gun,ballistics,weapons}*.test.ts` |
 | targets | `core/targets/**`, `data/vehicles.ts`, `tests/unit/a10/{targets,armour,damage}*.test.ts` |
-| avionics | `core/avionics/**`, `tests/unit/a10/{avionics,firecontrol}*.test.ts` |
+| avionics | `core/avionics/**`, `data/avionics.ts`, `tests/unit/a10/{avionics,firecontrol}*.test.ts` |
 | aircraft (assets) | `scripts/a10/convert*`, `third_party/**`, `public/a10/models/**`, `src/a10/assets/**` (except `urls.ts`), `view/aircraft/**`, `data/geometry.ts`, `CREDITS.md`, `tests/unit/a10/assets*.test.ts`, `dev/sandboxes/aircraft*.tsx` |
 | environment + terrain view | `view/environment/**`, `view/terrain/**`, the sky/cloud/post refactor in `src/scene/**` and `src/engine/**` exports for it, `dev/sandboxes/{terrain,environment}*.tsx` |
 | cockpit | `view/cockpit/**` (cockpit scene and pass, camera rig, clickable switches, instruments), `dev/sandboxes/cockpit*.tsx` |

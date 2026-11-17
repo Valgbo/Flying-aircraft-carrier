@@ -17,9 +17,9 @@
  *   rounds                                                 time to go
  *                   heading tape, heading index, steerpoint bearing
  */
+import { FIRE_CONTROL } from '../../data/avionics';
 import { A10_GEOMETRY } from '../../data/geometry';
 import { GAU8 } from '../../data/gun';
-import { FT } from '../../core/units';
 import { DEG, glassField, type Box, type GlassCorners, type GlassField } from './hudMath';
 
 /** The combiner glass corners (body frame), as the clipping math expects them. */
@@ -76,13 +76,10 @@ export const HUD_WIDTHS = {
 
 /** Range scales of the gun sight. */
 export const GUN_SIGHT = {
-  /** The analog range bar is a full circle at 12,000 ft. */
-  rangeBarFull: 12000 * FT,
-  /**
-   * Minimum-range cue position, m. Matches the fire-control computer's `tooClose` limit
-   * (the avionics stand-in uses 600 m); the cue only marks it on the range scale.
-   */
-  minRange: 600,
+  /** The analog range bar is a full circle at 12,000 ft (the fire-control `tooFar` limit). */
+  rangeBarFull: FIRE_CONTROL.gunMaxRange,
+  /** Minimum-range cue: the fire-control `tooClose` limit (2,000 ft); it marks the range scale. */
+  minRange: FIRE_CONTROL.gunMinRange,
 } as const;
 
 /** The gun line seen from the eye (collimated: a direction), HUD angles. */
