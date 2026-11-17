@@ -44,9 +44,23 @@ export interface HotspotDef {
 export const BOX_SIZE = { width: 0.118, height: 0.094, depth: 0.03 } as const;
 
 export const HOTSPOTS: readonly HotspotDef[] = [
-  { id: 'laserArm', kind: 'toggle3', label: 'LASER', positions: ['ARM', 'SAFE', 'TRAIN'], col: 0, row: 0 },
+  {
+    id: 'laserArm',
+    kind: 'toggle3',
+    label: 'LASER',
+    positions: ['ARM', 'SAFE', 'TRAIN'],
+    col: 0,
+    row: 0,
+  },
   { id: 'tgpPower', kind: 'toggle2', label: 'TGP', positions: ['ON', 'OFF'], col: 1, row: 0 },
-  { id: 'altSource', kind: 'toggle3', label: 'ALT SCE', positions: ['BARO', 'DELTA', 'RADAR'], col: 2, row: 0 },
+  {
+    id: 'altSource',
+    kind: 'toggle3',
+    label: 'ALT SCE',
+    positions: ['BARO', 'DELTA', 'RADAR'],
+    col: 2,
+    row: 0,
+  },
   { id: 'autopilot', kind: 'button', label: 'AP', positions: [], col: 0, row: 1 },
   { id: 'autopilotMode', kind: 'button', label: 'AP MODE', positions: [], col: 1, row: 1 },
   { id: 'altitudeAlert', kind: 'button', label: 'ALT ALERT', positions: [], col: 2, row: 1 },
@@ -67,7 +81,11 @@ export const BOX_POSE = {
 export function switchCentre(def: HotspotDef, out: Vector3): Vector3 {
   const cw = BOX_SIZE.width / 3;
   const ch = BOX_SIZE.height / 2;
-  return out.set(-BOX_SIZE.width / 2 + cw * (def.col + 0.5), BOX_SIZE.height / 2 - ch * (def.row + 0.5) - 0.004, 0);
+  return out.set(
+    -BOX_SIZE.width / 2 + cw * (def.col + 0.5),
+    BOX_SIZE.height / 2 - ch * (def.row + 0.5) - 0.004,
+    0,
+  );
 }
 
 /** Click box half sizes around a switch, face frame (m). */
@@ -128,7 +146,9 @@ export class HotspotBox {
     const D = BOX_SIZE.depth;
 
     this.canvas =
-      typeof document === 'undefined' ? null : (document.createElement('canvas') as HTMLCanvasElement);
+      typeof document === 'undefined'
+        ? null
+        : (document.createElement('canvas') as HTMLCanvasElement);
     if (this.canvas) {
       this.canvas.width = 512;
       this.canvas.height = Math.round((512 * H) / W);
@@ -142,7 +162,11 @@ export class HotspotBox {
     // the housing, its face at z = 0 (labels on the +Z side)
     const housingGeo = new BoxGeometry(W + 0.006, H + 0.006, D);
     housingGeo.translate(0, 0, -D / 2);
-    const edge = new MeshStandardMaterial({ name: 'a10c-box-housing', color: 0x1d1f21, roughness: 0.7 });
+    const edge = new MeshStandardMaterial({
+      name: 'a10c-box-housing',
+      color: 0x1d1f21,
+      roughness: 0.7,
+    });
     this.face = new MeshStandardMaterial({
       name: 'a10c-box-face',
       color: 0xffffff,
@@ -156,8 +180,13 @@ export class HotspotBox {
     // BoxGeometry groups: +x, −x, +y, −y, +z, −z
     const housing = new Mesh(housingGeo, [edge, edge, edge, edge, this.face, edge]);
     housing.name = 'a10c-box-housing';
-    this.group.add(housing);
-    this.geometries.push(housingGeo);
+    // the bracket that bolts the box to the end of the instrument panel, behind its right side
+    const bracketGeo = new BoxGeometry(0.06, 0.07, 0.004);
+    bracketGeo.translate(W / 2 + 0.024, -0.004, -D + 0.002);
+    const bracket = new Mesh(bracketGeo, edge);
+    bracket.name = 'a10c-box-bracket';
+    this.group.add(housing, bracket);
+    this.geometries.push(housingGeo, bracketGeo);
     this.materials.push(edge, this.face);
 
     const leverGeo = new CylinderGeometry(0.0012, 0.0017, 0.012, 10);
@@ -168,8 +197,8 @@ export class HotspotBox {
     const collarGeo = new CylinderGeometry(0.0042, 0.0042, 0.003, 16);
     collarGeo.rotateX(Math.PI / 2);
     collarGeo.translate(0, 0, 0.0015);
-    const buttonGeo = new BoxGeometry(0.017, 0.011, 0.005);
-    buttonGeo.translate(0, 0, 0.0025);
+    const buttonGeo = new BoxGeometry(0.014, 0.009, 0.004);
+    buttonGeo.translate(0, 0, 0.002);
     this.geometries.push(leverGeo, tipGeo, collarGeo, buttonGeo);
     const metal = new MeshStandardMaterial({
       name: 'a10c-box-lever',
@@ -177,7 +206,11 @@ export class HotspotBox {
       roughness: 0.32,
       metalness: 0.75,
     });
-    const black = new MeshStandardMaterial({ name: 'a10c-box-collar', color: 0x111214, roughness: 0.5 });
+    const black = new MeshStandardMaterial({
+      name: 'a10c-box-collar',
+      color: 0x111214,
+      roughness: 0.5,
+    });
     this.materials.push(metal, black);
 
     for (const def of HOTSPOTS) {
@@ -191,7 +224,7 @@ export class HotspotBox {
         });
         this.materials.push(lamp);
         const b = new Mesh(buttonGeo, lamp);
-        b.position.set(c.x, c.y + 0.002, 0);
+        b.position.set(c.x, c.y, 0);
         b.name = `a10c-box-${def.id}`;
         this.group.add(b);
         this.lamps.set(def.id, lamp);

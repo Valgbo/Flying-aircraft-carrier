@@ -42,7 +42,15 @@ export interface OutsideInput {
 export const OUTSIDE = {
   chase: { back: 20, up: 4.2, aimAhead: 4, aimUp: 0.8, lagTau: 0.45, rollFollow: 0.5, fov: 55 },
   flyby: { leadTime: 5, side: 28, up: 7, passBy: 220, maxDistance: 2600, halfSize: 14, fov: 50 },
-  orbit: { distance: 26, minDistance: 7, maxDistance: 400, el: 0.18, radPerPx: 0.006, rate: 1.6, fov: 50 },
+  orbit: {
+    distance: 26,
+    minDistance: 7,
+    maxDistance: 400,
+    el: 0.18,
+    radPerPx: 0.006,
+    rate: 1.6,
+    fov: 50,
+  },
   weapon: { back: 9, up: 1.8, aimAhead: 30, hold: 3, fov: 45 },
   target: { back: 24, side: 10, up: 3.5, attackRadius: 250, fov: 55 },
   /** Lowest camera height above the ground, m. */
@@ -59,7 +67,12 @@ const _up = new Vector3();
 const _q = new Quaternion();
 
 /** Point a pose's quaternion from its position toward `target` with an up hint. */
-export function lookAtQuaternion(eye: Vector3, target: Vector3, up: Vector3, out: Quaternion): Quaternion {
+export function lookAtQuaternion(
+  eye: Vector3,
+  target: Vector3,
+  up: Vector3,
+  out: Quaternion,
+): Quaternion {
   if (eye.distanceToSquared(target) < 1e-8) return out;
   _m.lookAt(eye, target, up);
   return out.setFromRotationMatrix(_m);
@@ -246,7 +259,8 @@ export class OutsideCameras {
     this.orbitAz += inp.lookDX * o.radPerPx + inp.lookRateX * o.rate * dt;
     this.orbitEl += inp.lookDY * o.radPerPx - inp.lookRateY * o.rate * dt;
     this.orbitEl = Math.max(-1.45, Math.min(1.45, this.orbitEl));
-    this.orbitAz = ((this.orbitAz + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    this.orbitAz =
+      ((((this.orbitAz + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
     if (inp.zoomSteps !== 0)
       this.orbitDist = Math.max(
         o.minDistance,
@@ -279,10 +293,7 @@ export class OutsideCameras {
       if (b.id !== this.weaponId || entering) this.weaponId = b.id;
       if (b.velocity.lengthSq() > 1) _a.copy(b.velocity).normalize();
       else _a.set(0, 0, -1).applyQuaternion(b.orientation);
-      this.weaponCam
-        .copy(b.position)
-        .addScaledVector(_a, -w.back)
-        .addScaledVector(WORLD_UP, w.up);
+      this.weaponCam.copy(b.position).addScaledVector(_a, -w.back).addScaledVector(WORLD_UP, w.up);
       _b.copy(b.position).addScaledVector(_a, w.aimAhead);
       this.weaponLast.copy(b.position);
       this.weaponHold = w.hold;
@@ -331,14 +342,9 @@ export class OutsideCameras {
     if (entering || this.placedVehicle !== veh.id || moved) {
       // behind the vehicle as seen from the aircraft, a little to the side and up
       _c.crossVectors(_a, WORLD_UP).normalize();
-      this.targetCam
-        .copy(veh.position)
-        .addScaledVector(_a, -t.back)
-        .addScaledVector(_c, t.side);
-      this.targetCam.y = Math.max(
-        veh.position.y,
-        groundAt(this.targetCam.x, this.targetCam.z),
-      ) + t.up;
+      this.targetCam.copy(veh.position).addScaledVector(_a, -t.back).addScaledVector(_c, t.side);
+      this.targetCam.y =
+        Math.max(veh.position.y, groundAt(this.targetCam.x, this.targetCam.z)) + t.up;
       this.targetFrom.copy(_a);
       this.placedVehicle = veh.id;
     }

@@ -25,7 +25,13 @@ import { getA10Quality } from '../quality';
 import { cockpitCamera, cockpitScene, cockpitViewState } from './cockpitCamera';
 import { CockpitModel } from './cockpitModel';
 import { commandForControl } from './switches';
-import { createVisionState, resetVision, stepVision, VisionOverlay, type VisionState } from './vision';
+import {
+  createVisionState,
+  resetVision,
+  stepVision,
+  VisionOverlay,
+  type VisionState,
+} from './vision';
 
 /** The live cockpit, for the sandbox and debugging (null before the models load). */
 export const cockpitHandle: {

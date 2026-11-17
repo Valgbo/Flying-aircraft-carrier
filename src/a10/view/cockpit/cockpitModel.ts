@@ -44,7 +44,13 @@ import { createCanopyGlass, createCombinerGlass, updateGlass } from './glass';
 import { HotspotBox } from './hotspots';
 import { createInstrumentDriver, resetGMeter, type InstrumentDriver } from './instruments';
 import { CockpitLights } from './lighting';
-import { boundsInFrame, pickTarget, PickHighlight, rayFromCamera, type PickTarget } from './picking';
+import {
+  boundsInFrame,
+  pickTarget,
+  PickHighlight,
+  rayFromCamera,
+  type PickTarget,
+} from './picking';
 import {
   COCKPIT_CONTROLS,
   controlStateText,
@@ -58,7 +64,7 @@ const HIDDEN_NODES = ['hud-screen', 'gun-cross', 'CPT-video-screen'];
 /** Textures that do not glow at dusk (floor, structure). */
 const NO_GLOW = new Set(['cpt-floor', 'cpt-floor-rivets', 'panel-grey-central-struct']);
 /** Instrument glow colour at full night (× the texture: white markings glow, black faces do not). */
-const GLOW = new Color(0.62, 0.5, 0.34);
+const GLOW = new Color(0.5, 0.4, 0.27);
 /** Airframe parts invisible from the seat (drawing them would only cost). */
 const AIRFRAME_HIDDEN = ['Cannon__spin', 'L-Wing-Slat__slat'];
 /** The box (BODY, m) whose airframe triangles cast shadows into the cockpit. */
@@ -143,9 +149,7 @@ export class CockpitModel {
         }
         return c;
       };
-      mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map(swap)
-        : swap(mesh.material);
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
       this.receivers.push(mesh);
     });
     scene.add(root);
@@ -253,8 +257,7 @@ export class CockpitModel {
     const night = this.lights.night;
     if (Math.abs(night - this.lastNight) > 1e-3) {
       this.lastNight = night;
-      for (const m of this.glow)
-        m.emissive.setRGB(GLOW.r * night, GLOW.g * night, GLOW.b * night);
+      for (const m of this.glow) m.emissive.setRGB(GLOW.r * night, GLOW.g * night, GLOW.b * night);
     }
 
     updateAircraftInstance(this.airframe, sim, a10Env.daylight);
@@ -274,7 +277,11 @@ export class CockpitModel {
   }
 
   /** Hover highlight for the free cursor (null pointer hides it). */
-  hover(camera: PerspectiveCamera, pointer: { x: number; y: number } | null, screenHeight: number): void {
+  hover(
+    camera: PerspectiveCamera,
+    pointer: { x: number; y: number } | null,
+    screenHeight: number,
+  ): void {
     const t = pointer ? this.pick(camera, pointer.x, pointer.y) : null;
     this.hovered = t;
     if (!t) {
@@ -317,7 +324,11 @@ export class CockpitModel {
  * meshes (not glass, not displays), the seat, and the airframe triangles in SHADOW_BOX (canopy
  * bow and frame, fuselage sides, the nose behind the panel). BODY coordinates.
  */
-export function buildShadowProxy(cockpit: Object3D, airframe: Object3D, seat: Object3D | null): BufferGeometry {
+export function buildShadowProxy(
+  cockpit: Object3D,
+  airframe: Object3D,
+  seat: Object3D | null,
+): BufferGeometry {
   const out: number[] = [];
   const v = new Vector3();
   const tri = [new Vector3(), new Vector3(), new Vector3()];
@@ -343,7 +354,10 @@ export function buildShadowProxy(cockpit: Object3D, airframe: Object3D, seat: Ob
           tri[k].fromBufferAttribute(pos, vi).applyMatrix4(mesh.matrixWorld);
         }
         if (clip) {
-          v.copy(tri[0]).add(tri[1]).add(tri[2]).multiplyScalar(1 / 3);
+          v.copy(tri[0])
+            .add(tri[1])
+            .add(tri[2])
+            .multiplyScalar(1 / 3);
           if (!SHADOW_BOX.containsPoint(v)) continue;
         }
         for (let k = 0; k < 3; k++) out.push(tri[k].x, tri[k].y, tri[k].z);

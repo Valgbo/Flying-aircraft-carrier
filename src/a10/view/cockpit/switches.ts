@@ -73,7 +73,11 @@ export const COCKPIT_CONTROLS: readonly CockpitControlDef[] = [
     label: 'LANDING GEAR',
     target: { kind: 'mesh', node: 'ld-gear-handle__ld-gear-handle-anim' },
   },
-  { id: 'gMeterReset', label: 'G-METER RESET', target: { kind: 'pick', node: 'A-10-accel-button' } },
+  {
+    id: 'gMeterReset',
+    label: 'G-METER RESET',
+    target: { kind: 'pick', node: 'A-10-accel-button' },
+  },
   { id: 'laserArm', label: 'LASER ARM', target: { kind: 'hotspot' } },
   { id: 'tgpPower', label: 'TGP POWER', target: { kind: 'hotspot' } },
   { id: 'altSource', label: 'ALT SOURCE', target: { kind: 'hotspot' } },
@@ -164,7 +168,10 @@ export function commandForControl(
         ? { type: 'masterMode', value: step(MASTER_MODE_ORDER, s.masterMode, -1, true) }
         : { type: 'masterMode', value: 'next' };
     case 'flaps': {
-      const h = Math.max(0, Math.min(2, Math.round(Number.isFinite(s.flapHandle) ? s.flapHandle : 0)));
+      const h = Math.max(
+        0,
+        Math.min(2, Math.round(Number.isFinite(s.flapHandle) ? s.flapHandle : 0)),
+      );
       // left: one notch down, from DN back to UP (as the F key); right: one notch up
       if (secondary) return { type: 'flaps', value: 'up' };
       return { type: 'flaps', value: ((h + 1) % 3) as 0 | 1 | 2 };
@@ -176,7 +183,10 @@ export function commandForControl(
     case 'autopilotMode':
       return { type: 'autopilot', action: 'mode' };
     case 'altitudeAlert':
-      return { type: 'altitudeAlert', value: stepAltitudeAlert(s.altitudeAlert, secondary ? -1 : 1) };
+      return {
+        type: 'altitudeAlert',
+        value: stepAltitudeAlert(s.altitudeAlert, secondary ? -1 : 1),
+      };
     case 'gMeterReset':
       return null;
   }

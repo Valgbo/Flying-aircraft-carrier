@@ -243,8 +243,7 @@ export function stepHead(h: HeadState, inp: HeadInput): void {
 
   // ---- zoom ----
   if (inp.center) h.zoomLevel = 0;
-  if (inp.zoomSteps !== 0)
-    h.zoomLevel = clamp(h.zoomLevel + inp.zoomSteps, 0, maxZoomLevel(base));
+  if (inp.zoomSteps !== 0) h.zoomLevel = clamp(h.zoomLevel + inp.zoomSteps, 0, maxZoomLevel(base));
   const target = zoomTarget(base, h.zoomLevel, inp.zoomHeld);
   if (!(h.fov > 0)) h.fov = target;
   const k = 1 - Math.exp(-dt / HEAD.zoomTau);
@@ -254,8 +253,7 @@ export function stepHead(h: HeadState, inp: HeadInput): void {
   const scale = h.fov / base;
 
   // ---- look ----
-  const manual =
-    inp.lookDX !== 0 || inp.lookDY !== 0 || inp.lookRateX !== 0 || inp.lookRateY !== 0;
+  const manual = inp.lookDX !== 0 || inp.lookDY !== 0 || inp.lookRateX !== 0 || inp.lookRateY !== 0;
   if (inp.lookAt) {
     if (!h.spiHeld) {
       h.restAz = h.az;
@@ -366,7 +364,9 @@ export function sampleShake(
   h.shakePos.set(
     joltNoise(t, p, 1, jp * 0.6) + bp * 0.5 * Math.sin(t * 8.1 + 1.7) + vp * (rand() * 2 - 1),
     joltNoise(t, p, 4, jp) + bp * Math.sin(t * 6.8 + 3.0) + vp * (rand() * 2 - 1),
-    joltNoise(t, p, 7, jp * 0.5) + bp * 0.4 * Math.sin(t * 11.7 + 5.1) + vp * 0.5 * (rand() * 2 - 1),
+    joltNoise(t, p, 7, jp * 0.5) +
+      bp * 0.4 * Math.sin(t * 11.7 + 5.1) +
+      vp * 0.5 * (rand() * 2 - 1),
   );
 }
 

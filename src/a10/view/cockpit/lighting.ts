@@ -65,7 +65,7 @@ export class CockpitLights {
   readonly shadowSun = new DirectionalLight(0xffffff, 1);
   readonly hemi = new HemisphereLight(0xffffff, 0x444444, 1);
   readonly ambient = new AmbientLight(0xffffff, 0);
-  /** A flood light under the glare shield, for dusk. */
+  /** A flood light on the canopy bow above the pilot, for dusk. */
   readonly flood = new PointLight(0xffe2bf, 0, 0, 2);
   readonly shadowScene = new Scene();
   /** Sees nothing: rendering the shadow scene with it draws only the shadow map. */
@@ -102,7 +102,7 @@ export class CockpitLights {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.006;
     this.sun.shadow.mapSize.set(1024, 1024);
-    this.flood.position.set(0, 1.0, -5.12);
+    this.flood.position.set(0, 1.34, -4.78);
     scene.add(this.sun, this.target, this.hemi, this.ambient, this.flood);
     this.shadowScene.name = 'cockpit-shadows';
     this.shadowScene.add(this.shadowSun);
@@ -170,7 +170,7 @@ export class CockpitLights {
     const day = Math.min(1, Math.max(0, env.daylight));
     const t = Math.min(1, Math.max(0, (0.55 - day) / 0.45));
     this.night = t * t * (3 - 2 * t);
-    this.flood.intensity = 0.35 * this.night;
+    this.flood.intensity = 0.07 * this.night;
   }
 
   /**

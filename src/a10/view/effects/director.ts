@@ -83,6 +83,7 @@ const HAS_AMMO: Record<VehicleKind, boolean> = {
 
 const _muzzle = new Vector3();
 const _gunDir = new Vector3();
+const _wash = new Vector3();
 const _p = new Vector3();
 const _n = new Vector3();
 const _src = new Vector3();
@@ -98,6 +99,7 @@ export class EffectsDirector {
   private muzzleValid = false;
   private lastFired = 0;
   private gunAcc = 0;
+  private washSide = 1;
 
   // burning and wrecked vehicles
   private readonly fires = new Map<number, FireState>();
@@ -444,8 +446,9 @@ export class EffectsDirector {
         const u = (i + R.next()) / n;
         _p.lerpVectors(this.lastMuzzle, _muzzle, u);
         ps.delay = u * dt;
-        // gun gas: leaves forward with the shell, is stopped by the air within metres and
-        // streams back past the nose as the aircraft flies through it
+        // gun gas: leaves forward with the shell, balloons into a cloud metres wide within
+        // milliseconds, is stopped by the air and streams back past the nose and both sides of
+        // the canopy as the aircraft flies through it (the pilot flies through his own smoke)
         const g = R.range(20, 40);
         const j = ps.spawn(
           PK.gunSmoke,
@@ -455,11 +458,32 @@ export class EffectsDirector {
           v.x + _gunDir.x * g + R.signed(9),
           v.y + _gunDir.y * g + R.signed(9),
           v.z + _gunDir.z * g + R.signed(9),
-          R.range(0.8, 1.2),
-          R.range(6, 9),
+          R.range(3, 4.5),
+          R.range(9, 13),
           R.range(3.2, 5.5),
         );
         ps.opacity(j, R.range(0.75, 1));
+        // the part the airflow carries up and round the nose: it streams past the windscreen
+        // and both sides of the canopy, where the pilot sees it
+        if (detail > 0.8 || (i & 1) === 0) {
+          const side = (this.washSide = -this.washSide);
+          // up the windscreen sides to about the pilot's eye level (above the glare shield)
+          _wash.set(side * R.range(1.0, 2.0), R.range(1.6, 2.4), R.range(-0.6, 0.8)).applyQuaternion(ac.orientation);
+          const w = R.range(4, 14);
+          const k = ps.spawn(
+            PK.gunSmoke,
+            _p.x + _wash.x,
+            _p.y + _wash.y,
+            _p.z + _wash.z,
+            v.x + _gunDir.x * w + R.signed(3),
+            v.y + _gunDir.y * w + R.signed(3),
+            v.z + _gunDir.z * w + R.signed(3),
+            R.range(1.6, 2.4),
+            R.range(6, 9),
+            R.range(2.5, 4),
+          );
+          ps.opacity(k, R.range(0.6, 0.85));
+        }
         if (detail > 0.8 && (i & 1) === 0) {
           const k = ps.spawn(
             PK.gunSmoke,
@@ -469,8 +493,8 @@ export class EffectsDirector {
             v.x + _gunDir.x * 50 + R.signed(14),
             v.y + _gunDir.y * 50 + R.signed(14),
             v.z + _gunDir.z * 50 + R.signed(14),
-            0.6,
-            R.range(3, 5),
+            1.5,
+            R.range(4, 6),
             R.range(1.2, 2),
           );
           ps.opacity(k, 0.6);

@@ -11,7 +11,7 @@
  *   preset=cruise|dive|turn|landing|dusk|warnings        view=cockpit|chase|flyby|orbit
  *   shadows=0|1     arm=1   g=<load>   vision=<0..1>     ui=0 (no panel)   cursor=x,y (NDC hover)
  */
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   CanvasTexture,
@@ -24,6 +24,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   Vector3,
+  type WebGLRenderer,
 } from 'three';
 import { loadAircraftModels } from '../../assets';
 import { applyCommands } from '../../core/avionics';
@@ -34,10 +35,17 @@ import { DEG, FT, KT, LB } from '../../core/units';
 import { createFlatTerrain } from '../../core/world';
 import { tasFromCas } from '../../core/world/atmosphere';
 import { A10_GEOMETRY } from '../../data/geometry';
-import type { AltSource, GunPacSwitch, LaserArm, MasterArm, MasterMode } from '../../core/avionics/types';
+import type {
+  AltSource,
+  GunPacSwitch,
+  LaserArm,
+  MasterArm,
+  MasterMode,
+} from '../../core/avionics/types';
 import { viewInput } from '../../input/viewInput';
 import { useA10Store, type ViewMode } from '../../state/store';
 import { useCameraRig, cameraRigHandle } from '../../view/cockpit/CameraRig';
+import { cockpitCamera } from '../../view/cockpit/cockpitCamera';
 import { cockpitHandle, useCockpit } from '../../view/cockpit/CockpitView';
 import Environment from '../../view/environment/Environment';
 import { environmentOverrides } from '../../view/environment/envState';
@@ -201,6 +209,52 @@ if (typeof window !== 'undefined')
     preset: (name: string) => Object.assign(P, DEFAULTS, PRESETS[name] ?? {}),
     cockpit: () => cockpitHandle.current,
     sim: () => fakeSim,
+    /** Free the cursor at a pointer position (NDC); null puts it away. */
+    cursor: (x: number | null, y = 0) => {
+      sandboxCursor = x === null ? null : { x, y };
+    },
+    /** Renderer statistics of the last frame (all passes: info.autoReset is on per render). */
+    info: () => {
+      const gl = sandboxGl;
+      if (!gl) return null;
+      const m = cockpitHandle.current;
+      return {
+        programs: gl.info.programs?.length ?? 0,
+        geometries: gl.info.memory.geometries,
+        textures: gl.info.memory.textures,
+        shadowMap: !!m?.lights.sun.shadow.map,
+        shadowsOn: m?.lights.shadows ?? false,
+      };
+    },
+    /** Draw calls and triangles of one whole frame (every pass), measured over the next frame. */
+    drawStats: () =>
+      new Promise((resolve) => {
+        const gl = sandboxGl;
+        if (!gl) return resolve(null);
+        requestAnimationFrame(() => {
+          gl.info.autoReset = false;
+          gl.info.reset();
+          requestAnimationFrame(() => {
+            const r = { calls: gl.info.render.calls, triangles: gl.info.render.triangles };
+            gl.info.autoReset = true;
+            resolve(r);
+          });
+        });
+      }),
+    /** Where a clickable control is on screen (NDC), from the cockpit camera. */
+    ndcOf: (id: string) => {
+      const t = cockpitHandle.current?.targets.find((x) => x.id === id);
+      if (!t) return null;
+      const c = t.box.getCenter(new Vector3()).applyMatrix4(t.frame.matrixWorld);
+      c.project(cockpitCamera);
+      return { x: c.x, y: c.y };
+    },
+    /** A click at a pointer position (NDC) with a mouse button. */
+    click: (x: number, y: number, button = 0) => {
+      sandboxCursor = { x, y };
+      viewInput.cursorFree = true;
+      viewInput.click = { x, y, button };
+    },
     /** What the eye sees in a direction (degrees): the nearest cockpit surface. */
     probe: (azDeg: number, elDeg: number) => {
       const m = cockpitHandle.current;
@@ -212,7 +266,9 @@ if (typeof window !== 'undefined')
         .intersectObjects([m.root, m.airframe.root, m.box.group], true)
         .find((h) => isShown(h.object));
       if (!hit) return null;
-      const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;
+      const n = hit.face
+        ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+        : null;
       const r = (v: number) => Math.round(v * 1000) / 1000;
       return {
         p: [r(hit.point.x), r(hit.point.y), r(hit.point.z)],
@@ -227,11 +283,16 @@ function isShown(o: Object3D): boolean {
   return true;
 }
 
-const SHOW_UI = new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('ui') !== '0';
+const SHOW_UI =
+  new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('ui') !== '0';
 const CURSOR = new URLSearchParams(typeof location === 'undefined' ? '' : location.search)
   .get('cursor')
   ?.split(',')
   .map(Number);
+let sandboxCursor: { x: number; y: number } | null =
+  CURSOR && CURSOR.length === 2 && CURSOR.every(Number.isFinite)
+    ? { x: CURSOR[0], y: CURSOR[1] }
+    : null;
 
 // ---------------------------------------------------------------------------------------------
 // The fake flight
@@ -264,7 +325,8 @@ function applyParams(sim: Sim, dt: number): void {
   // fly along the velocity so the outside views have something to follow
   ac.position.addScaledVector(ac.velocity, dt);
   ac.position.y = alt;
-  if (Math.abs(ac.position.x) > 20000 || Math.abs(ac.position.z) > 20000) ac.position.set(0, alt, 0);
+  if (Math.abs(ac.position.x) > 20000 || Math.abs(ac.position.z) > 20000)
+    ac.position.set(0, alt, 0);
   quaternionFromAttitude(P.headingDeg * DEG, P.pitchDeg * DEG, P.bankDeg * DEG, ac.orientation);
   ac.heading = (((P.headingDeg % 360) + 360) % 360) * DEG;
   ac.pitch = P.pitchDeg * DEG;
@@ -387,7 +449,11 @@ function fieldTexture(): CanvasTexture | null {
 function Ground() {
   const mesh = useMemo(() => {
     const g = new PlaneGeometry(240000, 240000).rotateX(-Math.PI / 2);
-    const m = new MeshStandardMaterial({ color: new Color(1, 1, 1), map: fieldTexture(), roughness: 1 });
+    const m = new MeshStandardMaterial({
+      color: new Color(1, 1, 1),
+      map: fieldTexture(),
+      roughness: 1,
+    });
     return new Mesh(g, m);
   }, []);
   useEffect(
@@ -426,10 +492,10 @@ function SandboxDriver() {
       if (P.manualHead) rig.setLook(P.headAz, P.headEl);
       rig.fovOverride = P.manualHead ? P.fov : null;
     }
-    viewInput.cursorFree = P.clickMode || !!CURSOR;
-    if (CURSOR && CURSOR.length === 2) {
-      viewInput.pointerX = CURSOR[0];
-      viewInput.pointerY = CURSOR[1];
+    viewInput.cursorFree = P.clickMode || !!sandboxCursor;
+    if (sandboxCursor) {
+      viewInput.pointerX = sandboxCursor.x;
+      viewInput.pointerY = sandboxCursor.y;
     }
   }, A10_PRIORITY.systems);
   // a forced vision level for screenshots (after the cockpit stepped it)
@@ -440,7 +506,10 @@ function SandboxDriver() {
   return null;
 }
 
+let sandboxGl: WebGLRenderer | null = null;
+
 function CockpitLayer() {
+  sandboxGl = useThree((st) => st.gl);
   useCameraRig(getFakeSim);
   useCockpit(getFakeSim);
   useHudPass(getFakeSim);
@@ -465,10 +534,23 @@ const PANEL: CSSProperties = {
   borderRadius: 6,
 };
 
-function Slider(props: { label: string; k: keyof Params; min: number; max: number; step?: number }) {
+function Slider(props: {
+  label: string;
+  k: keyof Params;
+  min: number;
+  max: number;
+  step?: number;
+}) {
   const [v, setV] = useState(P[props.k] as number);
   return (
-    <label style={{ display: 'grid', gridTemplateColumns: '108px 1fr 52px', gap: 6, alignItems: 'center' }}>
+    <label
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '108px 1fr 52px',
+        gap: 6,
+        alignItems: 'center',
+      }}
+    >
       <span>{props.label}</span>
       <input
         type="range"
@@ -487,7 +569,11 @@ function Slider(props: { label: string; k: keyof Params; min: number; max: numbe
   );
 }
 
-function Choice<T extends string | number>(props: { label: string; k: keyof Params; options: T[] }) {
+function Choice<T extends string | number>(props: {
+  label: string;
+  k: keyof Params;
+  options: T[];
+}) {
   const [v, setV] = useState(String(P[props.k]));
   return (
     <label style={{ display: 'grid', gridTemplateColumns: '108px 1fr', gap: 6 }}>
@@ -560,7 +646,11 @@ function Panel() {
         <Slider label="look az °" k="headAz" min={-155} max={155} />
         <Slider label="look el °" k="headEl" min={-75} max={89} />
         <Slider label="fov °" k="fov" min={20} max={90} />
-        <Choice label="view" k="view" options={['cockpit', 'chase', 'flyby', 'orbit', 'weapon', 'target']} />
+        <Choice
+          label="view"
+          k="view"
+          options={['cockpit', 'chase', 'flyby', 'orbit', 'weapon', 'target']}
+        />
         <Slider label="time of day h" k="hours" min={4} max={21} step={0.1} />
         <div>
           <Check label="shadows (Medium)" k="shadows" />
@@ -611,8 +701,8 @@ function Panel() {
       </Section>
       {m && (
         <div style={{ opacity: 0.7 }}>
-          {m.driver.counts.pivots} pivots · {m.driver.counts.drums} drums · {m.driver.counts.toggles}{' '}
-          lamps · {m.targets.length} clickable
+          {m.driver.counts.pivots} pivots · {m.driver.counts.drums} drums ·{' '}
+          {m.driver.counts.toggles} lamps · {m.targets.length} clickable
         </div>
       )}
     </div>
@@ -649,7 +739,9 @@ export default function CockpitSandbox() {
         <RenderPipeline />
       </Canvas>
       {error && <div style={{ ...PANEL, color: '#f88' }}>{error}</div>}
-      {!ready && !error && <div style={{ ...PANEL, left: 8, right: 'auto' }}>Loading the cockpit…</div>}
+      {!ready && !error && (
+        <div style={{ ...PANEL, left: 8, right: 'auto' }}>Loading the cockpit…</div>
+      )}
       {SHOW_UI && ready && <Panel />}
     </div>
   );

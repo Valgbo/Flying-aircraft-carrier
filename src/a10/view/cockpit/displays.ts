@@ -145,7 +145,9 @@ function createSurface(
   const height = down.length();
 
   const canvas =
-    typeof document === 'undefined' ? null : (document.createElement('canvas') as HTMLCanvasElement);
+    typeof document === 'undefined'
+      ? null
+      : (document.createElement('canvas') as HTMLCanvasElement);
   let texture: CanvasTexture | null = null;
   if (canvas) {
     canvas.width = DISPLAY_CANVAS_SIZE;
@@ -224,7 +226,9 @@ export function createDisplaySurfaces(
   parent: Group | { add(...o: Mesh[]): unknown },
   tvCorners?: readonly (readonly [number, number, number])[],
 ): { left: DisplaySurface; right: DisplaySurface } {
-  const right3 = (tvCorners ?? TV_CORNERS).map((p) => [p[0], p[1], p[2]] as [number, number, number]);
+  const right3 = (tvCorners ?? TV_CORNERS).map(
+    (p) => [p[0], p[1], p[2]] as [number, number, number],
+  );
   // meta corners run TL, TR, BR, BL as seen from the seat
   const right = createSurface('right', right3, 0.0015);
   // the mirror image across the centreline: TL ← mirrored TR, TR ← mirrored TL, …

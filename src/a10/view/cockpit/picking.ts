@@ -135,7 +135,9 @@ export class PickHighlight {
       o.renderOrder = 1000;
     }
     this.canvas =
-      typeof document === 'undefined' ? null : (document.createElement('canvas') as HTMLCanvasElement);
+      typeof document === 'undefined'
+        ? null
+        : (document.createElement('canvas') as HTMLCanvasElement);
     if (this.canvas) {
       this.canvas.width = 512;
       this.canvas.height = 64;
@@ -180,7 +182,9 @@ export class PickHighlight {
     // the label above the box, a constant ≈20 px tall
     _centre.applyMatrix4(t.frame.matrixWorld);
     const dist = Math.max(0.05, _centre.distanceTo(camera.position));
-    const worldPerPx = (2 * dist * Math.tan(((camera.fov / camera.zoom) * Math.PI) / 360)) / Math.max(1, screenHeight);
+    const worldPerPx =
+      (2 * dist * Math.tan(((camera.fov / camera.zoom) * Math.PI) / 360)) /
+      Math.max(1, screenHeight);
     const h = 22 * worldPerPx;
     this.label.scale.set(h * this.aspect, h, 1);
     this.label.position.copy(_centre);
@@ -235,4 +239,3 @@ export function boundsInFrame(frame: Object3D, out: Box3): Box3 {
   });
   return out;
 }
-

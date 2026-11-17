@@ -192,6 +192,29 @@ const float CROWN_SCALE = 59.0;
 /** Canopy colour where a tile's texel was not classified forest (linear). */
 const vec3 CANOPY_ALBEDO = vec3(0.042, 0.071, 0.026);
 
+/** Beyond this distance a forest's shadow band on the ground is under a pixel wide, m. */
+const float FOREST_SHADOW_RANGE = 6000.0;
+
+/**
+ * Sun left on open ground at tile coordinate uv by the trees toward the sun: three probes
+ * along the sun's direction, at the horizontal distances where trees of 4, 9 and 14 m would
+ * reach the line to the sun, look for forest in the tile's class texture — a soft band of shade
+ * along the anti-sun side of every stand and hedgerow (the canopy has no shadow map).
+ */
+float forestShadow(vec2 uv) {
+  float elev = max(uSunDir.y, 0.1);
+  vec2 toSun = normalize(uSunDir.xz + vec2(1e-5, 0.0)) / (elev / sqrt(1.0 - elev * elev));
+  float shade = 0.0;
+  for (int k = 0; k < 3; k++) {
+    float h = 4.0 + 5.0 * float(k);
+    vec2 q = uv + toSun * (h / uTile.x);
+    ivec2 tc = clamp(ivec2(floor(q * uTile.y + 0.5)), ivec2(0), ivec2(int(uTile.y)));
+    float c = mod(floor(texelFetch(uSplat, tc, 0).a * 255.0 + 0.5), 8.0);
+    shade += c == 5.0 ? 1.0 / 3.0 : 0.0;
+  }
+  return 1.0 - 0.82 * shade;
+}
+
 /** paint() with the pixel footprint given (for coordinates that wrap). */
 float paintW(float x, float halfWidth, float fw) {
   float l = 1.0 - smoothstep(halfWidth - fw, halfWidth + fw, abs(x));
@@ -280,6 +303,8 @@ void main() {
       float m = texture(uDetail, vec3(vWorld.xz / 41.0, MICRO)).g;
       albedo *= mix(1.0, 0.88 + 0.24 * m, midK);
     }
+    // the shadow a forest edge or hedgerow casts on the open ground beside it
+    if (cls != 5.0 && dist < FOREST_SHADOW_RANGE) sunVisible *= forestShadow(vUv);
     color = lightLambert(albedo, N, sunVisible);
     temperature = cls == 3.0 ? 0.52 : cls == 4.0 ? 0.5 : cls == 2.0 ? 0.47 : cls == 5.0 ? 0.33 : cls == 6.0 ? 0.55 : 0.4;
     heatUptake = cls == 5.0 ? 0.25 : cls == 3.0 || cls == 6.0 ? 0.85 : 0.6;
@@ -315,6 +340,8 @@ void main() {
     }
     // a road thinner than a pixel covers only part of it: the rest is the ground beside it
     albedo = mix(ground, albedo, vCoverage);
+    // roads through woods and along hedgerows run in their shade
+    if (dist < FOREST_SHADOW_RANGE) sunVisible *= forestShadow(vUv);
     color = lightLambert(albedo, N, sunVisible);
   } else if (kind < 3.5) {
     // ---- the river: dark water reflecting the sky, sun glint, shallow edges ----

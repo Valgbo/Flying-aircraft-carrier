@@ -58,10 +58,16 @@ describe('cockpit controls table', () => {
     for (const c of COCKPIT_CONTROLS) {
       if (c.target.kind === 'pick') {
         const node = c.target.node;
-        expect(meta.pick.some((p) => p.file === 'cockpit' && p.node === node), node).toBe(true);
+        expect(
+          meta.pick.some((p) => p.file === 'cockpit' && p.node === node),
+          node,
+        ).toBe(true);
       } else if (c.target.kind === 'mesh') {
         const node = c.target.node;
-        expect(meta.cockpit.pivots.some((p) => p.node === node), node).toBe(true);
+        expect(
+          meta.cockpit.pivots.some((p) => p.node === node),
+          node,
+        ).toBe(true);
       }
     }
   });

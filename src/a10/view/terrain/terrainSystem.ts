@@ -79,8 +79,11 @@ export function tileTexels(level: number, detail: number): number {
   if (level >= MAX_LEVEL_BY_DETAIL[d]) return Math.min(256, size / (d === 0 ? 4 : 2));
   return size <= 512 ? Math.min(128, size / 2) : size <= 2048 ? 256 : 128;
 }
-/** Tiles kept in memory at most (drawn ones are never dropped). */
-const TILE_BUDGET = 260;
+/**
+ * Tiles kept in memory at most (≈ 70 MB of GPU memory): tiles the selection used this frame —
+ * drawn, or waiting for their siblings before their parent splits — are never dropped.
+ */
+const TILE_BUDGET = 360;
 /** Requests in flight per worker. */
 const IN_FLIGHT_PER_WORKER = 2;
 /** Main-thread time per frame for turning finished builds into meshes, ms, and at most tiles. */
@@ -99,7 +102,8 @@ interface TerrainNode extends LodNode {
   pending: boolean;
   wantedAt: number;
   requestDistance: number;
-  lastDrawn: number;
+  /** Frame the selection last touched the node (drew it, or looked at it as a child). */
+  lastUsed: number;
 }
 
 interface WorkerSlot {
@@ -273,10 +277,11 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
         pending: false,
         wantedAt: -1,
         requestDistance: 0,
-        lastDrawn: 0,
+        lastUsed: this.frame,
       };
       this.nodes.set(key, n);
     }
+    n.lastUsed = this.frame;
     return n;
   }
 
@@ -326,7 +331,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     let triangles = 0;
     for (const n of this.selected) {
       n.tile!.mesh.visible = true;
-      n.lastDrawn = this.frame;
+      n.lastUsed = this.frame;
       triangles += n.tile!.triangles;
     }
     this.previous.length = 0;
@@ -490,6 +495,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     node.tile = { mesh, texture, tileParams, triangles: tile.triangleCount };
     node.ready = true;
     node.pending = false;
+    node.lastUsed = this.frame;
     node.minY = tile.minY;
     node.maxY = tile.maxY;
     this.tileCount++;
@@ -508,9 +514,9 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   private evict(): void {
     const candidates: TerrainNode[] = [];
     for (const n of this.nodes.values()) {
-      if (n.tile && n.lastDrawn !== this.frame && n.level > 1) candidates.push(n);
+      if (n.tile && n.lastUsed !== this.frame && n.level > 1) candidates.push(n);
     }
-    candidates.sort((a, b) => a.lastDrawn - b.lastDrawn);
+    candidates.sort((a, b) => a.lastUsed - b.lastUsed);
     let excess = this.tileCount - TILE_BUDGET;
     for (const n of candidates) {
       if (excess <= 0) break;
