@@ -8,6 +8,7 @@
  *   0             everything visual reads the sim and updates itself
  *   render     1  RenderPipeline renders the registered passes
  */
+import type { Quaternion, Vector3 } from 'three';
 import type { Sim, SimEvent } from '../core/types';
 
 export const A10_PRIORITY = {
@@ -29,6 +30,19 @@ export interface FrameInfo {
 }
 
 export type SimFrameListener = (events: readonly SimEvent[], sim: Sim, info: FrameInfo) => void;
+
+/**
+ * The aircraft pose to DRAW this frame (ARCHITECTURE §6, "Interpolation"): between the start and
+ * the end of the last simulation step, by `frameInfo.alpha` (one step of render lag, ≤ 8.3 ms).
+ * Without it the world judders whenever a frame takes 0 or 2 steps (75–165 Hz displays, jitter).
+ * Cameras, the drawn aircraft and the HUD's world-referenced symbols all use this one pose.
+ */
+export function drawPose(sim: Sim, outPosition: Vector3, outOrientation: Quaternion): void {
+  const ac = sim.aircraft;
+  const a = frameInfo.alpha;
+  outPosition.lerpVectors(ac.prevPosition, ac.position, a);
+  outOrientation.slerpQuaternions(ac.prevOrientation, ac.orientation, a);
+}
 
 const listeners = new Set<SimFrameListener>();
 const beforeListeners = new Set<(sim: Sim, realDt: number) => void>();

@@ -124,6 +124,9 @@ export function createSim(opts: CreateSimOptions): Sim {
     events: [],
   };
   updateMassProperties(sim);
+  // The pilot's levers start where the flight module settled the engines for the air start.
+  sim.input.throttle[0] = sim.aircraft.engines[0].lever;
+  sim.input.throttle[1] = sim.aircraft.engines[1].lever;
   populateScenario(sim);
   // Steerpoints, SPI and weapon profiles exist before the first step (paused start, first HUD).
   initAvionics(sim);

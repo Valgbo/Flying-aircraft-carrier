@@ -465,6 +465,14 @@ changes); the audio module measures its own listener velocity over sim time for 
 
 `onBeforeSimSteps(fn(sim, realDt))` — input sampling. `onSimFrame(fn(events, sim, info))` —
 effects, audio, UI, debrief displays. `frameInfo` — steps, alpha, realDt, simDt of this frame.
+- **Interpolation (drawing between steps).** The simulation steps at 120 Hz while displays run at
+  60–165 Hz, so a frame takes 0, 1 or 2 steps. Everything that is drawn at the aircraft's pose —
+  the world camera in every view, the cockpit pass, the drawn aircraft, the HUD's
+  world-referenced symbols (pipper, SPI, sensor diamonds: project their world points from this
+  pose, not from the step's attitude) — uses `drawPose(sim, outPosition, outOrientation)`: the
+  pose interpolated by `frameInfo.alpha` between `aircraft.prevPosition/prevOrientation` (the
+  start of the last step) and the current state, one step (≤ 8.3 ms) behind the simulation.
+  Moving bodies may do the same with their own previous state.
 
 ### Sharing the carrier's sky
 
