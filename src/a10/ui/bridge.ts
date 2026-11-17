@@ -38,6 +38,8 @@ export interface CrashInfo {
 }
 
 let currentSim: Sim | null = null;
+/** Vehicles whose kill message has been shown in the current flight. */
+const toasted = new Set<number>();
 let crash: CrashInfo | null = null;
 let keys: ChecklistKeys = DEFAULT_CHECKLIST_KEYS;
 let step: ChecklistStep | null = null;
@@ -96,6 +98,7 @@ function onFrame(events: readonly SimEvent[], sim: Sim, info: FrameInfo): void {
   if (sim !== currentSim) {
     currentSim = sim;
     crash = null;
+    toasted.clear();
     checklistClock = CHECKLIST_PERIOD;
     refreshKeys();
   }
@@ -103,8 +106,11 @@ function onFrame(events: readonly SimEvent[], sim: Sim, info: FrameInfo): void {
     for (const e of events) {
       if (e.type === 'message') store.pushMessage(e.text, e.level);
       else if (e.type === 'vehicleDestroyed') {
-        if (KILL_MESSAGES[sim.options.realism.preset])
+        // A cook-off sends a second vehicleDestroyed for the same vehicle: one message per kill.
+        if (KILL_MESSAGES[sim.options.realism.preset] && !toasted.has(e.vehicleId)) {
+          toasted.add(e.vehicleId);
           store.pushMessage(`${vehicleName(e.vehicleKind)} destroyed`, 'info');
+        }
       } else if (e.type === 'crash') {
         crash = {
           reason: e.reason,

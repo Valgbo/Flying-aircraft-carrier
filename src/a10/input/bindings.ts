@@ -257,7 +257,7 @@ const DEFAULT_TABLE: Record<ControlId, Binding[]> = {
   cursorFree: [key('AltLeft')],
   mouseLook: [mouse(2)],
   pause: [key('Escape'), pad(PAD.start)],
-  help: [],
+  help: [key('Slash')],
   padShift: [pad(PAD.lt)],
 };
 

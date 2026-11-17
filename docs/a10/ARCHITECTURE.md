@@ -441,8 +441,10 @@ bloom → vignette → ACES; the carrier persists settings under `fac-settings-v
 - **Store** `useA10Store` (`state/store.ts`): `screen` (`menu` · `loadout` · `loading` ·
   `flight` · `debrief` · `credits`), `paused`, `settings` (persisted under `a10-settings-v1`,
   validated by `sanitizeSettings`, per-visit URL overrides via `overrideSettings`), `telemetry`
-  (≈10 Hz snapshot in display units), `view`, `scenario`, `loadoutId`, `ammoLoad` (the gun
-  load for the next flight; `setAmmoLoad`, passed to `SimOptions.ammoLoad`), `flightNonce`,
+  (≈10 Hz snapshot in display units), `view`, `scenario`, `loadoutId`, `ammoLoad` (the preset
+  and gun load for the next flight; `setLoadout`, `setAmmoLoad`, passed to `SimOptions`; the UI
+  restores both from `a10-ui-v1` at start-up and saves every change, `ui/uiStore.ts`),
+  `flightNonce`,
   `loading`, `messages` (`pushMessage(text, level, ttl)`), `settingsOpen`, `helpOpen`.
 - **Runtime** (`state/runtime.ts`): `getSim()`, `getTerrain()`, `onTerrain()`,
   `prepareWorld(seed)`, `startFlight(opts)`, `endFlight()`. The live sim is never in the store.

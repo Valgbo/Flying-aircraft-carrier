@@ -697,7 +697,8 @@ if (!only || only.has(VOICE.out.replace(/\.wav$/, ''))) {
     finish(VOICE.out, y, VOICE.rate, { src: `flite:${VOICE.voice}`, loop: null });
     credits.files[VOICE.out] = {
       title: VOICE.use,
-      author: 'Generated for this project with CMU Flite (voice cmu_us_slt) via FFmpeg',
+      author:
+        'generated with CMU Flite by Carnegie Mellon University, https://github.com/festvox/flite, voice cmu_us_slt, via FFmpeg',
       source: `scripts/a10/sounds.mjs: flite text "${VOICE.text}", voice ${VOICE.voice}`,
       licence:
         'GPL-2.0-or-later (this project); the Flite engine and the cmu_us_slt voice (CMU ARCTIC) ' +

@@ -119,7 +119,7 @@
     },
     "pull-up.wav": {
       "title": "Ground-collision voice warning (\"PULL UP\")",
-      "author": "Generated for this project with CMU Flite (voice cmu_us_slt) via FFmpeg",
+      "author": "generated with CMU Flite by Carnegie Mellon University, https://github.com/festvox/flite, voice cmu_us_slt, via FFmpeg",
       "source": "scripts/a10/sounds.mjs: flite text \"Pull up.\", voice slt",
       "licence": "GPL-2.0-or-later (this project); the Flite engine and the cmu_us_slt voice (CMU ARCTIC) are under BSD-style free licences",
       "changes": "telephone-band filter 280–3600 Hz; silence trimmed; peak-normalised to -1 dBFS; mono 16-bit 22.05 kHz"

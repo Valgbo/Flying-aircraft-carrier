@@ -125,6 +125,12 @@ const LABELS: Partial<Record<StoreType, StoreLabel>> = {
     family: 'LAU-88',
     category: 'rack',
   },
+  'LAU-114': {
+    name: 'Dual-rail AIM-9 adapter (2 × LAU-114/A)',
+    short: 'DRA',
+    family: 'DRA',
+    category: 'rack',
+  },
 };
 
 export function storeLabel(type: string): StoreLabel {
