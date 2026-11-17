@@ -42,7 +42,11 @@ export function textureDemand(plan) {
         const vz = P[c * 3 + 2] - P[a * 3 + 2];
         e.physArea += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
         const U = acc.uv;
-        e.uvArea += Math.abs((U[b * 2] - U[a * 2]) * (U[c * 2 + 1] - U[a * 2 + 1]) - (U[c * 2] - U[a * 2]) * (U[b * 2 + 1] - U[a * 2 + 1])) / 2;
+        e.uvArea +=
+          Math.abs(
+            (U[b * 2] - U[a * 2]) * (U[c * 2 + 1] - U[a * 2 + 1]) -
+              (U[c * 2] - U[a * 2]) * (U[b * 2 + 1] - U[a * 2 + 1]),
+          ) / 2;
       }
     }
   return out;
@@ -72,13 +76,16 @@ export function atlasPlan(plan, o) {
       const d = plan.matKeys.get(key);
       if (!d.map || !o.eligible(d) || !acc.idx.length) continue;
       let ok = true;
-      for (let i = 0; i < acc.uv.length && ok; i++) if (acc.uv[i] < -0.004 || acc.uv[i] > 1.004) ok = false;
+      for (let i = 0; i < acc.uv.length && ok; i++)
+        if (acc.uv[i] < -0.004 || acc.uv[i] > 1.004) ok = false;
       if (!ok) continue;
       cand.push({ frame, key, acc, d });
       texSet.add(d.map);
     }
   // pack: largest first into square pages (power-of-two slots pack without gaps)
-  const tiles = [...texSet].map((tex) => ({ tex, s: o.sizeOf(tex) })).sort((a, b) => b.s - a.s || (a.tex < b.tex ? -1 : 1));
+  const tiles = [...texSet]
+    .map((tex) => ({ tex, s: o.sizeOf(tex) }))
+    .sort((a, b) => b.s - a.s || (a.tex < b.tex ? -1 : 1));
   const pages = [];
   const where = new Map();
   for (const t of tiles) {
@@ -137,14 +144,21 @@ export function atlasPlan(plan, o) {
       for (const i of acc.idx) into.idx.push(i + base);
     }
   }
-  return { pages: pages.map((p) => ({ id: p.id, size: p.size, tiles: p.tiles.map(({ tex, x, y, s }) => ({ tex, x, y, s })) })) };
+  return {
+    pages: pages.map((p) => ({
+      id: p.id,
+      size: p.size,
+      tiles: p.tiles.map(({ tex, x, y, s }) => ({ tex, x, y, s })),
+    })),
+  };
 }
 
 /** First free power-of-two-aligned spot for an s×s tile (quadtree order). */
 function findSpot(p, s) {
   for (let y = 0; y + s <= p.size; y += s)
     for (let x = 0; x + s <= p.size; x += s) {
-      if (!p.used.some((u) => x < u.x + u.s && u.x < x + s && y < u.y + u.s && u.y < y + s)) return { x, y };
+      if (!p.used.some((u) => x < u.x + u.s && u.x < x + s && y < u.y + u.s && u.y < y + s))
+        return { x, y };
     }
   return null;
 }

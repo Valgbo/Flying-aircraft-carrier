@@ -119,7 +119,7 @@ const FRAGMENT = /* glsl */ `
     float fwd = pow(max(0.0, -uSunView.z), 6.0) * (1.0 - dens) * 0.8;
     // lit like the environment lights every surface (irradiance · albedo / π); a cloud scatters
     // less toward the eye than a matte surface facing the sun
-    vec3 light = (uAmbient * (0.7 + 0.25 * t.r) + uSunColor * (0.62 * diff * shade + fwd)) * RECIPROCAL_PI;
+    vec3 light = (uAmbient * (0.7 + 0.25 * t.r) + uSunColor * (0.62 * diff * shade + fwd)) * 0.31830989;
     vec3 albedo = vCol.rgb * mix(vec3(1.0), light, vEmi.a);
     vec3 col = mix(albedo, uHaze, vFog);
     // light comes from the dense core: dimmer, redder edges instead of a bright outline

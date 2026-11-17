@@ -68,7 +68,7 @@ export function parseAC(text, file) {
       trans: 0,
       line: lineNo,
     };
-    for (let j = 2; j < tk.length; ) {
+    for (let j = 2; j < tk.length;) {
       const k = tk[j];
       if (k === 'rgb' || k === 'amb' || k === 'emis' || k === 'spec') {
         m[k] = [Number(tk[j + 1]), Number(tk[j + 2]), Number(tk[j + 3])];

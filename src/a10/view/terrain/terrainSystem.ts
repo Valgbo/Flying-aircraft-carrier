@@ -48,7 +48,7 @@ import {
   type LodNode,
   type LodSelectionHost,
 } from './lod';
-import { createTileMaterial, terrainUniforms } from './terrainMaterial';
+import { bindTile, createTerrainMaterial, terrainUniforms } from './terrainMaterial';
 import type { WorkerReply, WorkerRequest } from './terrainProtocol';
 import { terrainStreaming } from './terrainStats';
 import { createTerrain } from '../../core/world';
@@ -71,8 +71,9 @@ export function tileTexels(level: number): number {
 const TILE_BUDGET = 260;
 /** Requests in flight per worker. */
 const IN_FLIGHT_PER_WORKER = 2;
-/** Main-thread time per frame for turning finished builds into meshes, ms. */
-const UPLOAD_BUDGET_MS = 3;
+/** Main-thread time per frame for turning finished builds into meshes, ms, and at most tiles. */
+const UPLOAD_BUDGET_MS = 2;
+const UPLOADS_PER_FRAME = 3;
 
 interface TileMesh {
   mesh: Mesh<BufferGeometry, ShaderMaterial>;
@@ -120,6 +121,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   private readonly arrived: TileData[] = [];
   private readonly jobs = new Map<number, Job>();
   private nextJob = 1;
+  private treesThisFrame = 0;
   private frame = 0;
   private tileCount = 0;
   private detail = -1;
@@ -128,6 +130,8 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   private cloudLayout: CloudLayout | null = null;
   private disposed = false;
   private readonly anisotropy: number;
+  /** The one material every tile draws with. */
+  private readonly material: ShaderMaterial = createTerrainMaterial();
   /** Main-thread fallback when no worker could start. */
   private local: { terrain: Terrain; features: FeatureIndex | null } | null = null;
 
@@ -294,6 +298,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
       if (!this.dispatchTile(node)) break;
     }
     const ground = this.terrain.heightAt(_camera.x, _camera.z);
+    this.treesThisFrame = 0;
     this.trees.update(
       _camera.x,
       _camera.z,
@@ -305,7 +310,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
 
     // 3. finished builds → meshes, within the time budget
     const u0 = performance.now();
-    while (this.arrived.length > 0) {
+    for (let k = 0; k < UPLOADS_PER_FRAME && this.arrived.length > 0; k++) {
       this.accept(this.arrived.shift()!);
       if (performance.now() - u0 > UPLOAD_BUDGET_MS) break;
     }
@@ -366,15 +371,20 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   }
 
   private dispatchTrees(spec: TreeCellSpec, priority: number): boolean {
-    // tiles first: trees only use a worker that has nothing else to do
-    if (this.wanted.length > 0) return false;
     if (this.local) {
       this.trees.receive(buildTreeCell(this.local.terrain, spec));
       void priority;
       return false;
     }
-    const slot = this.idleWorker();
-    if (!slot || slot.inFlight > 0) return false;
+    // tree cells are cheap: they get one extra slot per worker and one dispatch per frame
+    if (this.treesThisFrame >= 1) return false;
+    let slot: WorkerSlot | null = null;
+    for (const w of this.workers) {
+      if (!w.ready || w.inFlight > IN_FLIGHT_PER_WORKER) continue;
+      if (!slot || w.inFlight < slot.inFlight) slot = w;
+    }
+    if (!slot) return false;
+    this.treesThisFrame++;
     const id = this.nextJob++;
     this.jobs.set(id, { kind: 'trees', spec, priority });
     slot.inFlight++;
@@ -414,8 +424,9 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
 
     morphRange(node.level, this.detail, _range);
     const tileParams = new Vector4(size, tile.texels, _range[0], _range[1]);
-    const material = createTileMaterial(texture, tileParams);
+    const material = this.material;
     const mesh = new Mesh(geometry, material);
+    mesh.onBeforeRender = () => bindTile(material, texture, tileParams);
     mesh.position.set(tile.ox, tile.oy, tile.oz);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -466,7 +477,6 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     if (!t) return;
     this.group.remove(t.mesh);
     t.mesh.geometry.dispose();
-    t.mesh.material.dispose();
     t.texture.dispose();
     n.tile = null;
     n.ready = false;
@@ -525,6 +535,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     for (const n of this.nodes.values()) this.release(n);
     this.nodes.clear();
     this.trees.dispose();
+    this.material.dispose();
     this.group.removeFromParent();
     this.detailTexture?.dispose();
     this.cloudTexture?.dispose();

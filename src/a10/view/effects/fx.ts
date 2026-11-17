@@ -86,3 +86,15 @@ export function updateFx(f: Fx, dt: number, camera: Camera, budgetOverride?: num
   f.decals.update(dt, camera);
   f.rings.update(dt, camera);
 }
+
+/**
+ * Development aid (screenshots, the console): run the effects forward by `seconds` of simulated
+ * time in 1/30 s steps without stepping the simulation, so fires, smoke columns and dust have
+ * developed when a picture is taken.
+ */
+export function warmFx(seconds: number, camera: Camera): void {
+  const f = fx;
+  if (!f) return;
+  const dt = 1 / 30;
+  for (let t = 0; t < seconds; t += dt) updateFx(f, dt, camera);
+}

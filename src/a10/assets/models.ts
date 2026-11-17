@@ -71,7 +71,10 @@ const loader = new GLTFLoader();
 /** One Texture per image URL across every file (GLTFLoader makes one per file and material). */
 const imageTextures = new Map<string, Texture>();
 
-async function loadGLB(path: string, onBytes: (loaded: number, total: number) => void): Promise<GLTF> {
+async function loadGLB(
+  path: string,
+  onBytes: (loaded: number, total: number) => void,
+): Promise<GLTF> {
   const url = a10Asset(path);
   return new Promise((resolve, reject) => {
     loader.load(
@@ -138,7 +141,9 @@ function prepare(gltf: GLTF, fileUrl: string): Group {
 function buildGearUp(exterior: Group, meta: A10Meta): { group: Group; pivots: string[] } {
   const isGear = (input: string | null | undefined, node: string) =>
     !!input && (/^(gear|compression|wheel)/.test(input) || node.endsWith('__steer'));
-  const gearNames = new Set(meta.exterior.pivots.filter((p) => isGear(p.drive.input, p.node)).map((p) => p.node));
+  const gearNames = new Set(
+    meta.exterior.pivots.filter((p) => isGear(p.drive.input, p.node)).map((p) => p.node),
+  );
   // outermost gear pivots only
   const roots: Object3D[] = [];
   for (const name of gearNames) {
@@ -156,7 +161,10 @@ function buildGearUp(exterior: Group, meta: A10Meta): { group: Group; pivots: st
   const rel = new Matrix4();
   const nm = new Matrix3();
   const v = new Vector3();
-  const byMat = new Map<Material, { pos: number[]; nrm: number[]; uv: number[]; col: number[]; idx: number[] }>();
+  const byMat = new Map<
+    Material,
+    { pos: number[]; nrm: number[]; uv: number[]; col: number[]; idx: number[] }
+  >();
   for (const r of roots)
     r.traverse((o) => {
       const mesh = o as Mesh;
@@ -191,7 +199,11 @@ function buildGearUp(exterior: Group, meta: A10Meta): { group: Group; pivots: st
     g.setAttribute('normal', new BufferAttribute(new Float32Array(acc.nrm), 3));
     if (acc.uv.length) g.setAttribute('uv', new BufferAttribute(new Float32Array(acc.uv), 2));
     if (acc.col.length) g.setAttribute('color', new BufferAttribute(new Float32Array(acc.col), 3));
-    g.setIndex(acc.pos.length / 3 > 65535 ? new BufferAttribute(new Uint32Array(acc.idx), 1) : new BufferAttribute(new Uint16Array(acc.idx), 1));
+    g.setIndex(
+      acc.pos.length / 3 > 65535
+        ? new BufferAttribute(new Uint32Array(acc.idx), 1)
+        : new BufferAttribute(new Uint16Array(acc.idx), 1),
+    );
     g.computeBoundingSphere();
     const m = new Mesh(g, mat);
     m.name = `gear-up-${mat.name}`;
@@ -219,7 +231,8 @@ export function loadAircraftModels(
     const storeIds = Object.keys(meta.stores);
     for (const id of storeIds) files.push(meta.stores[id].file);
     const expected = new Map<string, number>();
-    for (const f of files) expected.set(f, meta.budget[f.replace(/^models\//, '')]?.bytes ?? 100_000);
+    for (const f of files)
+      expected.set(f, meta.budget[f.replace(/^models\//, '')]?.bytes ?? 100_000);
     const loaded = new Map<string, number>();
     const totalBytes = [...expected.values()].reduce((a, b) => a + b, 0);
     const report = (label: string) => {
@@ -240,7 +253,15 @@ export function loadAircraftModels(
     const stores = new Map<string, Group>();
     storeIds.forEach((id, i) => stores.set(id, storeGroups[i]));
     const gear = buildGearUp(exterior, meta);
-    templates = { meta, exterior, cockpit, pilot, stores, gearUp: gear.group, gearPivots: gear.pivots };
+    templates = {
+      meta,
+      exterior,
+      cockpit,
+      pilot,
+      stores,
+      gearUp: gear.group,
+      gearPivots: gear.pivots,
+    };
     onProgress(1, 'Aircraft model');
     for (const l of listeners) l(templates);
     listeners.clear();
@@ -252,7 +273,9 @@ export function loadAircraftModels(
   return loading;
 }
 
-registerFlightLoader('aircraft-models', 3, (onProgress) => loadAircraftModels(onProgress).then(() => undefined));
+registerFlightLoader('aircraft-models', 3, (onProgress) =>
+  loadAircraftModels(onProgress).then(() => undefined),
+);
 
 /** Store model id for a simulation StoreType (null when the type has no model). */
 export function storeModelId(type: StoreType | string): string | null {
@@ -282,7 +305,10 @@ export async function loadStoreModel(type: StoreType | string): Promise<Group | 
  * its axis: use it for a store in flight, whose sim position is its centre of mass); 'lugs'
  * keeps the suspension point at the origin (mounting on a pylon or rack).
  */
-export function createStoreInstance(type: StoreType | string, origin: 'centre' | 'lugs' = 'centre'): Group | null {
+export function createStoreInstance(
+  type: StoreType | string,
+  origin: 'centre' | 'lugs' = 'centre',
+): Group | null {
   const tpl = getStoreTemplate(type);
   const id = storeModelId(type);
   if (!tpl || !id || !templates) return null;

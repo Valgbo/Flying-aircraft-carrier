@@ -374,18 +374,16 @@ void main() {
 }
 `;
 
-export interface TileUniforms {
-  uSplat: IUniform<Texture>;
-  /** size, texels, morph start, morph end */
-  uTile: IUniform<Vector4>;
-}
-
-/** A tile's material: the shared uniforms by reference plus its own texture and ranges. */
-export function createTileMaterial(texture: Texture, tile: Vector4): ShaderMaterial {
+/**
+ * The ONE material all terrain tiles share. Each tile sets its own texture and ranges right
+ * before it is drawn (`bindTile`), so the program is never re-keyed and tiles sort front to
+ * back without material switches.
+ */
+export function createTerrainMaterial(): ShaderMaterial {
   const uniforms: Record<string, IUniform> = {
     ...(terrainUniforms as unknown as Record<string, IUniform>),
-    uSplat: { value: texture },
-    uTile: { value: tile },
+    uSplat: { value: null },
+    uTile: { value: new Vector4(1, 1, 1e9, 2e9) },
   };
   return new ShaderMaterial({
     name: 'TerrainTile',
@@ -394,4 +392,11 @@ export function createTileMaterial(texture: Texture, tile: Vector4): ShaderMater
     fragmentShader,
     fog: false,
   });
+}
+
+/** Point the shared material at one tile's texture and parameters (onBeforeRender). */
+export function bindTile(material: ShaderMaterial, texture: Texture, tile: Vector4): void {
+  material.uniforms.uSplat.value = texture;
+  (material.uniforms.uTile.value as Vector4).copy(tile);
+  material.uniformsNeedUpdate = true;
 }

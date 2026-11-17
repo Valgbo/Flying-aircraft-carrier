@@ -206,7 +206,13 @@ export interface A10Meta {
       standIn: boolean;
       frozen: boolean;
     }[];
-    frozen: { model: string; targets: string[]; type: string; property: string | null; src: string }[];
+    frozen: {
+      model: string;
+      targets: string[];
+      type: string;
+      property: string | null;
+      src: string;
+    }[];
   };
   pilot: { pivots: PivotMeta[]; toggles: ToggleMeta[] };
   pick: PickMeta[];
@@ -221,7 +227,10 @@ export interface A10Meta {
     source: string;
   };
   hud: { glassCorners: [Vec3T, Vec3T, Vec3T, Vec3T]; normal: Vec3T; source: string };
-  displays: Record<'tv' | 'mpcd', { node: string; corners: [Vec3T, Vec3T, Vec3T, Vec3T]; shownWhen: string }>;
+  displays: Record<
+    'tv' | 'mpcd',
+    { node: string; corners: [Vec3T, Vec3T, Vec3T, Vec3T]; shownWhen: string }
+  >;
   gun: {
     muzzle: Vec3T;
     direction: Vec3T;
@@ -244,7 +253,14 @@ export interface A10Meta {
   checks: { fans: Record<string, { centroid: Vec3T; axisDistance: number }> };
   budget: Record<
     string,
-    { bytes: number; triangles: number; drawCalls: number; vertices: number; materials: number; nodes: number }
+    {
+      bytes: number;
+      triangles: number;
+      drawCalls: number;
+      vertices: number;
+      materials: number;
+      nodes: number;
+    }
   >;
   textures: {
     file: string;

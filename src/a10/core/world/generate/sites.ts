@@ -108,7 +108,7 @@ function flattenGrid(
 export interface AirbaseSite {
   airbase: Airbase;
   airfield: NonNullable<WorldExtra['airfield']>;
-  /** The road connection point (outer edge of the apron, outside the airfield rectangle). */
+  /** Where the access road starts: the middle of the apron's outer edge. */
   gate: { x: number; z: number };
   /** Which side of the runway (+1 / −1 along the right-hand normal) the apron is on. */
   side: number;
@@ -220,7 +220,8 @@ export function placeAirbase(L: Layout, g: Grid, rf: RiverField, rng: Rng): Airb
   }
   add('apron', 0, apronOff, RANGE_WORLD.apronLength, RANGE_WORLD.apronWidth, heading);
   add('taxiway', 0, (taxiOff + apronOff) / 2, apronOff - taxiOff, RANGE_WORLD.taxiwayWidth * 1.4, cross);
-  const gatePos = at(0, footHalfWidth + 40);
+  // The access road starts at the outer edge of the apron, on its centre line.
+  const gatePos = at(0, apronOff + RANGE_WORLD.apronWidth / 2);
   const airbase: Airbase = {
     x,
     z,

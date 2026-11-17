@@ -16,7 +16,8 @@ export function compose(a, b) {
   const R = new Array(9);
   for (let r = 0; r < 3; r++)
     for (let c = 0; c < 3; c++)
-      R[r * 3 + c] = a.R[r * 3] * b.R[c] + a.R[r * 3 + 1] * b.R[3 + c] + a.R[r * 3 + 2] * b.R[6 + c];
+      R[r * 3 + c] =
+        a.R[r * 3] * b.R[c] + a.R[r * 3 + 1] * b.R[3 + c] + a.R[r * 3 + 2] * b.R[6 + c];
   const t = [
     a.R[0] * b.t[0] + a.R[1] * b.t[1] + a.R[2] * b.t[2] + a.t[0],
     a.R[3] * b.t[0] + a.R[4] * b.t[1] + a.R[5] * b.t[2] + a.t[1],
@@ -74,7 +75,10 @@ function rotZ(a) {
  * Pitch is applied first, then roll, then heading; all right-handed about the parent's axes.
  */
 export function offsetsTransform(o) {
-  const R = compose(rotZ((o.h ?? 0) * D2R), compose(rotX((o.r ?? 0) * D2R), rotY((o.p ?? 0) * D2R)));
+  const R = compose(
+    rotZ((o.h ?? 0) * D2R),
+    compose(rotX((o.r ?? 0) * D2R), rotY((o.p ?? 0) * D2R)),
+  );
   R.t = [o.x ?? 0, o.y ?? 0, o.z ?? 0];
   return R;
 }

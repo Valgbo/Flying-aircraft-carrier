@@ -19,7 +19,15 @@
  *   X = −z_ac, Y = y_ac − 0.30, Z = x_ac − 7.65.
  * Stores keep the BODY axes with their origin at the suspension lugs (top of the lugs).
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import {
   FG_TO_BODY,
@@ -78,7 +86,9 @@ for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--import') opt.import = resolve(argv[++i]);
   else if (argv[i] === '--verbose') opt.verbose = true;
   else if (argv[i] === '--help') {
-    console.log('usage: node scripts/a10/convert-ac3d.mjs [--import <FlightGear A-10 dir>] [--verbose]');
+    console.log(
+      'usage: node scripts/a10/convert-ac3d.mjs [--import <FlightGear A-10 dir>] [--verbose]',
+    );
     process.exit(0);
   } else throw new Error(`unknown argument ${argv[i]}`);
 }
@@ -91,7 +101,10 @@ const log = (...a) => console.log(...a);
 // what is converted, and how
 // ---------------------------------------------------------------------------------------------
 const SKIP_MODELS = new Map([
-  ['Models/Stores/loads.xml', 'stores: converted one by one (stores/*.glb), placed from loads_models.xml'],
+  [
+    'Models/Stores/loads.xml',
+    'stores: converted one by one (stores/*.glb), placed from loads_models.xml',
+  ],
   ['Models/Effects/landing-light.xml', 'light effect, no geometry'],
   ['Models/Effects/taxi-light.xml', 'light effect, no geometry'],
   ['Models/Cockpit/A-10-hud.xml', 'legacy 3-D HUD symbols: the HUD module draws the HUD'],
@@ -128,13 +141,23 @@ const aircraft = loadModel(src, 'Models/A-10-model.xml', FG_TO_BODY, ctx, 'A-10'
 for (const n of walk(aircraft)) n.toggles = n.toggles.filter((t) => !IGNORED_TOGGLE.test(t.cond));
 
 let exteriorRoots = aircraft.children.filter((c) => c.kind !== 'model');
-const pilotModel = aircraft.children.find((c) => c.kind === 'model' && c.file === 'Models/pilot.xml');
-const cockpitModels = aircraft.children.filter((c) => c.kind === 'model' && c.file.startsWith('Models/Cockpit/'));
+const pilotModel = aircraft.children.find(
+  (c) => c.kind === 'model' && c.file === 'Models/pilot.xml',
+);
+const cockpitModels = aircraft.children.filter(
+  (c) => c.kind === 'model' && c.file.startsWith('Models/Cockpit/'),
+);
 
 // inner canopy glass: shown only from the seat (FlightGear draws both and blends twice)
 for (const nm of ['FCanopyGlass-int', 'BCanopyGlass-int'])
   for (const n of findByName({ children: exteriorRoots, name: '' }, nm))
-    n.toggles.push({ file: 'convert-ac3d.mjs', line: 0, type: 'select', cond: 'insideOnly', default: false });
+    n.toggles.push({
+      file: 'convert-ac3d.mjs',
+      line: 0,
+      type: 'select',
+      cond: 'insideOnly',
+      default: false,
+    });
 
 // ---------------------------------------------------------------------------------------------
 // cockpit sub-models whose animations we keep. The others are FROZEN: every pivot is baked at the
@@ -183,7 +206,13 @@ function freezeModel(model) {
             ? rotateAbout(pv.centre, pv.axis, v)
             : null;
       if (T) M2 = compose(M, T);
-      frozen.push({ model: model.file, targets: n.targets, type: pv.fgType, property: pv.property, src: `${pv.file}:${pv.line}` });
+      frozen.push({
+        model: model.file,
+        targets: n.targets,
+        type: pv.fgType,
+        property: pv.property,
+        src: `${pv.file}:${pv.line}`,
+      });
     }
     if (n.geom && M2 !== M0) transformGeometry(n.geom, M2);
     for (const c of [...n.children]) bake(c, M2);
@@ -219,7 +248,8 @@ function transformGeometry(g, M) {
       grp.pos[i] = p[0];
       grp.pos[i + 1] = p[1];
       grp.pos[i + 2] = p[2];
-      for (let c = 0; c < 3; c++) ((min[c] = Math.min(min[c], p[c])), (max[c] = Math.max(max[c], p[c])));
+      for (let c = 0; c < 3; c++)
+        ((min[c] = Math.min(min[c], p[c])), (max[c] = Math.max(max[c], p[c])));
       const nx = grp.nrm[i];
       const ny = grp.nrm[i + 1];
       const nz = grp.nrm[i + 2];
@@ -293,7 +323,8 @@ function channelOf(n) {
   if (/spoiler-pos-norm/.test(prop)) return 'speedbrake';
   if (/elevator-pos-norm/.test(prop)) return 'elevator';
   if (/rudder-pos-norm/.test(prop)) return /^UC-Nose/.test(t) ? 'steer' : 'rudder';
-  if (/flap-pos-norm/.test(prop) && /Flap/.test(t)) return pv.type === 'translate' ? 'flaptravel' : 'flap';
+  if (/flap-pos-norm/.test(prop) && /Flap/.test(t))
+    return pv.type === 'translate' ? 'flaptravel' : 'flap';
   if (/alpha-deg/.test(prop) && /Slat/.test(t)) return 'slat';
   if (prop === 'canopy/position-norm') return 'canopy';
   if (/^gear\/gear(\[\d\])?\/position-norm/.test(prop)) return 'retract';
@@ -301,7 +332,11 @@ function channelOf(n) {
   if (/^gear\/gear(\[\d\])?\/rollspeed-ms/.test(prop)) return 'wheel';
   if (/engines\/engine\[\d\]\/n1/.test(prop) && /Fan/.test(t)) return 'fan';
   if (n.custom) return n.custom;
-  if (prop) return prop.split('/').pop().replace(/\[(\d+)\]/g, '$1');
+  if (prop)
+    return prop
+      .split('/')
+      .pop()
+      .replace(/\[(\d+)\]/g, '$1');
   return pv.fgType;
 }
 
@@ -357,7 +392,8 @@ function textureInfo(rel) {
   const base = posix.basename(rel);
   src.used.add(rel);
   let id = safeName(base.replace(/\.[a-z]+$/i, '').toLowerCase());
-  if (texIds.has(id) && texIds.get(id) !== rel) id = safeName(`${posix.basename(posix.dirname(rel))}-${id}`.toLowerCase());
+  if (texIds.has(id) && texIds.get(id) !== rel)
+    id = safeName(`${posix.basename(posix.dirname(rel))}-${id}`.toLowerCase());
   texIds.set(id, rel);
   const img = readAlpha(src.abs(rel));
   const stats = alphaStats(img);
@@ -386,29 +422,115 @@ const cockpitPlan = planGLB({
   options: cockpitOptions,
 });
 plans.push({ plan: cockpitPlan, file: 'a10-cockpit.glb', group: 'aircraft' });
-const pilotPlan = planGLB({ name: 'a10-pilot', roots: [pilotModel], channelOf, textureInfo, options: {} });
+const pilotPlan = planGLB({
+  name: 'a10-pilot',
+  roots: [pilotModel],
+  channelOf,
+  textureInfo,
+  options: {},
+});
 plans.push({ plan: pilotPlan, file: 'a10-pilot.glb', group: 'aircraft' });
 
 // ---------------------------------------------------------------------------------------------
 // stores: each in its own frame (BODY axes, origin at the top of the suspension lugs)
 // ---------------------------------------------------------------------------------------------
 const STORES = [
-  { id: 'mk82', label: 'Mk 82 low-drag bomb', ac: 'Models/Stores/Weapons/MK-82/MK-82.ac', xml: 'Models/Stores/Weapons/MK-82/MK-82.xml' },
-  { id: 'mk82air', label: 'Mk 82 AIR (BSU-49 ballute) bomb', xml: 'Models/Stores/Weapons/MK-82AIR/MK-82AIR.xml', ac: 'Models/Stores/Weapons/MK-82AIR/MK-82AIR.ac' },
-  { id: 'mk84', label: 'Mk 84 bomb', xml: 'Models/Stores/Weapons/MK-84/MK-84.xml', ac: 'Models/Stores/Weapons/MK-84/MK-84.ac' },
-  { id: 'agm65', label: 'AGM-65 Maverick', xml: 'Models/Stores/Weapons/AGM-65B/AGM-65B.xml', ac: 'Models/Stores/Weapons/AGM-65B/AGM-65B.ac' },
-  { id: 'aim9m_lw', label: 'AIM-9M (left rail)', xml: 'Models/Stores/Weapons/AIM-9M/AIM-9M_LW.xml', ac: 'Models/Stores/Weapons/AIM-9M/AIM-9M_LW.ac' },
-  { id: 'aim9m_rw', label: 'AIM-9M (right rail)', xml: 'Models/Stores/Weapons/AIM-9M/AIM-9M_RW.xml', ac: 'Models/Stores/Weapons/AIM-9M/AIM-9M_RW.ac' },
-  { id: 'lau68', label: 'LAU-68 rocket pod (also the LAU-131)', acOnly: 'Models/Stores/Weapons/LAU-68/LAU-68.ac' },
-  { id: 'hydra70', label: 'Hydra 70 rocket', acOnly: 'Models/Stores/Weapons/LAU-68/Hydra70.ac', noLugs: true },
-  { id: 'ter9a', label: 'TER-9A triple ejector rack', xml: 'Models/Stores/Racks/TER-9A/TER-9A.xml', ac: 'Models/Stores/Racks/TER-9A/TER-9A.ac' },
-  { id: 'lau88', label: 'LAU-88 triple Maverick launcher (FlightGear trirack_small)', xml: 'Models/Stores/Racks/trirack_small.xml', ac: 'Models/Stores/Racks/trirack_small.ac' },
-  { id: 'lau114', label: 'LAU-114 dual AIM-9 adapter', xml: 'Models/Stores/Racks/LAU-114/LAU-114.xml', ac: 'Models/Stores/Racks/LAU-114/LAU-114.ac' },
-  { id: 'aaq28', label: 'AN/AAQ-28 Litening targeting pod', xml: 'Models/Stores/Ext-Stores/AN_AAQ-28/AN-AAQ-28.xml', ac: 'Models/Stores/Ext-Stores/AN_AAQ-28/AN-AAQ-28.ac' },
-  { id: 'alq131', label: 'AN/ALQ-131 jamming pod', xml: 'Models/Stores/Ext-Stores/AN_ALQ-131/AN_ALQ-131.xml', ac: 'Models/Stores/Ext-Stores/AN_ALQ-131/AN_ALQ-131.ac' },
-  { id: 'alq184', label: 'AN/ALQ-184 jamming pod', xml: 'Models/Stores/Ext-Stores/AN_ALQ-184/AN_ALQ-184.xml', ac: 'Models/Stores/Ext-Stores/AN_ALQ-184/AN_ALQ-184.ac' },
-  { id: 'mxu648', label: 'MXU-648 cargo pod', xml: 'Models/Stores/Ext-Stores/MXU-648/MXU-648.xml', ac: 'Models/Stores/Ext-Stores/MXU-648/MXU-648.ac' },
-  { id: 'cbu87', label: 'CBU-87 dispenser shell (also the CBU-97)', xml: 'Models/Stores/Weapons/CBU-87/CBU-87.xml', ac: 'Models/Stores/Weapons/CBU-87/CBU-87.ac', keep: /^CBU-87/ },
+  {
+    id: 'mk82',
+    label: 'Mk 82 low-drag bomb',
+    ac: 'Models/Stores/Weapons/MK-82/MK-82.ac',
+    xml: 'Models/Stores/Weapons/MK-82/MK-82.xml',
+  },
+  {
+    id: 'mk82air',
+    label: 'Mk 82 AIR (BSU-49 ballute) bomb',
+    xml: 'Models/Stores/Weapons/MK-82AIR/MK-82AIR.xml',
+    ac: 'Models/Stores/Weapons/MK-82AIR/MK-82AIR.ac',
+  },
+  {
+    id: 'mk84',
+    label: 'Mk 84 bomb',
+    xml: 'Models/Stores/Weapons/MK-84/MK-84.xml',
+    ac: 'Models/Stores/Weapons/MK-84/MK-84.ac',
+  },
+  {
+    id: 'agm65',
+    label: 'AGM-65 Maverick',
+    xml: 'Models/Stores/Weapons/AGM-65B/AGM-65B.xml',
+    ac: 'Models/Stores/Weapons/AGM-65B/AGM-65B.ac',
+  },
+  {
+    id: 'aim9m_lw',
+    label: 'AIM-9M (left rail)',
+    xml: 'Models/Stores/Weapons/AIM-9M/AIM-9M_LW.xml',
+    ac: 'Models/Stores/Weapons/AIM-9M/AIM-9M_LW.ac',
+  },
+  {
+    id: 'aim9m_rw',
+    label: 'AIM-9M (right rail)',
+    xml: 'Models/Stores/Weapons/AIM-9M/AIM-9M_RW.xml',
+    ac: 'Models/Stores/Weapons/AIM-9M/AIM-9M_RW.ac',
+  },
+  {
+    id: 'lau68',
+    label: 'LAU-68 rocket pod (also the LAU-131)',
+    acOnly: 'Models/Stores/Weapons/LAU-68/LAU-68.ac',
+  },
+  {
+    id: 'hydra70',
+    label: 'Hydra 70 rocket',
+    acOnly: 'Models/Stores/Weapons/LAU-68/Hydra70.ac',
+    noLugs: true,
+  },
+  {
+    id: 'ter9a',
+    label: 'TER-9A triple ejector rack',
+    xml: 'Models/Stores/Racks/TER-9A/TER-9A.xml',
+    ac: 'Models/Stores/Racks/TER-9A/TER-9A.ac',
+  },
+  {
+    id: 'lau88',
+    label: 'LAU-88 triple Maverick launcher (FlightGear trirack_small)',
+    xml: 'Models/Stores/Racks/trirack_small.xml',
+    ac: 'Models/Stores/Racks/trirack_small.ac',
+  },
+  {
+    id: 'lau114',
+    label: 'LAU-114 dual AIM-9 adapter',
+    xml: 'Models/Stores/Racks/LAU-114/LAU-114.xml',
+    ac: 'Models/Stores/Racks/LAU-114/LAU-114.ac',
+  },
+  {
+    id: 'aaq28',
+    label: 'AN/AAQ-28 Litening targeting pod',
+    xml: 'Models/Stores/Ext-Stores/AN_AAQ-28/AN-AAQ-28.xml',
+    ac: 'Models/Stores/Ext-Stores/AN_AAQ-28/AN-AAQ-28.ac',
+  },
+  {
+    id: 'alq131',
+    label: 'AN/ALQ-131 jamming pod',
+    xml: 'Models/Stores/Ext-Stores/AN_ALQ-131/AN_ALQ-131.xml',
+    ac: 'Models/Stores/Ext-Stores/AN_ALQ-131/AN_ALQ-131.ac',
+  },
+  {
+    id: 'alq184',
+    label: 'AN/ALQ-184 jamming pod',
+    xml: 'Models/Stores/Ext-Stores/AN_ALQ-184/AN_ALQ-184.xml',
+    ac: 'Models/Stores/Ext-Stores/AN_ALQ-184/AN_ALQ-184.ac',
+  },
+  {
+    id: 'mxu648',
+    label: 'MXU-648 cargo pod',
+    xml: 'Models/Stores/Ext-Stores/MXU-648/MXU-648.xml',
+    ac: 'Models/Stores/Ext-Stores/MXU-648/MXU-648.ac',
+  },
+  {
+    id: 'cbu87',
+    label: 'CBU-87 dispenser shell (also the CBU-97)',
+    xml: 'Models/Stores/Weapons/CBU-87/CBU-87.xml',
+    ac: 'Models/Stores/Weapons/CBU-87/CBU-87.ac',
+    keep: /^CBU-87/,
+  },
   { id: 'gbu12', label: 'GBU-12 Paveway II (Mk 82 body + kit built in code)', gbu12: true },
   { id: 'lau117', label: 'LAU-117 single-rail Maverick launcher (built in code)', lau117: true },
 ];
@@ -455,8 +577,21 @@ for (const s of STORES) {
       root.ac = 'Models/Stores/Weapons/MK-82/MK-82.ac';
     }
     const built = s.gbu12 ? buildGbu12Kit() : buildLau117();
-    const world = { type: 'world', name: null, line: 0, kids: built.kids, verts: new Float64Array(0), surfs: [] };
-    const nodes = acTreeToNodes({ materials: built.materials, root: world }, `(built in code: ${s.id})`, FG_TO_BODY_AXES, ctx, () => null);
+    const world = {
+      type: 'world',
+      name: null,
+      line: 0,
+      kids: built.kids,
+      verts: new Float64Array(0),
+      surfs: [],
+    };
+    const nodes = acTreeToNodes(
+      { materials: built.materials, root: world },
+      `(built in code: ${s.id})`,
+      FG_TO_BODY_AXES,
+      ctx,
+      () => null,
+    );
     for (const c of [...nodes.children]) appendChild(root, c);
   } else if (s.acOnly) {
     root = makeNode('model', s.id, { file: s.acOnly, line: 0 });
@@ -472,11 +607,14 @@ for (const s of STORES) {
   // remove unwanted toggles: MK-82AIR keeps its chute as a hidden part
   for (const n of walk(root)) n.toggles = n.toggles.filter((t) => !IGNORED_TOGGLE.test(t.cond));
   // geometry bounds (BODY axes, FG store origin)
-  const lugObj = [...walk(root)].find((n) => n.geom && /mount|hook|lugs/i.test(n.name) && !/Hydra/.test(n.name));
+  const lugObj = [...walk(root)].find(
+    (n) => n.geom && /mount|hook|lugs/i.test(n.name) && !/Hydra/.test(n.name),
+  );
   const bb = boundsOf(root);
   let lug;
   if (s.noLugs) lug = [0, 0, (bb.min[2] + bb.max[2]) / 2];
-  else if (lugObj) lug = [0, lugObj.geom.bbox.max[1], (lugObj.geom.bbox.min[2] + lugObj.geom.bbox.max[2]) / 2];
+  else if (lugObj)
+    lug = [0, lugObj.geom.bbox.max[1], (lugObj.geom.bbox.min[2] + lugObj.geom.bbox.max[2]) / 2];
   else lug = [0, bb.max[1], (bb.min[2] + bb.max[2]) / 2];
   storeRoots.set(s.id, root);
   storeMeta[s.id] = {
@@ -490,7 +628,14 @@ for (const s of STORES) {
     bounds: { min: round3(sub3(bb.min, lug)), max: round3(sub3(bb.max, lug)) },
     lugObject: lugObj?.name ?? null,
   };
-  const plan = planGLB({ name: s.id, roots: [root], channelOf, textureInfo, options: {}, rootOrigin: lug });
+  const plan = planGLB({
+    name: s.id,
+    roots: [root],
+    channelOf,
+    textureInfo,
+    options: {},
+    rootOrigin: lug,
+  });
   plans.push({ plan, file: `stores/${s.id}.glb`, group: 'stores', store: s.id });
 }
 
@@ -523,7 +668,10 @@ const cockpitDemand = textureDemand(cockpitPlan);
 const texRelOf = (id) => texIds.get(id);
 const cockpitSlot = (id) => {
   const info = texInfo.get(texRelOf(id));
-  return slotSize(cockpitDemand.get(id), info.width, info.height, { texelsPerMetre: COCKPIT_TEXELS_PER_METRE, maxSlot: 1024 });
+  return slotSize(cockpitDemand.get(id), info.width, info.height, {
+    texelsPerMetre: COCKPIT_TEXELS_PER_METRE,
+    maxSlot: 1024,
+  });
 };
 const atlas = atlasPlan(cockpitPlan, {
   prefix: 'cockpit-atlas',
@@ -588,7 +736,10 @@ for (const id of [...usedTex.keys()].sort()) {
   const f = texFileOf(id);
   const page = atlasPages.get(id);
   if (page) {
-    buildPage(page, (tex) => src.abs(texRelOf(tex)), join(OUT_TEX, f), { pad: ATLAS_PAD, quality: 85 });
+    buildPage(page, (tex) => src.abs(texRelOf(tex)), join(OUT_TEX, f), {
+      pad: ATLAS_PAD,
+      quality: 85,
+    });
     texOut.set(id, {
       file: f,
       source: page.tiles.map((t) => texRelOf(t.tex)),
@@ -623,11 +774,26 @@ for (const l of LIVERIES) {
   const mainRel = posix.normalize(posix.join('Models', text(x, 'sim/model/livery/texture-main')));
   let mainId = [...texIds.entries()].find(([, rel]) => rel === mainRel)?.[0];
   if (!mainId) {
-    mainId = safeName(`livery-${posix.basename(mainRel).replace(/\.png$/i, '').toLowerCase()}`);
+    mainId = safeName(
+      `livery-${posix
+        .basename(mainRel)
+        .replace(/\.png$/i, '')
+        .toLowerCase()}`,
+    );
     const f = `${mainId}.jpg`;
     src.used.add(mainRel);
-    const { width, height } = encodeImage(src.abs(mainRel), join(OUT_TEX, f), { maxSize: 1024, quality: 85 });
-    texOut.set(mainId, { file: f, source: mainRel, width, height, bytes: statSync(join(OUT_TEX, f)).size, livery: l.id });
+    const { width, height } = encodeImage(src.abs(mainRel), join(OUT_TEX, f), {
+      maxSize: 1024,
+      quality: 85,
+    });
+    texOut.set(mainId, {
+      file: f,
+      source: mainRel,
+      width,
+      height,
+      bytes: statSync(join(OUT_TEX, f)).size,
+      livery: l.id,
+    });
   }
   liveryMeta.push({
     id: l.id,
@@ -674,7 +840,8 @@ function nodeTransform(node, props) {
     const value = pv.property ? (props[pv.property] ?? 0) : 0;
     const v = fgDrive(pv, value);
     let T;
-    if (pv.type === 'translate') T = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: pv.axis.map((a) => a * v) };
+    if (pv.type === 'translate')
+      T = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: pv.axis.map((a) => a * v) };
     else if (pv.type === 'rotate') T = rotateAbout(pv.centre, pv.axis, v);
     else T = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
     M = compose(M, T);
@@ -685,7 +852,9 @@ function nodeTransform(node, props) {
 function geomPoints(node) {
   const pts = [];
   for (const n of walk(node))
-    if (n.geom) for (const g of n.geom.groups.values()) for (let i = 0; i < g.pos.length; i += 3) pts.push([g.pos[i], g.pos[i + 1], g.pos[i + 2]]);
+    if (n.geom)
+      for (const g of n.geom.groups.values())
+        for (let i = 0; i < g.pos.length; i += 3) pts.push([g.pos[i], g.pos[i + 1], g.pos[i + 2]]);
   return pts;
 }
 
@@ -706,10 +875,16 @@ for (const [id, tyre] of [
   const pts = geomPoints(n).map((p) => applyPoint(M, p[0], p[1], p[2]));
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
-  for (const p of pts) for (let c = 0; c < 3; c++) ((min[c] = Math.min(min[c], p[c])), (max[c] = Math.max(max[c], p[c])));
+  for (const p of pts)
+    for (let c = 0; c < 3; c++)
+      ((min[c] = Math.min(min[c], p[c])), (max[c] = Math.max(max[c], p[c])));
   const low = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
   const centre = [0, 1, 2].map((c) => (min[c] + max[c]) / 2);
-  contacts[id] = { centre: round3(centre), contact: round3([centre[0], low[1], low[2]]), radius: r3((max[1] - min[1]) / 2) };
+  contacts[id] = {
+    centre: round3(centre),
+    contact: round3([centre[0], low[1], low[2]]),
+    radius: r3((max[1] - min[1]) / 2),
+  };
 }
 
 // fan pivot vs mesh centroid (spin axis must go through the fan)
@@ -746,7 +921,8 @@ function quadCorners(root, name) {
   const n = one(root, name);
   if (!n?.geom) return null;
   const pts = [];
-  for (const p of geomPoints(n)) if (!pts.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 1e-4)) pts.push(p);
+  for (const p of geomPoints(n))
+    if (!pts.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 1e-4)) pts.push(p);
   if (pts.length < 4) return null;
   const sorted = pts.slice().sort((a, b) => b[1] - a[1]);
   const top = sorted.slice(0, 2).sort((a, b) => a[0] - b[0]);
@@ -759,12 +935,24 @@ const hudNormal = (() => {
   const [tl, tr, , bl] = hudCorners;
   const a = sub3(tr, tl);
   const b = sub3(bl, tl);
-  const n = normalize3([a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]);
+  const n = normalize3([
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ]);
   return round3(n[2] > 0 ? n : n.map((x) => -x));
 })();
 const displays = {
-  tv: { node: 'CPT-video-screen', corners: quadCorners(cockpitTree, 'CPT-video-screen'), shownWhen: 'variant A-10A (no MPCD)' },
-  mpcd: { node: 'canvas_disp', corners: quadCorners(cockpitTree, 'canvas_disp'), shownWhen: 'variant A-10A+ (MPCD)' },
+  tv: {
+    node: 'CPT-video-screen',
+    corners: quadCorners(cockpitTree, 'CPT-video-screen'),
+    shownWhen: 'variant A-10A (no MPCD)',
+  },
+  mpcd: {
+    node: 'canvas_disp',
+    corners: quadCorners(cockpitTree, 'canvas_disp'),
+    shownWhen: 'variant A-10A+ (MPCD)',
+  },
 };
 
 // eye point from A-10-base.xml view 0
@@ -783,8 +971,14 @@ const eye = {
 
 // gun: FlightGear submodel spawn point (legacy feet, x forward, z up)
 const subm = parseXml(src.text('A-10-submodels.xml'), 'A-10-submodels.xml');
-const gunSub = all(subm, 'submodel').find((m) => /GAU-8/.test(text(m, 'name') ?? '')) ?? all(subm, 'submodel')[0];
-const gunFg = [-num(gunSub, 'x-offset', 0) * 0.3048, num(gunSub, 'y-offset', 0) * 0.3048, num(gunSub, 'z-offset', 0) * 0.3048];
+const gunSub =
+  all(subm, 'submodel').find((m) => /GAU-8/.test(text(m, 'name') ?? '')) ??
+  all(subm, 'submodel')[0];
+const gunFg = [
+  -num(gunSub, 'x-offset', 0) * 0.3048,
+  num(gunSub, 'y-offset', 0) * 0.3048,
+  num(gunSub, 'z-offset', 0) * 0.3048,
+];
 const cannon = one(extNodes, 'Cannon');
 const cbb = cannon.geom.bbox;
 // the firing barrel is the one on the centreline: average the muzzle-face vertices near X = 0
@@ -807,16 +1001,40 @@ for (const [nm, id] of LIGHTS) {
   const n = one(extNodes, nm);
   if (!n?.geom) continue;
   const colour = { navLeft: [1, 0.08, 0.05], navRight: [0.1, 1, 0.25] }[id] ?? [1, 1, 1];
-  lights.push({ id, node: nm, position: round3(n.geom.centroid), colour, kind: id.startsWith('nav') ? 'steady' : 'strobe' });
+  lights.push({
+    id,
+    node: nm,
+    position: round3(n.geom.centroid),
+    colour,
+    kind: id.startsWith('nav') ? 'steady' : 'strobe',
+  });
 }
 const skippedLanding = aircraft.skipped?.find((s) => s.path === 'Models/Effects/landing-light.xml');
 if (skippedLanding) {
   const o = skippedLanding.offsets;
-  lights.push({ id: 'landing', node: null, position: round3(applyPoint(FG_TO_BODY, o.x, o.y, o.z)), colour: [1, 0.97, 0.9], kind: 'landing' });
+  lights.push({
+    id: 'landing',
+    node: null,
+    position: round3(applyPoint(FG_TO_BODY, o.x, o.y, o.z)),
+    colour: [1, 0.97, 0.9],
+    kind: 'landing',
+  });
 }
 
 // pylons → stations
-const PYLONS = ['L-Wing-Att-4', 'L-Wing-Att-3', 'L-Wing-Att-2', 'L-Wing-Att-1', 'Hull-Att1', 'Hull-Att2', 'Hull-Att3', 'R-Wing-Att-1', 'R-Wing-Att-2', 'R-Wing-Att-3', 'R-Wing-Att-4'];
+const PYLONS = [
+  'L-Wing-Att-4',
+  'L-Wing-Att-3',
+  'L-Wing-Att-2',
+  'L-Wing-Att-1',
+  'Hull-Att1',
+  'Hull-Att2',
+  'Hull-Att3',
+  'R-Wing-Att-1',
+  'R-Wing-Att-2',
+  'R-Wing-Att-3',
+  'R-Wing-Att-4',
+];
 function pylonBottom(n, z) {
   const pts = [];
   for (const g of n.geom.groups.values())
@@ -868,7 +1086,11 @@ function resolvePlacements(xmlRel, xf, out, extraTop = null) {
       const c = child(a, 'center');
       const ax = child(a, 'axis');
       const ang = (num(a, 'offset-deg', 0) + 0) * D2R;
-      const rot = rotateAbout([num(c, 'x-m', 0), num(c, 'y-m', 0), num(c, 'z-m', 0)], normalize3([num(ax, 'x', 0), num(ax, 'y', 0), num(ax, 'z', 0)]), ang);
+      const rot = rotateAbout(
+        [num(c, 'x-m', 0), num(c, 'y-m', 0), num(c, 'z-m', 0)],
+        normalize3([num(ax, 'x', 0), num(ax, 'y', 0), num(ax, 'z', 0)]),
+        ang,
+      );
       mxf = compose(compose(xfTop, rot), offsetsTransform(readOffsets(child(m, 'offsets'))));
     }
     if (subRel.endsWith('.xml')) resolvePlacements(subRel, mxf, out);
@@ -941,7 +1163,10 @@ function quatFromMatrix(m) {
 }
 
 // FG placements on the aircraft: body-frame xf = FG_TO_BODY ∘ placement
-const loadsModels = parseXml(src.text('Models/Stores/loads_models.xml'), 'Models/Stores/loads_models.xml');
+const loadsModels = parseXml(
+  src.text('Models/Stores/loads_models.xml'),
+  'Models/Stores/loads_models.xml',
+);
 src.text('Models/Stores/loads.xml');
 const fgPlacements = []; // { fgId, name, items: [{store, xf}] }
 for (const m of all(loadsModels, 'model')) {
@@ -950,8 +1175,17 @@ for (const m of all(loadsModels, 'model')) {
   const fgId = Number(/^Station(\d+)/.exec(name)?.[1] ?? ids?.[ids.length - 1]);
   const rel = src.resolve('Models/Stores', text(m, 'path'));
   const items = [];
-  resolvePlacements(rel, compose(FG_TO_BODY, offsetsTransform(readOffsets(child(m, 'offsets')))), items);
-  fgPlacements.push({ fgId, name, line: m.line, items: items.map((it) => ({ store: acToStore.get(it.ac) ?? null, ac: it.ac, xf: it.xf })) });
+  resolvePlacements(
+    rel,
+    compose(FG_TO_BODY, offsetsTransform(readOffsets(child(m, 'offsets')))),
+    items,
+  );
+  fgPlacements.push({
+    fgId,
+    name,
+    line: m.line,
+    items: items.map((it) => ({ store: acToStore.get(it.ac) ?? null, ac: it.ac, xf: it.xf })),
+  });
 }
 
 const stations = [];
@@ -968,10 +1202,18 @@ for (let i = 0; i < 11; i++) {
     const racks = items.filter((it) => ['ter9a', 'lau88', 'lau114'].includes(it.store));
     if (racks.length) {
       const r = racks[0];
-      if (!placements[r.store]) placements[r.store] = { ...lugPlacement(r.store, r.xf), source: `Models/Stores/loads_models.xml:${fp.line}` };
+      if (!placements[r.store])
+        placements[r.store] = {
+          ...lugPlacement(r.store, r.xf),
+          source: `Models/Stores/loads_models.xml:${fp.line}`,
+        };
     } else {
       const it = items[0];
-      if (!placements[it.store]) placements[it.store] = { ...lugPlacement(it.store, it.xf), source: `Models/Stores/loads_models.xml:${fp.line}` };
+      if (!placements[it.store])
+        placements[it.store] = {
+          ...lugPlacement(it.store, it.xf),
+          source: `Models/Stores/loads_models.xml:${fp.line}`,
+        };
     }
   }
   stations.push({
@@ -992,10 +1234,15 @@ function rackMounts(rackId, xmlRel, storeId) {
   const rackLug = applyPoint(rack.xf, ...storeMeta[rackId].lugFg);
   const mounts = [];
   for (const it of items) {
-    if (acToStore.get(it.ac) !== storeId && !(storeId === 'aim9m' && /AIM-9M/.test(it.ac))) continue;
+    if (acToStore.get(it.ac) !== storeId && !(storeId === 'aim9m' && /AIM-9M/.test(it.ac)))
+      continue;
     const sid = acToStore.get(it.ac) ?? storeId;
     const pl = lugPlacement(sid, it.xf);
-    mounts.push({ position: round3(sub3(pl.position, rackLug)), quaternion: pl.quaternion, model: sid });
+    mounts.push({
+      position: round3(sub3(pl.position, rackLug)),
+      quaternion: pl.quaternion,
+      model: sid,
+    });
   }
   return { mounts, source: xmlRel };
 }
@@ -1010,7 +1257,13 @@ const racks = {
     const lug = storeMeta.lau117.lugFg; // FG [x, y, z]
     const hookZ = -0.06; // BODY Z of the missile's hook point on the launcher (FG x)
     return {
-      mounts: [{ position: round3([0, rail.min[1] - lug[2], hookZ - lug[0]]), quaternion: [0, 0, 0, 1], model: 'agm65' }],
+      mounts: [
+        {
+          position: round3([0, rail.min[1] - lug[2], hookZ - lug[0]]),
+          quaternion: [0, 0, 0, 1],
+          model: 'agm65',
+        },
+      ],
       source: 'convert-lib-build.mjs (LAU-117)',
     };
   })(),
@@ -1041,7 +1294,8 @@ function pivotMeta(plan, n, withInputs) {
   const pv = n.pivot;
   const name = plan.nameOf.get(n);
   const parentPivot = (() => {
-    for (let p = n.parent; p; p = p.parent) if (p.kind === 'pivot' && plan.nameOf.has(p)) return plan.nameOf.get(p);
+    for (let p = n.parent; p; p = p.parent)
+      if (p.kind === 'pivot' && plan.nameOf.has(p)) return plan.nameOf.get(p);
     return null;
   })();
   const e = {
@@ -1076,7 +1330,8 @@ function pivotMeta(plan, n, withInputs) {
   e.drive = drive;
   if (withInputs) {
     if (n.custom === 'spin') e.drive = { input: 'barrelAngle', gain: 1 };
-    else if (/alpha-deg/.test(pv.property ?? '') && /Slat/.test(n.targets[0])) e.drive = { input: 'slats', gain: 0.15 };
+    else if (/alpha-deg/.test(pv.property ?? '') && /Slat/.test(n.targets[0]))
+      e.drive = { input: 'slats', gain: 0.15 };
     else {
       const map = EXTERIOR_INPUTS.find(([re]) => re.test(pv.property ?? ''));
       if (map) {
@@ -1096,7 +1351,8 @@ function pivotMeta(plan, n, withInputs) {
   }
   return e;
 }
-const pivotsOf = (plan, withInputs) => plan.nodes.filter((n) => n.kind === 'pivot').map((n) => pivotMeta(plan, n, withInputs));
+const pivotsOf = (plan, withInputs) =>
+  plan.nodes.filter((n) => n.kind === 'pivot').map((n) => pivotMeta(plan, n, withInputs));
 
 const SEMANTIC_TOGGLES = [
   [/^FTank1$/, { station: 6 }],
@@ -1132,13 +1388,16 @@ function boxOf(node) {
   const max = [-Infinity, -Infinity, -Infinity];
   for (const n of walk(node))
     if (n.geom && n.geom.triangles)
-      for (let c = 0; c < 3; c++) ((min[c] = Math.min(min[c], n.geom.bbox.min[c])), (max[c] = Math.max(max[c], n.geom.bbox.max[c])));
+      for (let c = 0; c < 3; c++)
+        ((min[c] = Math.min(min[c], n.geom.bbox.min[c])),
+          (max[c] = Math.max(max[c], n.geom.bbox.max[c])));
   return Number.isFinite(min[0]) ? { min, max } : null;
 }
 function picksOf(plan) {
   const out = [];
   for (const n of plan.nodes) {
-    const hotspot = n.geom && [...n.geom.groups.values()].every((g) => (n.materials[g.mat]?.trans ?? 0) >= 0.999);
+    const hotspot =
+      n.geom && [...n.geom.groups.values()].every((g) => (n.materials[g.mat]?.trans ?? 0) >= 0.999);
     if (!n.picks.length && !(hotspot && n.geom?.triangles)) continue;
     const box = boxOf(n);
     if (!box) continue;
@@ -1152,7 +1411,12 @@ function picksOf(plan) {
       frame: frame ? plan.nameOf.get(frame) : plan.nameOf.get(plan.ROOT),
       box: { min: round3(sub3(box.min, o)), max: round3(sub3(box.max, o)) },
       hotspot: Boolean(hotspot),
-      actions: n.picks.map((p) => ({ kind: p.kind, src: `${p.file}:${p.line}`, property: p.property ?? null, bindings: p.bindings })),
+      actions: n.picks.map((p) => ({
+        kind: p.kind,
+        src: `${p.file}:${p.line}`,
+        property: p.property ?? null,
+        bindings: p.bindings,
+      })),
     });
   }
   return out;
@@ -1160,7 +1424,13 @@ function picksOf(plan) {
 function lodsOf(plan) {
   const out = [];
   for (const n of plan.nodes)
-    for (const l of n.lods) out.push({ node: plan.nameOf.get(n), min: l.min, max: Number.isFinite(l.max) ? l.max : null, src: `${l.file}:${l.line}` });
+    for (const l of n.lods)
+      out.push({
+        node: plan.nameOf.get(n),
+        min: l.min,
+        max: Number.isFinite(l.max) ? l.max : null,
+        src: `${l.file}:${l.line}`,
+      });
   return out;
 }
 function uvAnimsOf(plan) {
@@ -1190,7 +1460,8 @@ const meta = {
     axes: '+X right wing, +Y up, -Z nose (BODY)',
     units: 'm, rad',
     originFG: [7.65, 0, 0.3],
-    originNote: 'R = 25 % of the model wing mean aerodynamic chord, on the centreline, 0.30 m above the FlightGear reference line',
+    originNote:
+      'R = 25 % of the model wing mean aerodynamic chord, on the centreline, 0.30 m above the FlightGear reference line',
     acToBody: [
       [0, 0, -1],
       [0, 1, 0],
@@ -1214,15 +1485,28 @@ const meta = {
     toggles: togglesOf(cockpitPlan),
     uvAnims: uvAnimsOf(cockpitPlan),
     lods: lodsOf(cockpitPlan),
-    models: cockpitModels.map((m) => ({ node: cockpitPlan.nameOf.get(m), file: m.file, offsets: m.offsets ?? null, standIn: !!m.standIn, frozen: !!m.frozen })),
+    models: cockpitModels.map((m) => ({
+      node: cockpitPlan.nameOf.get(m),
+      file: m.file,
+      offsets: m.offsets ?? null,
+      standIn: !!m.standIn,
+      frozen: !!m.frozen,
+    })),
     frozen,
   },
   pilot: { pivots: pivotsOf(pilotPlan, false), toggles: togglesOf(pilotPlan) },
-  pick: [...picksOf(cockpitPlan).map((p) => ({ file: 'cockpit', ...p })), ...picksOf(pilotPlan).map((p) => ({ file: 'pilot', ...p }))],
+  pick: [
+    ...picksOf(cockpitPlan).map((p) => ({ file: 'cockpit', ...p })),
+    ...picksOf(pilotPlan).map((p) => ({ file: 'pilot', ...p })),
+  ],
   liveries: liveryMeta,
   liverySlots: { main: 'a-10-000', detail: 'a-10-000b' },
   eye,
-  hud: { glassCorners: hudCorners, normal: hudNormal, source: 'Models/Cockpit/detail-cpt.ac object hud-screen (aft face of CPT-hud-screen)' },
+  hud: {
+    glassCorners: hudCorners,
+    normal: hudNormal,
+    source: 'Models/Cockpit/detail-cpt.ac object hud-screen (aft face of CPT-hud-screen)',
+  },
   displays,
   gun,
   gear: { contacts, note: 'gear down, struts uncompressed; centre = wheel centre' },
@@ -1241,14 +1525,23 @@ function boundsMeta(plan) {
   const max = [-Infinity, -Infinity, -Infinity];
   for (const n of plan.nodes)
     if (n.geom && n.geom.triangles && n.kind === 'object')
-      for (let c = 0; c < 3; c++) ((min[c] = Math.min(min[c], n.geom.bbox.min[c])), (max[c] = Math.max(max[c], n.geom.bbox.max[c])));
+      for (let c = 0; c < 3; c++)
+        ((min[c] = Math.min(min[c], n.geom.bbox.min[c])),
+          (max[c] = Math.max(max[c], n.geom.bbox.max[c])));
   return { min: round3(min), max: round3(max) };
 }
 
 let totalModels = 0;
 for (const [f, s] of Object.entries(fileStats)) {
   totalModels += s.bytes;
-  meta.budget[f] = { bytes: s.bytes, triangles: s.triangles, drawCalls: s.primitives, vertices: s.vertices, materials: s.materials, nodes: s.nodes };
+  meta.budget[f] = {
+    bytes: s.bytes,
+    triangles: s.triangles,
+    drawCalls: s.primitives,
+    vertices: s.vertices,
+    materials: s.materials,
+    nodes: s.nodes,
+  };
 }
 let totalTex = 0;
 const texList = [];
@@ -1289,7 +1582,11 @@ const shortSrc = (list) => {
     dirs.get(d).push(posix.basename(f));
   }
   return [...dirs]
-    .map(([d, fs]) => (fs.length > 6 ? `${bt(d + '/')} (${fs.length} files: ${fs.slice(0, 4).join(', ')}, …)` : fs.map((f) => bt(`${d}/${f}`)).join(', ')))
+    .map(([d, fs]) =>
+      fs.length > 6
+        ? `${bt(d + '/')} (${fs.length} files: ${fs.slice(0, 4).join(', ')}, …)`
+        : fs.map((f) => bt(`${d}/${f}`)).join(', '),
+    )
     .join('; ');
 };
 for (const { plan, file, store } of plans) {
@@ -1301,26 +1598,42 @@ for (const { plan, file, store } of plans) {
     else if (n.file && (n.kind === 'object' || n.kind === 'group')) set.add(n.file);
   }
   const s0 = STORES.find((x) => x.id === store);
-  let note = FILE_NOTES[file] ?? (s0 ? `${s0.label}; own frame, origin at the suspension lugs` : '');
-  if (store === 'gbu12') note += '. Mk 82 body from the package without its fuze and fins; guidance and wing kits built in code';
+  let note =
+    FILE_NOTES[file] ?? (s0 ? `${s0.label}; own frame, origin at the suspension lugs` : '');
+  if (store === 'gbu12')
+    note +=
+      '. Mk 82 body from the package without its fuze and fins; guidance and wing kits built in code';
   if (store === 'lau117') note += '. Built in code (no LAU-117 in the package)';
-  if (store === 'cbu87') note += '. Shell only (the 202 modelled bomblets left out); also drawn for the CBU-97';
+  if (store === 'cbu87')
+    note += '. Shell only (the 202 modelled bomblets left out); also drawn for the CBU-97';
   if (store === 'lau68') note += '. Also drawn for the LAU-131';
   if (store === 'lau88') note += ". FlightGear's trirack_small, used as the LAU-88";
   credits.push({
     file: `public/a10/models/${file}`,
     source: shortSrc([...set].sort()) || 'built in code',
-    author: built && !set.size ? 'this project' : built ? `${AUTHOR}; parts built in code by this project` : AUTHOR,
+    author:
+      built && !set.size
+        ? 'this project'
+        : built
+          ? `${AUTHOR}; parts built in code by this project`
+          : AUTHOR,
     licence: built && !set.size ? 'GPL-2.0-or-later' : LICENCE,
     changes: note,
   });
 }
 credits.push({
   file: 'public/a10/models/a10-meta.json',
-  source: shortSrc(['Models/A-10-model.xml', 'A-10-base.xml', 'A-10-submodels.xml', 'Models/Stores/loads_models.xml']) + ' and the geometry above',
+  source:
+    shortSrc([
+      'Models/A-10-model.xml',
+      'A-10-base.xml',
+      'A-10-submodels.xml',
+      'Models/Stores/loads_models.xml',
+    ]) + ' and the geometry above',
   author: AUTHOR,
   licence: LICENCE,
-  changes: 'Hinges, toggles, eye point, HUD glass, displays, stations and store placements, gun, lights and gear contacts measured from the package by the converter',
+  changes:
+    'Hinges, toggles, eye point, HUD glass, displays, stations and store placements, gun, lights and gear contacts measured from the package by the converter',
 });
 for (const t of texList) {
   const srcs = Array.isArray(t.source) ? t.source : [t.source];
@@ -1336,7 +1649,8 @@ for (const t of texList) {
 }
 {
   const path = join(REPO, 'CREDITS.md');
-  const BEGIN = '<!-- BEGIN flightgear-a10 (generated by scripts/a10/convert-ac3d.mjs; do not edit by hand) -->';
+  const BEGIN =
+    '<!-- BEGIN flightgear-a10 (generated by scripts/a10/convert-ac3d.mjs; do not edit by hand) -->';
   const END = '<!-- END flightgear-a10 -->';
   const text0 = existsSync(path) ? readFileSync(path, 'utf8') : `${BEGIN}\n${END}\n`;
   const a = text0.indexOf(BEGIN);
@@ -1346,9 +1660,15 @@ for (const t of texList) {
   const rows = [
     '| File | Source (package path) | Author | Licence | Changes |',
     '|---|---|---|---|---|',
-    ...credits.map((c) => `| ${bt(c.file)} | ${esc(c.source)} | ${esc(c.author)} | ${esc(c.licence)} | ${esc(c.changes)} |`),
+    ...credits.map(
+      (c) =>
+        `| ${bt(c.file)} | ${esc(c.source)} | ${esc(c.author)} | ${esc(c.licence)} | ${esc(c.changes)} |`,
+    ),
   ];
-  writeFileSync(path, text0.slice(0, a + BEGIN.length) + '\n\n' + rows.join('\n') + '\n\n' + text0.slice(b));
+  writeFileSync(
+    path,
+    text0.slice(0, a + BEGIN.length) + '\n\n' + rows.join('\n') + '\n\n' + text0.slice(b),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1371,11 +1691,15 @@ if (opt.import) {
 const kb = (b) => `${(b / 1024).toFixed(0)} KB`;
 log('\nfile                          size      tris   draws  verts');
 for (const [f, s] of Object.entries(fileStats))
-  log(`${f.padEnd(28)} ${kb(s.bytes).padStart(8)} ${String(s.triangles).padStart(8)} ${String(s.primitives).padStart(6)} ${String(s.vertices).padStart(7)}`);
-log(`models ${kb(totalModels)} + meta ${kb(metaBytes)} + textures ${kb(totalTex)} (${texList.length} files) = ${(
-  (totalModels + metaBytes + totalTex) /
-  1024 /
-  1024
-).toFixed(2)} MB`);
+  log(
+    `${f.padEnd(28)} ${kb(s.bytes).padStart(8)} ${String(s.triangles).padStart(8)} ${String(s.primitives).padStart(6)} ${String(s.vertices).padStart(7)}`,
+  );
+log(
+  `models ${kb(totalModels)} + meta ${kb(metaBytes)} + textures ${kb(totalTex)} (${texList.length} files) = ${(
+    (totalModels + metaBytes + totalTex) /
+    1024 /
+    1024
+  ).toFixed(2)} MB`,
+);
 if (opt.verbose) for (const w of warnings) log('warning:', w);
 else log(`${warnings.length} warnings (--verbose to list)`);

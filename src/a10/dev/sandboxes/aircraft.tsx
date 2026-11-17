@@ -78,7 +78,8 @@ const LOADOUTS: Record<string, Loadout> = {
 
 function stationsOf(l: Loadout): StationState[] {
   const out: StationState[] = [];
-  for (let s = 1; s <= 11; s++) out.push({ station: s, rack: l[s]?.rack ?? null, stores: [...(l[s]?.stores ?? [])] });
+  for (let s = 1; s <= 11; s++)
+    out.push({ station: s, rack: l[s]?.rack ?? null, stores: [...(l[s]?.stores ?? [])] });
   return out;
 }
 
@@ -114,7 +115,10 @@ const params: Params = {
   hour: num('time', 11),
 };
 
-const CAMS: Record<string, { pos: [number, number, number]; target: [number, number, number]; fov?: number }> = {
+const CAMS: Record<
+  string,
+  { pos: [number, number, number]; target: [number, number, number]; fov?: number }
+> = {
   front: { pos: [-11, 3.2, -15], target: [0, 0, -0.5] },
   rear: { pos: [12, 4.5, 15], target: [0, 0.3, 0.5] },
   left: { pos: [-21, 1.5, 0.5], target: [0, 0, 0] },
@@ -124,7 +128,11 @@ const CAMS: Record<string, { pos: [number, number, number]; target: [number, num
   nose: { pos: [-3.2, -0.6, -11], target: [0, -0.4, -6.5], fov: 40 },
   gear: { pos: [-6.5, -1.6, -3.5], target: [-2.4, -1.6, 0.4], fov: 45 },
   tail: { pos: [-6, 3.5, 15.5], target: [0, 1.0, 7.5], fov: 45 },
-  cockpit: { pos: [A10_GEOMETRY.eye.x, A10_GEOMETRY.eye.y, A10_GEOMETRY.eye.z], target: [0, 0.6, -20], fov: 62 },
+  cockpit: {
+    pos: [A10_GEOMETRY.eye.x, A10_GEOMETRY.eye.y, A10_GEOMETRY.eye.z],
+    target: [0, 0.6, -20],
+    fov: 62,
+  },
 };
 const camName = q.get('cam') ?? 'front';
 const cam = CAMS[camName] ?? CAMS.front;
@@ -187,7 +195,9 @@ function Lights() {
   const day = dayLight(params.hour);
   return (
     <>
-      <hemisphereLight args={[new Color(0.62, 0.72, 0.85), new Color(0.32, 0.3, 0.22), 1.1 * day + 0.05]} />
+      <hemisphereLight
+        args={[new Color(0.62, 0.72, 0.85), new Color(0.32, 0.3, 0.22), 1.1 * day + 0.05]}
+      />
       <directionalLight
         position={sun.clone().multiplyScalar(40)}
         intensity={2.6 * day}
@@ -281,7 +291,9 @@ export default function AircraftSandbox() {
         <Controls />
       </Canvas>
       {error && <div style={{ ...panel, color: '#f88' }}>{error}</div>}
-      {!templates && !error && <div style={{ ...panel, right: 'auto', left: 12 }}>Loading the A-10…</div>}
+      {!templates && !error && (
+        <div style={{ ...panel, right: 'auto', left: 12 }}>Loading the A-10…</div>
+      )}
       {showUi && templates && (
         <div style={panel}>
           <b>A-10 model</b>
@@ -324,11 +336,25 @@ export default function AircraftSandbox() {
   );
 }
 
-function slider(label: string, value: number, min: number, max: number, step: number, on: (v: number) => void) {
+function slider(
+  label: string,
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+  on: (v: number) => void,
+) {
   return (
     <label style={row}>
       <span style={{ flex: 1 }}>{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => on(Number(e.target.value))} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => on(Number(e.target.value))}
+      />
       <span style={{ width: 40, textAlign: 'right' }}>{value.toFixed(2)}</span>
     </label>
   );

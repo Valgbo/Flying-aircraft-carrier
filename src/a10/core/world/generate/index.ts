@@ -18,7 +18,9 @@ import type { TerrainData, WorldExtra } from '../types';
 import { placeAreas } from './areas';
 import { makeCover } from './cover';
 import { createGrid, gridBSpline, sampleBilinear, upsample } from './grid';
-import { downValleyAngle, macroHeight, makeLayout, toU } from './layout';
+import { erode } from './erosion';
+import { downValleyAngle, macroHeight, makeLayout, toU, valleyT } from './layout';
+import { smoothstep } from '../noise';
 import { carveFloodPlain, makeRiver, riverField } from './river';
 import { buildRoads } from './roads';
 import { placeAirbase, placeRange } from './sites';
@@ -63,6 +65,14 @@ function generate(seed: number): TerrainData {
   for (let j = 0; j < nc; j++) {
     for (let i = 0; i < nc; i++) coarse[j * nc + i] = macroHeight(L, -size / 2 + i * cs, -size / 2 + j * cs);
   }
+  // Hydraulic erosion cuts drainage into the mountains (the valley floor is left alone).
+  const mountains = new Float32Array(nc * nc);
+  for (let j = 0; j < nc; j++) {
+    for (let i = 0; i < nc; i++) {
+      mountains[j * nc + i] = smoothstep(0.8, 1.25, valleyT(L, -size / 2 + i * cs, -size / 2 + j * cs));
+    }
+  }
+  erode(coarse, nc, cs, mountains, stream('erosion'));
   const g = createGrid(n, size);
   upsample(coarse, nc, g);
 

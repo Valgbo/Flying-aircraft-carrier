@@ -80,7 +80,12 @@ export class GltfBuilder {
     this._tex ??= new Map();
     if (this._tex.has(uri)) return this._tex.get(uri);
     this.json.images.push({ uri, mimeType });
-    const sampler = this.addSampler({ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 });
+    const sampler = this.addSampler({
+      magFilter: 9729,
+      minFilter: 9987,
+      wrapS: 10497,
+      wrapT: 10497,
+    });
     this.json.textures.push({ sampler, source: this.json.images.length - 1 });
     const i = this.json.textures.length - 1;
     this._tex.set(uri, i);
@@ -165,7 +170,8 @@ export class GltfBuilder {
         // linear vertex colours, uint8 normalised, padded to 4 bytes
         const qc = new Uint8Array(n * 4);
         for (let i = 0; i < n; i++)
-          for (let c = 0; c < 3; c++) qc[i * 4 + c] = Math.round(Math.min(1, Math.max(0, p.col[i * 3 + c])) * 255);
+          for (let c = 0; c < 3; c++)
+            qc[i * 4 + c] = Math.round(Math.min(1, Math.max(0, p.col[i * 3 + c])) * 255);
         attributes.COLOR_0 = this.addAccessor({
           bufferView: this.addBufferView(qc, ARRAY_BUFFER, 4),
           componentType: UNSIGNED_BYTE,
@@ -214,7 +220,8 @@ export class GltfBuilder {
       this.stats.triangles += p.idx.length / 3;
       this.stats.vertices += n;
       this.stats.primitives++;
-      this.stats.geometryBytes += qp.byteLength + qn.byteLength + uvBytes + colBytes + qi.byteLength;
+      this.stats.geometryBytes +=
+        qp.byteLength + qn.byteLength + uvBytes + colBytes + qi.byteLength;
     }
     // no mesh name: GLTFLoader gives meshes and nodes names from one pool, and the node (whose
     // name is `name`) must keep it
@@ -226,7 +233,15 @@ export class GltfBuilder {
   /** Serialise to a GLB buffer. */
   toGLB() {
     const json = this.json;
-    for (const k of ['meshes', 'materials', 'textures', 'images', 'samplers', 'accessors', 'bufferViews'])
+    for (const k of [
+      'meshes',
+      'materials',
+      'textures',
+      'images',
+      'samplers',
+      'accessors',
+      'bufferViews',
+    ])
       if (json[k].length === 0) delete json[k];
     if (this.extensionsUsed.size) json.extensionsUsed = [...this.extensionsUsed].sort();
     if (this.extensionsRequired.size) json.extensionsRequired = [...this.extensionsRequired].sort();

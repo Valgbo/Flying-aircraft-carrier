@@ -28,7 +28,10 @@ export const round3 = (v) => v.map(r4);
 
 /** three.js-safe node name (GLTFLoader would strip `[ ] . : /` and replace whitespace). */
 export function safeName(n) {
-  return (n || 'node').replace(/\s+/g, '_').replace(/[.:/[\]]/g, '_').replace(/[^\w\-+#@]/g, '_');
+  return (n || 'node')
+    .replace(/\s+/g, '_')
+    .replace(/[.:/[\]]/g, '_')
+    .replace(/[^\w\-+#@]/g, '_');
 }
 
 /**
@@ -48,7 +51,8 @@ export function planGLB(p) {
   // ---- rest origins and frames -------------------------------------------------------------
   const origin = new Map();
   const frameOf = new Map();
-  const isRotPivot = (n) => n.kind === 'pivot' && (n.pivot.type === 'rotate' || n.pivot.type === 'spin');
+  const isRotPivot = (n) =>
+    n.kind === 'pivot' && (n.pivot.type === 'rotate' || n.pivot.type === 'spin');
   const special = (n) =>
     n.kind === 'pivot' ||
     n.toggles.length > 0 ||
@@ -79,7 +83,14 @@ export function planGLB(p) {
     return m ? m.outKey : '';
   };
   for (const n of nodes) {
-    if (n.kind === 'model') n.outKey = safeName(n.name || n.file.split('/').pop().replace(/\.xml$/, ''));
+    if (n.kind === 'model')
+      n.outKey = safeName(
+        n.name ||
+          n.file
+            .split('/')
+            .pop()
+            .replace(/\.xml$/, ''),
+      );
   }
   for (const n of nodes) {
     let b;
@@ -107,14 +118,19 @@ export function planGLB(p) {
   for (const n of nodes) {
     if (n.kind === 'pivot') continue;
     let b = base.get(n);
-    if (n.kind !== 'model' && (owners.get(b)?.size ?? 0) > 1 && modelKey(n)) b = `${modelKey(n)}-${b}`;
+    if (n.kind !== 'model' && (owners.get(b)?.size ?? 0) > 1 && modelKey(n))
+      b = `${modelKey(n)}-${b}`;
     nameOf.set(n, claim(b));
   }
   // pivots: <first target>__<channel>
   for (const n of nodes) {
     if (n.kind !== 'pivot') continue;
     let first = null;
-    for (const d of walk(n)) if (d !== n && d.kind !== 'pivot' && d.name === n.targets[0]) { first = d; break; }
+    for (const d of walk(n))
+      if (d !== n && d.kind !== 'pivot' && d.name === n.targets[0]) {
+        first = d;
+        break;
+      }
     const firstName = first ? nameOf.get(first) : safeName(n.targets[0]);
     const ch = safeName(p.channelOf?.(n) ?? 'anim');
     nameOf.set(n, claim(`${firstName}__${ch}`));
@@ -162,7 +178,17 @@ export function planGLB(p) {
       if (!fm) merged.set(frame, (fm = new Map()));
       let acc = fm.get(key);
       if (!acc)
-        fm.set(key, (acc = { pos: [], nrm: [], uv: [], col: [], idx: [], hasUv: !!rest.map || !!rest.keepUv }));
+        fm.set(
+          key,
+          (acc = {
+            pos: [],
+            nrm: [],
+            uv: [],
+            col: [],
+            idx: [],
+            hasUv: !!rest.map || !!rest.keepUv,
+          }),
+        );
       const base0 = acc.pos.length / 3;
       for (let i = 0; i < g.pos.length; i += 3) {
         acc.pos.push(g.pos[i] - fo[0], g.pos[i + 1] - fo[1], g.pos[i + 2] - fo[2]);
@@ -176,8 +202,23 @@ export function planGLB(p) {
     objStats.set(n, tri);
     partStats.push({ name: nameOf.get(n), triangles: tri });
   }
-  const roughOf = new Map([...rough].map(([k, v]) => [k, Math.round((v.sum / v.weight) * 100) / 100]));
-  return { ...p, nodes, ROOT, origin, frameOf, nameOf, matKeys, roughOf, merged, objStats, texUse, partStats };
+  const roughOf = new Map(
+    [...rough].map(([k, v]) => [k, Math.round((v.sum / v.weight) * 100) / 100]),
+  );
+  return {
+    ...p,
+    nodes,
+    ROOT,
+    origin,
+    frameOf,
+    nameOf,
+    matKeys,
+    roughOf,
+    merged,
+    objStats,
+    texUse,
+    partStats,
+  };
 }
 
 /** Material description for one AC material on one object (merge key). */
@@ -211,7 +252,8 @@ function describeMaterial(m, g, node, tex, opt) {
       s((g.uv[a] + g.uv[b]) / 2, (g.uv[a + 1] + g.uv[b + 1]) / 2);
     }
     if (samples && (transparent || partial)) {
-      if (alphaMode !== 'BLEND') alphaMode = partial / samples > 0.15 && tex.blendable ? 'BLEND' : 'MASK';
+      if (alphaMode !== 'BLEND')
+        alphaMode = partial / samples > 0.15 && tex.blendable ? 'BLEND' : 'MASK';
     }
   }
   if (display) map = null; // replaced at run time by a render target
@@ -260,13 +302,19 @@ export function writeGLB(plan, texUri, generator) {
       const c0 = acc.col.slice(0, 3);
       let uniform = true;
       for (let i = 3; i < acc.col.length && uniform; i += 3)
-        if (Math.abs(acc.col[i] - c0[0]) + Math.abs(acc.col[i + 1] - c0[1]) + Math.abs(acc.col[i + 2] - c0[2]) > 2e-4)
+        if (
+          Math.abs(acc.col[i] - c0[0]) +
+            Math.abs(acc.col[i + 1] - c0[1]) +
+            Math.abs(acc.col[i + 2] - c0[2]) >
+          2e-4
+        )
           uniform = false;
       const fk = `${key}|${uniform ? c0.join(',') : 'vc'}`;
       finalKey.set(acc, fk);
       acc.vc = !uniform;
       let f = finals.get(fk);
-      if (!f) finals.set(fk, (f = { key, color: uniform ? c0 : [1, 1, 1], vc: !uniform, uv: null }));
+      if (!f)
+        finals.set(fk, (f = { key, color: uniform ? c0 : [1, 1, 1], vc: !uniform, uv: null }));
       if (acc.hasUv) {
         f.uv ??= { min: [Infinity, Infinity], max: [-Infinity, -Infinity] };
         for (let i = 0; i < acc.uv.length; i += 2)
@@ -297,7 +345,9 @@ export function writeGLB(plan, texUri, generator) {
     if (d.map) {
       const r = f.uv;
       const min = r ? [r6(r.min[0]), r6(r.min[1])] : [0, 0];
-      const scale = r ? [r6(Math.max(1e-6, r.max[0] - r.min[0])), r6(Math.max(1e-6, r.max[1] - r.min[1]))] : [1, 1];
+      const scale = r
+        ? [r6(Math.max(1e-6, r.max[0] - r.min[0])), r6(Math.max(1e-6, r.max[1] - r.min[1]))]
+        : [1, 1];
       uvQuant.set(fk, { min, scale });
       const { uri, mimeType } = texUri(d.map);
       const tex = b.addTexture(uri, mimeType);
@@ -375,7 +425,10 @@ export function writeGLB(plan, texUri, generator) {
   const root = emitNode(plan.ROOT);
   b.json.scenes[0].nodes.push(root);
   const glb = b.toGLB();
-  return { glb, stats: { ...b.stats, materials: b.json.materials?.length ?? 0, nodes: b.json.nodes.length } };
+  return {
+    glb,
+    stats: { ...b.stats, materials: b.json.materials?.length ?? 0, nodes: b.json.nodes.length },
+  };
 }
 
 export function pivotExtras(pv, targets) {

@@ -31,7 +31,9 @@ interface GltfNode {
 interface Gltf {
   json: {
     nodes: GltfNode[];
-    meshes?: { primitives: { attributes: Record<string, number>; indices?: number; material?: number }[] }[];
+    meshes?: {
+      primitives: { attributes: Record<string, number>; indices?: number; material?: number }[];
+    }[];
     accessors: {
       bufferView?: number;
       byteOffset?: number;
@@ -54,7 +56,10 @@ function readGlb(file: string): Gltf {
   const jsonLen = b.readUInt32LE(12);
   const json = JSON.parse(b.subarray(20, 20 + jsonLen).toString('utf8')) as Gltf['json'];
   const binStart = 20 + jsonLen;
-  const bin = binStart < b.length ? new Uint8Array(b.buffer, b.byteOffset + binStart + 8, b.readUInt32LE(binStart)) : new Uint8Array(0);
+  const bin =
+    binStart < b.length
+      ? new Uint8Array(b.buffer, b.byteOffset + binStart + 8, b.readUInt32LE(binStart))
+      : new Uint8Array(0);
   return { json, bin };
 }
 
@@ -68,7 +73,10 @@ function readAccessor(g: Gltf, index: number): { data: Float64Array; n: number; 
   const n = COMPONENTS[a.type];
   const size = SIZE[a.componentType];
   const stride = v.byteStride ?? n * size;
-  const dv = new DataView(g.bin.buffer, g.bin.byteOffset + (v.byteOffset ?? 0) + (a.byteOffset ?? 0));
+  const dv = new DataView(
+    g.bin.buffer,
+    g.bin.byteOffset + (v.byteOffset ?? 0) + (a.byteOffset ?? 0),
+  );
   const out = new Float64Array(a.count * n);
   for (let i = 0; i < a.count; i++)
     for (let c = 0; c < n; c++) {
@@ -152,7 +160,11 @@ function pointsUnder(p: Posed, name: string): Vector3[] {
       for (const prim of p.g.json.meshes![n.mesh].primitives) {
         const a = readAccessor(p.g, prim.attributes.POSITION);
         for (let k = 0; k < a.count; k++)
-          out.push(new Vector3(a.data[k * 3], a.data[k * 3 + 1], a.data[k * 3 + 2]).applyMatrix4(p.world[i]));
+          out.push(
+            new Vector3(a.data[k * 3], a.data[k * 3 + 1], a.data[k * 3 + 2]).applyMatrix4(
+              p.world[i],
+            ),
+          );
       }
     for (const c of n.children ?? []) visit(c);
   };
@@ -162,7 +174,8 @@ function pointsUnder(p: Posed, name: string): Vector3[] {
 
 function triangles(g: Gltf): number {
   let t = 0;
-  for (const m of g.json.meshes ?? []) for (const pr of m.primitives) t += g.json.accessors[pr.indices!].count / 3;
+  for (const m of g.json.meshes ?? [])
+    for (const pr of m.primitives) t += g.json.accessors[pr.indices!].count / 3;
   return t;
 }
 
@@ -189,7 +202,8 @@ const cockpit = readGlb(join(MODELS, 'a10-cockpit.glb'));
 const pilot = readGlb(join(MODELS, 'a10-pilot.glb'));
 
 const close = (a: ArrayLike<number>, b: ArrayLike<number>, tol: number) => {
-  for (let i = 0; i < b.length; i++) expect(Math.abs(a[i] - b[i]), `component ${i}: ${a[i]} vs ${b[i]}`).toBeLessThan(tol);
+  for (let i = 0; i < b.length; i++)
+    expect(Math.abs(a[i] - b[i]), `component ${i}: ${a[i]} vs ${b[i]}`).toBeLessThan(tol);
 };
 
 describe('converted A-10: files', () => {
@@ -201,7 +215,8 @@ describe('converted A-10: files', () => {
     }
     for (const s of Object.values(meta.stores)) {
       const g = readGlb(join(PUB, s.file));
-      for (const im of g.json.images ?? []) expect(existsSync(join(PUB, s.file, '..', im.uri!))).toBe(true);
+      for (const im of g.json.images ?? [])
+        expect(existsSync(join(PUB, s.file, '..', im.uri!))).toBe(true);
     }
   });
 
@@ -226,7 +241,8 @@ describe('converted A-10: files', () => {
       for (const f of readdirSync(d)) {
         const p = join(d, f);
         if (statSync(p).isDirectory()) walk(p);
-        else if (!credits.includes('`' + relative(ROOT, p).split('\\').join('/') + '`')) missing.push(relative(ROOT, p));
+        else if (!credits.includes('`' + relative(ROOT, p).split('\\').join('/') + '`'))
+          missing.push(relative(ROOT, p));
       }
     };
     walk(MODELS);
@@ -235,7 +251,14 @@ describe('converted A-10: files', () => {
   });
 
   it('keeps the original FlightGear files with the licence', () => {
-    for (const f of ['COPYING', 'README.md', 'A-10-readme.txt', 'SOURCE.md', 'Models/A10-004-015l3.ac', 'Models/A-10-model.xml'])
+    for (const f of [
+      'COPYING',
+      'README.md',
+      'A-10-readme.txt',
+      'SOURCE.md',
+      'Models/A10-004-015l3.ac',
+      'Models/A-10-model.xml',
+    ])
       expect(existsSync(join(ROOT, 'third_party/flightgear-a10', f)), f).toBe(true);
   });
 });
@@ -302,7 +325,16 @@ describe('converted A-10: exterior geometry', () => {
 
   it('keeps the AC part names as nodes', () => {
     const names = new Set(exterior.json.nodes.map((n) => n.name));
-    for (const n of ['Fuselage', 'Fuselage__2', 'L-Wing-T', 'R-Wing-B', 'LEFan', 'Cannon', 'UC-NoseTyre', 'BCanopyGlass'])
+    for (const n of [
+      'Fuselage',
+      'Fuselage__2',
+      'L-Wing-T',
+      'R-Wing-B',
+      'LEFan',
+      'Cannon',
+      'UC-NoseTyre',
+      'BCanopyGlass',
+    ])
       expect(names.has(n), n).toBe(true);
   });
 
@@ -363,12 +395,18 @@ describe('converted A-10: exterior geometry', () => {
     expect(tip('LUAileron__speedbrake', set('aileron', 1)).y).toBeLessThan(restL.y - 0.1);
     expect(tip('RUAileron__speedbrake', set('aileron', 1)).y).toBeGreaterThan(restR.y + 0.1);
     // + elevator: trailing edge up
-    expect(tip('LElevator__elevator', set('elevator', 1)).y).toBeGreaterThan(tip('LElevator__elevator', none).y + 0.1);
+    expect(tip('LElevator__elevator', set('elevator', 1)).y).toBeGreaterThan(
+      tip('LElevator__elevator', none).y + 0.1,
+    );
     // + rudder (nose right): trailing edges to the right
-    expect(tip('LRudder-L__rudder', set('rudder', 1)).x).toBeGreaterThan(tip('LRudder-L__rudder', none).x + 0.1);
+    expect(tip('LRudder-L__rudder', set('rudder', 1)).x).toBeGreaterThan(
+      tip('LRudder-L__rudder', none).x + 0.1,
+    );
     // speed brake: upper half up, lower half down, on both wings
     expect(tip('LUAileron__speedbrake', set('speedBrake', 1)).y).toBeGreaterThan(restL.y + 0.1);
-    expect(tip('LLAileron__speedbrake', set('speedBrake', 1)).y).toBeLessThan(tip('LLAileron__speedbrake', none).y - 0.1);
+    expect(tip('LLAileron__speedbrake', set('speedBrake', 1)).y).toBeLessThan(
+      tip('LLAileron__speedbrake', none).y - 0.1,
+    );
     expect(tip('RUAileron__speedbrake', set('speedBrake', 1)).y).toBeGreaterThan(restR.y + 0.1);
     // flaps 20°: trailing edge down and aft
     const f0 = tip('LIFlap-F__flap', none);
@@ -387,10 +425,16 @@ describe('converted A-10: meta file and data/geometry.ts', () => {
     const g = A10_GEOMETRY;
     close(meta.eye.position, [g.eye.x, g.eye.y, g.eye.z], 0.005);
     expect(Math.abs(meta.eye.pitch - g.eyeDefaultPitch)).toBeLessThan(1e-3);
-    meta.hud.glassCorners.forEach((c, i) => close(c, [g.hudCorners[i].x, g.hudCorners[i].y, g.hudCorners[i].z], 0.002));
+    meta.hud.glassCorners.forEach((c, i) =>
+      close(c, [g.hudCorners[i].x, g.hudCorners[i].y, g.hudCorners[i].z], 0.002),
+    );
     close(meta.hud.normal, [g.hudNormal.x, g.hudNormal.y, g.hudNormal.z], 0.002);
     close(meta.gun.muzzle, [g.muzzle.x, g.muzzle.y, g.muzzle.z], 0.005);
-    close(meta.gun.direction, [g.muzzleDirection.x, g.muzzleDirection.y, g.muzzleDirection.z], 0.002);
+    close(
+      meta.gun.direction,
+      [g.muzzleDirection.x, g.muzzleDirection.y, g.muzzleDirection.z],
+      0.002,
+    );
     for (const s of meta.stations) {
       const want = g.stations[s.station]!;
       close(s.suspension, [want.x, want.y, want.z], 0.015);
@@ -426,7 +470,8 @@ describe('converted A-10: meta file and data/geometry.ts', () => {
       expect(id, t).toBeDefined();
       expect(existsSync(join(PUB, meta.stores[id].file)), t).toBe(true);
     }
-    for (const r of ['ter9a', 'lau88', 'lau117', 'lau114']) expect(meta.racks[r].mounts.length).toBeGreaterThan(0);
+    for (const r of ['ter9a', 'lau88', 'lau117', 'lau114'])
+      expect(meta.racks[r].mounts.length).toBeGreaterThan(0);
     expect(meta.racks.ter9a.mounts).toHaveLength(3);
     expect(meta.racks.lau88.mounts).toHaveLength(3);
     // a Mk 82 hangs from station 4 with its lugs at the pylon bottom (FlightGear's placement)

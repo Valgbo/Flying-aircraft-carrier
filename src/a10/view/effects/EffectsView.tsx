@@ -11,10 +11,24 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect } from 'react';
 import { frameInfo, onSimFrame } from '../frame';
-import { acquireFx, getFx, releaseFx, updateFx } from './fx';
+import { acquireFx, getFx, releaseFx, updateFx, warmFx } from './fx';
 
 export default function EffectsView() {
   const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    // window.__A10_FX__: development aid for screenshots and the console
+    const hook = {
+      warm: (seconds: number) => warmFx(seconds, camera),
+      stats: () => getFx()?.ps.stats,
+    };
+    (window as unknown as { __A10_FX__?: typeof hook }).__A10_FX__ = hook;
+    return () => {
+      delete (window as unknown as { __A10_FX__?: typeof hook }).__A10_FX__;
+    };
+  }, [camera]);
 
   useEffect(() => {
     const fx = acquireFx();

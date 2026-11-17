@@ -133,7 +133,8 @@ export function acTreeToNodes(parsed, acRel, xf, ctx, resolveTexture) {
   };
   // the AC "world" becomes a transparent group: its kids are the file's top-level objects
   const root = makeNode('group', '', { file: acRel, line: parsed.root.line, acType: 'world' });
-  if (parsed.root.type === 'world') for (const k of parsed.root.kids) appendChild(root, convertObj(k));
+  if (parsed.root.type === 'world')
+    for (const k of parsed.root.kids) appendChild(root, convertObj(k));
   else appendChild(root, convertObj(parsed.root));
   return root;
 }
@@ -163,8 +164,21 @@ export function loadModel(src, xmlRel, xf, ctx, modelName = '') {
       const standIn = ctx.standIn?.(xmlRel);
       if (standIn) {
         const label = `(built in code for ${xmlRel})`;
-        const world = { type: 'world', name: null, line: 0, kids: standIn.kids, verts: new Float64Array(0), surfs: [] };
-        const nodes = acTreeToNodes({ materials: standIn.materials, root: world }, label, xf, ctx, () => null);
+        const world = {
+          type: 'world',
+          name: null,
+          line: 0,
+          kids: standIn.kids,
+          verts: new Float64Array(0),
+          surfs: [],
+        };
+        const nodes = acTreeToNodes(
+          { materials: standIn.materials, root: world },
+          label,
+          xf,
+          ctx,
+          () => null,
+        );
         for (const c of [...nodes.children]) appendChild(model, c);
         model.standIn = true;
       } else ctx.warn(`${xmlRel}: model geometry ${acPath} is not in the package`);
@@ -283,7 +297,10 @@ export function evalConditionDefault(c, props = {}) {
 }
 
 function parseTable(a) {
-  const t = all(child(a, 'interpolation'), 'entry').map((e) => [num(e, 'ind', 0), num(e, 'dep', 0)]);
+  const t = all(child(a, 'interpolation'), 'entry').map((e) => [
+    num(e, 'ind', 0),
+    num(e, 'dep', 0),
+  ]);
   t.sort((p, q) => p[0] - q[0]);
   return t.length ? t : null;
 }
@@ -391,9 +408,13 @@ export function insertPivots(root, names, info, animName) {
     for (const c of [...g.children]) visit(c);
     const matched = [];
     for (const nm of names)
-      for (const c of g.children) if (c.name === nm && !matched.includes(c) && !c.isPivotOf) matched.push(c);
+      for (const c of g.children)
+        if (c.name === nm && !matched.includes(c) && !c.isPivotOf) matched.push(c);
     if (!matched.length) return;
-    const p = makeNode('pivot', animName ?? '', { pivot: { ...info }, targets: matched.map((m) => m.name) });
+    const p = makeNode('pivot', animName ?? '', {
+      pivot: { ...info },
+      targets: matched.map((m) => m.name),
+    });
     p.isPivotOf = true;
     appendChild(g, p);
     for (const m of matched) appendChild(p, m);
@@ -434,10 +455,12 @@ export function applyAnimation(model, a, file, xf, ctx) {
         return;
       }
       const created = insertPivots(model, names, info, animName);
-      if (!created.length) ctx.warn(`${file}:${a.line}: ${type} targets not found: ${names.join(', ')}`);
+      if (!created.length)
+        ctx.warn(`${file}:${a.line}: ${type} targets not found: ${names.join(', ')}`);
       if (type === 'knob' || type === 'slider') {
         const bindings = parseBindings(a);
-        for (const t of targets()) t.picks.push({ ...rec, kind: type, property: info.property, bindings });
+        for (const t of targets())
+          t.picks.push({ ...rec, kind: type, property: info.property, bindings });
       }
       ctx.anims?.push({ ...rec, names, created: created.length });
       break;

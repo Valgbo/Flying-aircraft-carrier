@@ -109,7 +109,8 @@ export function fin(outline, roll, t) {
   const s = Math.sin(roll);
   const verts = [];
   for (const side of [-1, 1])
-    for (const [x, r] of outline) verts.push([x, r * c - side * s * (t / 2), r * s + side * c * (t / 2)]);
+    for (const [x, r] of outline)
+      verts.push([x, r * c - side * s * (t / 2), r * s + side * c * (t / 2)]);
   const n = outline.length;
   const faces = [[...Array(n).keys()].map((i) => n + i), [...Array(n).keys()].reverse()];
   for (let i = 0; i < n; i++) {
@@ -329,7 +330,8 @@ export function buildLau117() {
   ];
   const verts = [];
   const faces = [];
-  for (const [x, wt, wb, zt, zb] of st) verts.push([x, -wt, zt], [x, wt, zt], [x, wb, zb], [x, -wb, zb]);
+  for (const [x, wt, wb, zt, zb] of st)
+    verts.push([x, -wt, zt], [x, wt, zt], [x, wb, zb], [x, -wb, zb]);
   for (let i = 0; i < st.length - 1; i++)
     for (let k = 0; k < 4; k++) {
       const k2 = (k + 1) % 4;
@@ -342,7 +344,10 @@ export function buildLau117() {
   kids.push(
     acObject(
       'LAU-117_Lugs',
-      merge(box([-0.2, -0.02, 0.0], [-0.14, 0.02, 0.035]), box([0.34, -0.02, 0.0], [0.4, 0.02, 0.035])),
+      merge(
+        box([-0.2, -0.02, 0.0], [-0.14, 0.02, 0.035]),
+        box([0.34, -0.02, 0.0], [0.4, 0.02, 0.035]),
+      ),
       { mat: 1 },
     ),
   );

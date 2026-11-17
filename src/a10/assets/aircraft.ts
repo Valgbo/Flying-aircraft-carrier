@@ -189,7 +189,11 @@ function requireTemplates(): AircraftTemplates {
   return t;
 }
 
-function bindPivot(root: Object3D, p: PivotMeta, inputs: Record<string, number>): PivotBinding | null {
+function bindPivot(
+  root: Object3D,
+  p: PivotMeta,
+  inputs: Record<string, number>,
+): PivotBinding | null {
   const obj = root.getObjectByName(p.node);
   if (!obj) return null;
   const d = p.drive;
@@ -275,7 +279,14 @@ export function createAircraftInstance(opts: AircraftInstanceOptions): AircraftI
       const g = new Group();
       g.name = `station-${s}`;
       storesGroup.add(g);
-      stations.push({ station: s, group: g, rackType: null, initial: [], released: 0, mounted: [] });
+      stations.push({
+        station: s,
+        group: g,
+        rackType: null,
+        initial: [],
+        released: 0,
+        mounted: [],
+      });
     }
 
   const inst: AircraftInstance = {
@@ -333,7 +344,8 @@ export function updateAircraftInstance(inst: AircraftInstance, sim: Sim, dayligh
   st.canopy = 0;
   const target = ac.gearDown ? 1 : 0;
   const step = dt / GEAR_TRAVEL_TIME;
-  st.gear = inst.gear < target ? Math.min(target, inst.gear + step) : Math.max(target, inst.gear - step);
+  st.gear =
+    inst.gear < target ? Math.min(target, inst.gear + step) : Math.max(target, inst.gear - step);
   st.n1[0] = ac.engines?.[0]?.n1 ?? 0;
   st.n1[1] = ac.engines?.[1]?.n1 ?? 0;
   st.barrelAngle = sim.gun?.barrelAngle ?? 0;
@@ -359,7 +371,11 @@ function lookup(t: Float64Array, x: number): number {
 }
 
 /** Pose every part for a visual state (the sandbox drives this directly). dt in seconds. */
-export function applyAircraftVisualState(inst: AircraftInstance, st: AircraftVisualState, dt: number): void {
+export function applyAircraftVisualState(
+  inst: AircraftInstance,
+  st: AircraftVisualState,
+  dt: number,
+): void {
   const v = inst.inputs;
   v[IN.aileron] = st.aileron;
   v[IN.elevator] = st.elevator;
@@ -434,7 +450,8 @@ function sameTail(initial: string[], stores: readonly string[]): number {
 function syncStations(inst: AircraftInstance, stations: readonly StationState[]): void {
   for (const sv of inst.stations) {
     let st: StationState | null = null;
-    for (let i = 0; i < stations.length; i++) if (stations[i].station === sv.station) st = stations[i];
+    for (let i = 0; i < stations.length; i++)
+      if (stations[i].station === sv.station) st = stations[i];
     const rack = st?.rack ?? null;
     const stores = st?.stores ?? EMPTY;
     if (rack === sv.rackType) {
@@ -472,7 +489,12 @@ function cloneStore(t: AircraftTemplates, id: string): Object3D | null {
   return c;
 }
 
-function buildStation(inst: AircraftInstance, sv: StationVisual, rack: string | null, stores: readonly string[]): void {
+function buildStation(
+  inst: AircraftInstance,
+  sv: StationVisual,
+  rack: string | null,
+  stores: readonly string[],
+): void {
   const t = getAircraftTemplates();
   sv.group.clear();
   sv.mounted = [];
@@ -480,7 +502,7 @@ function buildStation(inst: AircraftInstance, sv: StationVisual, rack: string | 
   sv.initial = stores.slice();
   sv.released = 0;
   if (!t || (!rack && stores.length === 0)) return;
-  let list = stores.slice();
+  const list = stores.slice();
   let rackType = rack;
   if (!rackType && list.length && RACK_TYPES.has(list[0])) rackType = list.shift() ?? null;
   // implicit launchers and racks for stores that cannot hang on a bare pylon
@@ -591,12 +613,15 @@ function createLights(t: AircraftTemplates): Points {
   p.renderOrder = 10;
   const info: LightInfo = {
     kind: ls.map((l) => l.id),
-    phase: Float32Array.from(ls.map((l, i) => (l.id.startsWith('strobe') ? 0 : l.id === 'tail' ? 0.1 : 0.5 + i * 0.01))),
+    phase: Float32Array.from(
+      ls.map((l, i) => (l.id.startsWith('strobe') ? 0 : l.id === 'tail' ? 0.1 : 0.5 + i * 0.01)),
+    ),
   };
   p.userData.lights = info;
   p.onBeforeRender = (renderer, _s, camera) => {
     renderer.getDrawingBufferSize(_size);
-    const proj = (camera as unknown as { projectionMatrix: { elements: number[] } }).projectionMatrix.elements[5];
+    const proj = (camera as unknown as { projectionMatrix: { elements: number[] } })
+      .projectionMatrix.elements[5];
     (m.uniforms.uPixels as { value: number }).value = 0.5 * _size.y * proj * 0.35;
   };
   return p;

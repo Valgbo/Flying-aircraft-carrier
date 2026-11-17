@@ -385,6 +385,7 @@ export function createTerrain(data: TerrainData, options: CreateTerrainOptions =
         )
           return 'concrete';
       }
+      if (q.roadDistance < q.roadHalfWidth) return q.roadKind === KIND_TRACK ? 'dirt' : 'road';
       return 'grass';
     }
     if (q.roadDistance < q.roadHalfWidth) return q.roadKind === KIND_TRACK ? 'dirt' : 'road';

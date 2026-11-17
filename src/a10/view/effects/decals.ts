@@ -65,7 +65,7 @@ const VERTEX = /* glsl */ `
     float age = uTime - iC.y;
     float alpha = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(iC.w * 0.7, iC.w, age));
     vInfo = vec4(iC.x, iC.z, alpha, 0.0);
-    vLight = (uAmbient + uSunColor * max(0.0, dot(n, uSunDir))) * RECIPROCAL_PI;
+    vLight = (uAmbient + uSunColor * max(0.0, dot(n, uSunDir))) * 0.31830989;
     float f = uHazeDensity * dist;
     vFog = 1.0 - exp(-f * f);
   }

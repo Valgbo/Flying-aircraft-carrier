@@ -12,7 +12,10 @@ function run(cmd, args, opts = {}) {
 
 /** Width, height and whether the file has an alpha channel. */
 export function probeImage(path) {
-  const out = run('identify', ['-format', '%w %h %[channels]\n', path]).toString().trim().split('\n')[0];
+  const out = run('identify', ['-format', '%w %h %[channels]\n', path])
+    .toString()
+    .trim()
+    .split('\n')[0];
   const [w, h, ch] = out.split(' ');
   return { width: Number(w), height: Number(h), hasAlpha: /a/.test(ch ?? '') };
 }
@@ -67,7 +70,8 @@ export function encodeImage(src, dst, o) {
   // keep the aspect ratio of power-of-two sources
   if (info.width === info.height) w = h = Math.min(w, h);
   const args = [src, '-strip'];
-  if (w !== info.width || h !== info.height) args.push('-filter', 'Lanczos', '-resize', `${w}x${h}!`);
+  if (w !== info.width || h !== info.height)
+    args.push('-filter', 'Lanczos', '-resize', `${w}x${h}!`);
   if (dst.endsWith('.jpg')) {
     args.push(
       '-background',
