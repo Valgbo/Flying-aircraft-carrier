@@ -36,9 +36,13 @@
  * The TOTAL VELOCITY VECTOR is the INERTIAL velocity (over the ground), as in the A-10C: it shows
  * where the aircraft is actually going, drift included, which the CCIP fall line needs.
  *
- * Order: texts first — the readouts, the blocks, the heading tape and the SPI's range — (they
- * record their boxes), then the ladder (its numbers skip anything that would land on a text),
- * then the moving symbols.
+ * Order: the fixed texts first — the readouts, the two data blocks (one item per line), the
+ * annunciations and the heading tape — and the SPI mark's place; then the texts that move with a
+ * symbol, each placed clear of every text before it and of the SPI mark, inside the glass's
+ * width (beside its symbol on one side, else the other, else left out): the slant range beside
+ * the gun or rocket reticle, the SPI's range and, with the weapon sight, the time to release
+ * beside the solution cue. Every text records its box. Then the pitch ladder, whose numbers skip
+ * anything that would land on a text, then the other symbols.
  */
 import { Quaternion, Vector3 } from 'three';
 import type { ReleaseSolution, WeaponProfile } from '../../core/avionics/types';
@@ -76,6 +80,7 @@ import {
   type Vec3Like,
 } from './hudMath';
 import {
+  fieldHalfWidthAt,
   GUN_LINE,
   GUN_SIGHT,
   HUD_GLASS,
@@ -103,8 +108,18 @@ export interface HudDrawState {
   velocity: Vector3;
 }
 
-/** Optional record of every text drawn, with its alignment (tests and debugging; allocates). */
-export type HudTextLog = (text: string, x: number, y: number, align: number) => void;
+/**
+ * Optional record of every text drawn, with its alignment and baseline direction (tests and
+ * debugging; allocates).
+ */
+export type HudTextLog = (
+  text: string,
+  x: number,
+  y: number,
+  align: number,
+  ux: number,
+  uy: number,
+) => void;
 
 /** What the last build drew, for the renderer, the sandbox and tests (plane units). */
 export interface HudBuildInfo {
@@ -191,8 +206,8 @@ const RADAR_ALT_MAX_FT = 5000;
 /** Flash rates: 2 Hz for warnings, 4 Hz for the minimum-range reticle and the release cue. */
 const FLASH_HZ = 2;
 const FAST_FLASH_HZ = 4;
-/** Column texts remembered per frame, and the clearance ladder numbers keep from them. */
-const MAX_BOXES = 40;
+/** Texts remembered per frame, and the clearance later texts and ladder numbers keep from them. */
+const MAX_BOXES = 48;
 const TEXT_MARGIN = 0.3 * DEG;
 /** Elevation step between the two points that define the steering line, rad. */
 const ASL_STEP = 5 * DEG;
@@ -356,37 +371,26 @@ export class HudSymbology {
     this.watchReleases(sim);
     this.countdown(sim);
 
-    // Texts (recorded for the ladder's collision test).
+    // Fixed texts (each records its box).
     this.readouts(sim);
     this.leftBlock(sim);
     this.steerpointBlock(sim);
     this.spiSource(sim);
-    this.modeTexts(sim);
+    this.annunciations(sim);
     // The heading tape's numbers are texts too (its marks depend only on the heading).
     this.headingTape(sim);
+    // Texts that move with their symbols, each clear of the texts before it and of the SPI mark
+    // (placed first: a world point, it cannot step aside).
     this.spiPlace(sim);
+    this.reticleRange(sim);
+    this.spiRange(sim);
+    // The weapon sight, with the time to release beside the solution cue: before the ladder, so
+    // the ladder's numbers keep clear of that text too.
+    this.sight(sim);
 
     // Symbols.
     this.ladder();
     this.drawTvv(this.info.tvvX, this.info.tvvY);
-    // The sight follows avionics.sight (the gun reticle also in CCIP when the gun is the CCIP
-    // weapon), not the master mode alone.
-    switch (sim.avionics.sight) {
-      case 'GUN':
-        this.gunCross();
-        this.gunReticle(sim);
-        break;
-      case 'CCIP':
-        this.gunCross();
-        if (this.kind === 'rocketPod') this.rocketReticle(sim);
-        else this.bombs(sim);
-        break;
-      case 'CCRP':
-        this.ccrp(sim);
-        break;
-      default:
-        break;
-    }
     this.sensorMarks(sim);
     this.vehicleBoxes(sim);
     if (sim.aircraft.warnings.pullUp) this.breakX();
@@ -497,7 +501,7 @@ export class HudSymbology {
     const b = this.buf;
     if (b.len === 0) return;
     drawText(this.counting, b.codes, b.len, x, y, S.text, align, W.line, 1, ux, uy);
-    if (this.log) this.log(b.toString(), x, y, align);
+    if (this.log) this.log(b.toString(), x, y, align, ux, uy);
     if (uy === 0 && this.boxCount < MAX_BOXES) {
       const w = textWidth(b.len, S.text);
       const o = this.boxCount * 4;
@@ -509,7 +513,37 @@ export class HudSymbology {
     }
   }
 
-  /** True when the box overlaps (with a margin) any text drawn so far this frame. */
+  /**
+   * Draw the text buffer at (x, y) unless it would land on (or within the margin of) a text
+   * already drawn this frame or the SPI mark, or reach within the margin of the side of the glass
+   * (seen from the design eye). Returns whether it was drawn.
+   */
+  private textClear(x: number, y: number, align: number): boolean {
+    const w = textWidth(this.buf.len, S.text);
+    const h = S.text / 2;
+    const x0 = x - align * w;
+    const x1 = x0 + w;
+    // The glass narrows downward: its width at the text's bottom edge, less the margin.
+    const f = this.layout.field;
+    const half = fieldHalfWidthAt(f, Math.atan(y - h)) - TEXT_MARGIN;
+    if (Math.atan(x0) < f.center - half || Math.atan(x1) > f.center + half) return false;
+    if (this.hitsText(x0, y - h, x1, y + h)) return false;
+    this.text(x, y, align);
+    return true;
+  }
+
+  /** Record a symbol's box (half-size h) for the texts placed after it to keep clear of. */
+  private obstacle(x: number, y: number, h: number): void {
+    if (this.boxCount >= MAX_BOXES) return;
+    const o = this.boxCount * 4;
+    this.boxes[o] = x - h;
+    this.boxes[o + 1] = y - h;
+    this.boxes[o + 2] = x + h;
+    this.boxes[o + 3] = y + h;
+    this.boxCount++;
+  }
+
+  /** True when the box overlaps (with a margin) any text or symbol recorded so far this frame. */
   private hitsText(x0: number, y0: number, x1: number, y1: number): boolean {
     const m = TEXT_MARGIN;
     for (let k = 0; k < this.boxCount; k++) {
@@ -833,8 +867,8 @@ export class HudSymbology {
     this.text(this.layout.rightX, this.layout.lineY[3], ALIGN_RIGHT);
   }
 
-  /** Annunciations and the slant ranges beside the gun and rocket reticles. */
-  private modeTexts(sim: Sim): void {
+  /** Annunciations at the top of the glass: GUN INVALID, CCIP INVALID, CCRP INVALID. */
+  private annunciations(sim: Sim): void {
     const av = sim.avionics;
     const L = this.layout;
     const b = this.buf;
@@ -842,10 +876,6 @@ export class HudSymbology {
       if (!av.gun.valid) {
         b.clear().str('GUN INVALID');
         this.text(L.centerX, L.warnY, ALIGN_CENTER);
-      } else {
-        // Slant range, thousands of feet, at 3 o'clock of the reticle.
-        b.clear().fixed(mToFt(av.gun.slantRange) / 1000, 1);
-        this.text(this.info.pipperX + S.reticleRadius + 0.3 * DEG, this.info.pipperY, ALIGN_LEFT);
       }
     } else if (av.masterMode === 'CCIP' && av.ccipInvalid) {
       b.clear().str('CCIP INVALID');
@@ -853,21 +883,58 @@ export class HudSymbology {
     } else if (av.masterMode === 'CCRP' && (av.sight !== 'CCRP' || !av.release.valid)) {
       b.clear().str('CCRP INVALID');
       this.text(L.centerX, L.warnY, ALIGN_CENTER);
-    } else if (av.sight === 'CCIP' && this.kind === 'rocketPod' && this.info.pipper) {
-      // Rockets: slant range to the impact, thousands of feet.
-      const range = this.P.distanceTo(av.release.impact);
-      b.clear().fixed(mToFt(range) / 1000, 1);
-      this.text(
-        this.info.pipperX + S.rocketReticleRadius + 0.5 * DEG,
-        this.info.pipperY,
-        ALIGN_LEFT,
-      );
     }
+  }
+
+  /**
+   * The slant range beside the gun reticle or the CCIP rocket reticle, thousands of feet: at its
+   * 3 o'clock, at its 9 o'clock when that would land on another text (the reticle near a data
+   * block), left out when both would (the gun's range bar still shows it).
+   */
+  private reticleRange(sim: Sim): void {
+    const av = sim.avionics;
+    const info = this.info;
+    if (!info.pipper) return;
+    let range: number;
+    let gap: number;
+    if (av.sight === 'GUN') {
+      range = av.gun.slantRange;
+      gap = S.reticleRadius + 0.3 * DEG;
+    } else if (av.sight === 'CCIP' && this.kind === 'rocketPod') {
+      range = this.P.distanceTo(av.release.impact);
+      gap = S.rocketReticleRadius + 0.5 * DEG;
+    } else return;
+    this.buf.clear().fixed(mToFt(range) / 1000, 1);
+    if (!this.textClear(info.pipperX + gap, info.pipperY, ALIGN_LEFT))
+      this.textClear(info.pipperX - gap, info.pipperY, ALIGN_RIGHT);
   }
 
   // ------------------------------------------------------------------------------------------
   // Flight symbols
   // ------------------------------------------------------------------------------------------
+
+  /**
+   * The weapon sight. It follows avionics.sight (the gun reticle also in CCIP when the gun is
+   * the CCIP weapon), not the master mode alone.
+   */
+  private sight(sim: Sim): void {
+    switch (sim.avionics.sight) {
+      case 'GUN':
+        this.gunCross();
+        this.gunReticle(sim);
+        break;
+      case 'CCIP':
+        this.gunCross();
+        if (this.kind === 'rocketPod') this.rocketReticle(sim);
+        else this.bombs(sim);
+        break;
+      case 'CCRP':
+        this.ccrp(sim);
+        break;
+      default:
+        break;
+    }
+  }
 
   private drawTvv(x: number, y: number): void {
     const r = S.tvvRadius;
@@ -1311,8 +1378,12 @@ export class HudSymbology {
       info.cueX = cx;
       info.cueY = cy;
       if (t > 0) {
+        // The time to release beside the cue: right of it, left of it when that would land on
+        // another text (the line held at the edge, over a data block), else left out (the
+        // weapon block counts down too).
         this.buf.clear().int(Math.ceil(t));
-        this.text(cx + S.cueRadius + 0.35 * DEG, cy, ALIGN_LEFT);
+        const gap = S.cueRadius + 0.35 * DEG;
+        if (!this.textClear(cx + gap, cy, ALIGN_LEFT)) this.textClear(cx - gap, cy, ALIGN_RIGHT);
       }
     }
 
@@ -1409,10 +1480,9 @@ export class HudSymbology {
   }
 
   /**
-   * Where the SPI mark goes (inside the field, or held on its edge in the SPI's direction), and
-   * its slant range — drawn with the texts, before the ladder, so the ladder's numbers keep
-   * clear of it, and itself clear of the texts already drawn. A mark held at the edge is only a
-   * direction cue: no range (it would sit on the side text blocks or below the glass).
+   * Where the SPI mark goes (inside the field, or held on its edge in the SPI's direction),
+   * recorded as an obstacle for the texts placed after it (the reticle's range, the SPI's own
+   * range, the cue's time, the ladder's numbers). The mark itself is drawn by sensorMarks.
    */
   private spiPlace(sim: Sim): void {
     const spi = sim.avionics.spi;
@@ -1441,21 +1511,26 @@ export class HudSymbology {
     }
     this.spiX = x;
     this.spiY = y;
-    if (this.spiHeld) return;
-    // Slant range, nautical miles, under the mark — above it when that would sit on another
-    // text (the side blocks), left out when both would.
+    this.obstacle(x, y, this.spiHeld ? S.spiSquare : S.spiDiamond);
+  }
+
+  /**
+   * The SPI's slant range, nautical miles, under its mark — above it when that would sit on
+   * another text (the side blocks), left out when both would. Drawn with the texts, before the
+   * ladder, so the ladder's numbers keep clear of it. A mark held at the edge is only a
+   * direction cue: no range (it would sit on the side text blocks or below the glass).
+   */
+  private spiRange(sim: Sim): void {
+    if (!this.spiShown || this.spiHeld) return;
+    const spi = sim.avionics.spi;
+    const x = this.spiX;
+    const y = this.spiY;
     const nm = this.P.distanceTo(spi.position) / NM;
     this.buf.clear();
     if (nm < 100) this.buf.fixed(nm, 1);
     else this.buf.int(nm);
-    const hw = textWidth(this.buf.len, S.text) / 2;
     const off = S.spiSquare + 0.25 * DEG + S.text / 2;
-    for (let k = 0; k < 2; k++) {
-      const ty = k === 0 ? y - off : y + off;
-      if (this.hitsText(x - hw, ty - S.text / 2, x + hw, ty + S.text / 2)) continue;
-      this.text(x, ty, ALIGN_CENTER);
-      return;
-    }
+    if (!this.textClear(x, y - off, ALIGN_CENTER)) this.textClear(x, y + off, ALIGN_CENTER);
   }
 
   /** Relaxed realism (PLAN §2): a box around every live vehicle within range. */

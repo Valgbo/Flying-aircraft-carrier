@@ -11,8 +11,15 @@ export interface ColorSink extends SegmentSink {
   color: number;
 }
 
-/** Optional record of every text drawn (tests; allocates). */
-export type PageTextLog = (text: string, x: number, y: number, color: number) => void;
+/** Optional record of every text drawn, with its cap height and alignment (tests; allocates). */
+export type PageTextLog = (
+  text: string,
+  x: number,
+  y: number,
+  color: number,
+  size: number,
+  align: number,
+) => void;
 
 const CIRCLE_N = 40;
 const COS = new Float64Array(CIRCLE_N + 1);
@@ -67,7 +74,7 @@ export class MfdPainter {
     const b = this.buf;
     if (b.len === 0) return;
     drawText(this.counting, b.codes, b.len, x, y, size, align, w, 1);
-    if (this.log) this.log(b.toString(), x, y, this.sink.color);
+    if (this.log) this.log(b.toString(), x, y, this.sink.color, size, align);
   }
 
   /** Draw a string (constant labels; no allocation). */

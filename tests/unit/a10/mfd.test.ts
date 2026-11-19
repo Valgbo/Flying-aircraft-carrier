@@ -12,7 +12,10 @@ import {
   createDsmsView,
   OSB_TABLE,
   PAGE_SELECT_OSB,
+  pressOsb,
+  setMfdPage,
   TAD_RANGES_NM,
+  ufcKey,
 } from '../../../src/a10/core/avionics';
 import type { MfdPage } from '../../../src/a10/core/avionics/types';
 import { quaternionFromAttitude } from '../../../src/a10/core/frames';
@@ -45,6 +48,7 @@ import {
 import { MfdDisplayRenderer, MfdRenderer } from '../../../src/a10/view/mfd/MfdRenderer';
 import { osbActive, osbLabel, osbValue, stationX } from '../../../src/a10/view/mfd/pages';
 import { MfdPainter, type ColorSink } from '../../../src/a10/view/mfd/painter';
+import { textWidth } from '../../../src/a10/view/hud/strokeFont';
 import { createTadFrame, tadFrame, tadProject } from '../../../src/a10/view/mfd/tad';
 import {
   getSensorPicture,
@@ -77,13 +81,15 @@ interface Text {
   x: number;
   y: number;
   color: number;
+  size: number;
+  align: number;
 }
 
 function draw(sim: Sim, page: MfdPage, opts: { soi?: boolean; display?: 'L' | 'R' } = {}) {
   const rec = new Recorder();
   const texts: Text[] = [];
   const p = new MfdPainter(rec);
-  p.reset(rec, (text, x, y, color) => texts.push({ text, x, y, color }));
+  p.reset(rec, (text, x, y, color, size, align) => texts.push({ text, x, y, color, size, align }));
   const ctx: PageContext = {
     sim,
     display: opts.display ?? 'L',
@@ -490,7 +496,9 @@ describe('MFD messages page', () => {
     const rec = new Recorder();
     const texts: Text[] = [];
     const p = new MfdPainter(rec);
-    p.reset(rec, (text, x, y, color) => texts.push({ text, x, y, color }));
+    p.reset(rec, (text, x, y, color, size, align) =>
+      texts.push({ text, x, y, color, size, align }),
+    );
     const log = new MessageLog(4);
     log.addEvents([
       { type: 'message', t: 61, text: 'MAV NOT LOCKED', level: 'warn' },
@@ -518,6 +526,99 @@ describe('MFD messages page', () => {
     expect(log.size).toBe(4);
     expect(log.newest(0)?.text).toBe('M5');
     expect(log.newest(3)?.text).toBe('M2');
+  });
+});
+
+describe('MFD UFC scratchpad', () => {
+  /** Texts whose boxes overlap (cap height, alignment), as readable pairs. */
+  function overlapping(texts: Text[]): string[] {
+    const box = (t: Text) => {
+      const w = textWidth(t.text.length, t.size);
+      return [t.x - t.align * w, t.y - t.size / 2, t.x + (1 - t.align) * w, t.y + t.size / 2];
+    };
+    const out: string[] = [];
+    for (let i = 0; i < texts.length; i++)
+      for (let j = i + 1; j < texts.length; j++) {
+        const a = box(texts[i]);
+        const b = box(texts[j]);
+        if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3])
+          out.push(`"${texts[i].text}" × "${texts[j].text}"`);
+      }
+    return out;
+  }
+
+  it('shows the digits typed on the UFC beside CODE on the DSMS and the TGP page', () => {
+    const sim = sim0();
+    sim.avionics.selectedProfile = 'GBU12';
+    for (const [page, button] of [
+      ['DSMS', 3],
+      ['TGP', 9],
+    ] as const) {
+      const a = OSB_ANCHORS[button];
+      const entry = (d: ReturnType<typeof draw>) =>
+        d.texts.find(
+          (t) =>
+            t.color === MFD_COLOR.cyan && Math.abs(t.x - a.x) < 1e-9 && Math.abs(t.y - a.y) < 0.25,
+        );
+      ufcKey(sim, 'CLR');
+      const empty = draw(sim, page);
+      expect(entry(empty), page).toBeUndefined();
+      const s0 = pageSignature(empty.ctx);
+
+      ufcKey(sim, '1');
+      const one = draw(sim, page);
+      expect(entry(one)?.text, page).toBe('1___');
+      const s1 = pageSignature(one.ctx);
+      expect(s1, `${page}: the page redraws`).not.toBe(s0);
+      for (const k of ['5', '1', '3']) ufcKey(sim, k);
+      const typed = draw(sim, page);
+      const e = entry(typed);
+      expect(e?.text, page).toBe('1513');
+      expect(pageSignature(typed.ctx)).not.toBe(s1);
+      // Under the button's label and its value (the code now set), the value left where it was.
+      const label = typed.texts.find((t) => t.text === 'CODE' && Math.abs(t.x - a.x) < 1e-9);
+      const value = typed.texts.find(
+        (t) => t.text === osbValue(sim, page, button, 'L') && t.color === MFD_COLOR.green,
+      );
+      expect(label && value && e).toBeTruthy();
+      expect(value!.y).toBeLessThan(label!.y);
+      expect(e!.y).toBeLessThan(value!.y);
+      expect(value!.y).toBeCloseTo(empty.find(value!.text)!.y, 12);
+      // Clear of every other text of the page, Master Arm (TRAINING the widest) included.
+      sim.avionics.masterArm = 'TRAIN';
+      for (const k of '6789') ufcKey(sim, k); // eight characters, the scratchpad's most
+      expect(overlapping(draw(sim, page).texts), page).toEqual([]);
+      sim.avionics.masterArm = 'SAFE';
+
+      // CLR empties it: gone, and the page is as before.
+      ufcKey(sim, 'CLR');
+      const cleared = draw(sim, page);
+      expect(entry(cleared)).toBeUndefined();
+      expect(pageSignature(cleared.ctx)).toBe(s0);
+
+      // A code typed and entered with CODE: the value takes it, the scratchpad empties.
+      for (const k of '1513') ufcKey(sim, k);
+      setMfdPage(sim, 'L', page);
+      pressOsb(sim, 'L', button);
+      const entered = draw(sim, page);
+      expect(entry(entered)).toBeUndefined();
+      expect(osbValue(sim, page, button, 'L')).toBe('1513');
+      expect(entered.has('1513')).toBe(true);
+    }
+  });
+
+  it('does not show (or redraw for) the scratchpad on the pages without a CODE button', () => {
+    const sim = sim0();
+    for (const page of ['TAD', 'MAV', 'STAT', 'MSG'] as MfdPage[]) {
+      ufcKey(sim, 'CLR');
+      const before = draw(sim, page);
+      ufcKey(sim, '1');
+      ufcKey(sim, '6');
+      const after = draw(sim, page);
+      expect(after.has('16__'), page).toBe(false);
+      expect(after.texts.length, page).toBe(before.texts.length);
+      expect(pageSignature(after.ctx), page).toBe(pageSignature(before.ctx));
+    }
   });
 });
 

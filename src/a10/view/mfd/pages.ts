@@ -1,9 +1,10 @@
 /**
  * The display pages that are text and symbols only (PLAN_A10.md §6.8, §7; ARCHITECTURE §12.7):
  * the common frame (OSB labels from the avionics' OSB table, the page-select row, the
- * sensor-of-interest box), the stores page (DSMS), the status page (STAT) and the messages page
- * (MSG). Pure functions of a PageContext onto a MfdPainter: no rendering, no allocation, so they
- * run in unit tests. The sensor pages are in sensorPages.ts, the map in tad.ts.
+ * sensor-of-interest box, the UFC scratchpad beside the CODE button that enters it), the stores
+ * page (DSMS), the status page (STAT) and the messages page (MSG). Pure functions of a
+ * PageContext onto a MfdPainter: no rendering, no allocation, so they run in unit tests. The
+ * sensor pages are in sensorPages.ts, the map in tad.ts.
  */
 import { OSB_TABLE, PAGE_SELECT_OSB, SOI_PAGES, type OsbBinding } from '../../core/avionics';
 import type { DsmsStationView, MfdPage, ProfileMode } from '../../core/avionics/types';
@@ -91,14 +92,34 @@ export function osbActive(sim: Sim, page: MfdPage, button: number, display: MfdD
 }
 
 /**
+ * The CODE button of a page (it enters the UFC scratchpad as a laser code, avionics mfd.ts): OSB
+ * 3 on the DSMS (the selected profile's code) and OSB 9 on the TGP (the pod's code); 0 on the
+ * other pages.
+ */
+export function codeOsb(page: MfdPage): number {
+  return page === 'DSMS' ? 3 : page === 'TGP' ? 9 : 0;
+}
+
+/**
  * The laser-code digit the INC button changes, underlined in the CODE value: the DSMS's (OSB 3,
  * the selected profile's code) and the TGP's (OSB 9, the pod's code). −1 for other buttons.
  */
 export function codeCursor(sim: Sim, page: MfdPage, button: number): number {
+  if (button === 0 || button !== codeOsb(page)) return -1;
   const pages = sim.avionics.pages;
-  if (page === 'DSMS' && button === 3) return pages.dsmsCodeDigit;
-  if (page === 'TGP' && button === 9) return pages.tgpCodeDigit;
-  return -1;
+  return page === 'DSMS' ? pages.dsmsCodeDigit : pages.tgpCodeDigit;
+}
+
+/** A laser code's digits: the scratchpad entry is shown padded to this length with '_'. */
+const CODE_DIGITS = 4;
+
+/**
+ * What the UFC has typed for an OSB to enter: the avionics' scratchpad beside the page's CODE
+ * button ('' for any other button, or when nothing is typed). The A-10C shows the scratchpad
+ * on the CDU; this cockpit has none, so the display shows it at the field it goes into.
+ */
+export function scratchpadEntry(sim: Sim, page: MfdPage, button: number): string {
+  return button !== 0 && button === codeOsb(page) ? sim.avionics.pages.scratchpad : '';
 }
 
 /** The OSB that selects `page` from the page-select row, or 0. */
@@ -109,7 +130,9 @@ export function pageSelectButton(page: MfdPage): number {
 
 /**
  * One label at its anchor (split on a space into two lines when long), boxed when `boxed`, and
- * its live value on the next line toward the screen centre.
+ * its live value on the next line toward the screen centre; below that, in cyan, the UFC
+ * scratchpad `entry` the button would enter (padded with '_' to a laser code's four digits), so
+ * the pilot sees the digits typed before pressing it.
  */
 function drawLabel(
   p: MfdPainter,
@@ -118,6 +141,7 @@ function drawLabel(
   a: OsbAnchor,
   boxed: boolean,
   cursor: number,
+  entry: string,
 ): void {
   const size = T.label;
   const gap = size * 1.35;
@@ -147,6 +171,16 @@ function drawLabel(
     }
     p.color(c);
   }
+  if (entry) {
+    // One line further, outside the label block's centring, so the label and value stay put.
+    y -= gap;
+    const c = p.currentColor;
+    p.color(C.cyan);
+    const b = p.buf.clear().str(entry);
+    for (let k = entry.length; k < CODE_DIGITS; k++) b.ch(95 /* _ */);
+    p.text(a.x, y, T.small, a.align);
+    p.color(c);
+  }
 }
 
 /** The frame of every page: OSB labels (and values), active options boxed, the SOI box or NOT SOI. */
@@ -157,7 +191,8 @@ export function drawChrome(ctx: PageContext, p: MfdPainter): void {
     const active = osbActive(ctx.sim, ctx.page, n, ctx.display);
     p.color(active ? C.green : C.white);
     const value = osbValue(ctx.sim, ctx.page, n, ctx.display);
-    drawLabel(p, label, value, OSB_ANCHORS[n], active, codeCursor(ctx.sim, ctx.page, n));
+    const entry = scratchpadEntry(ctx.sim, ctx.page, n);
+    drawLabel(p, label, value, OSB_ANCHORS[n], active, codeCursor(ctx.sim, ctx.page, n), entry);
   }
   if (ctx.soi) {
     p.color(C.green);
@@ -193,6 +228,11 @@ export function stationX(i: number, count: number): number {
  */
 const ROW_Y = 0.42;
 const GUN_Y = 0.2;
+/**
+ * Master Arm, at the top centre: below the CODE button's label, value and scratchpad lines
+ * (OSB 3 above it), above the station row's counts.
+ */
+const ARM_Y = 0.665;
 /** Profile list: header, first row, row step; columns: name, stores left (right-aligned), mode. */
 const LIST_Y = 0.1;
 const LIST_STEP = 0.085;
@@ -214,7 +254,7 @@ export function drawDsms(ctx: PageContext, p: MfdPainter): void {
   const jettison = ctx.sim.avionics.pages.jettisonStation;
   // Master Arm.
   p.color(v.masterArm === 'ARM' ? C.green : v.masterArm === 'TRAIN' ? C.cyan : C.yellow);
-  p.str(v.masterArm === 'TRAIN' ? 'TRAINING' : v.masterArm, 0, 0.74, T.body);
+  p.str(v.masterArm === 'TRAIN' ? 'TRAINING' : v.masterArm, 0, ARM_Y, T.body);
 
   // Stations.
   const n = v.stations.length;

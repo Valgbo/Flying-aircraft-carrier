@@ -9,6 +9,7 @@ import CockpitView from './cockpit/CockpitView';
 import EffectsView from './effects/EffectsView';
 import Environment from './environment/Environment';
 import HudView from './hud/HudView';
+import MfdView from './mfd/MfdView';
 import RenderPipeline from './RenderPipeline';
 import SensorsView from './sensors/SensorsView';
 import SimDriver from './SimDriver';
@@ -27,6 +28,7 @@ export default function SceneRoot() {
       <CameraRig />
       <CockpitView />
       <HudView />
+      <MfdView />
       <SensorsView />
       <RenderPipeline />
     </>

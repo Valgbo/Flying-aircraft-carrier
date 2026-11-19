@@ -215,4 +215,9 @@ export const MFD_NOTES: Record<string, SourceNote> = {
     confidence: 'estimate',
     note: 'PLAN §14: sensor pictures 15–30 Hz; the text pages redraw only on change',
   },
+  scratchpad: {
+    source: 'dcsA10Manual',
+    confidence: 'estimate',
+    note: 'A-10C: what the UFC types goes to a scratchpad (shown on the CDU) and the OSB beside a field enters it; this cockpit has no CDU, so the DSMS and TGP pages show the scratchpad in cyan under the CODE value, padded with _ to a laser code’s four digits (a display choice)',
+  },
 };

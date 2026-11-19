@@ -9,7 +9,16 @@ import { OSB_TABLE } from '../../core/avionics';
 import type { MfdPage } from '../../core/avionics/types';
 import type { Sim } from '../../core/types';
 import type { PageContext } from './context';
-import { drawChrome, drawDsms, drawMsg, drawStat, osbActive, osbLabel, osbValue } from './pages';
+import {
+  codeOsb,
+  drawChrome,
+  drawDsms,
+  drawMsg,
+  drawStat,
+  osbActive,
+  osbLabel,
+  osbValue,
+} from './pages';
 import { MFD_RATES } from './mfdLayout';
 import type { MfdPainter } from './painter';
 import { createSensorPageInfo, drawMav, drawTgp, type SensorPageInfo } from './sensorPages';
@@ -97,6 +106,8 @@ export function pageSignature(ctx: PageContext): number {
     h = mix(h, osbActive(sim, ctx.page, n, ctx.display) ? 1 : 0);
   }
   h = mixStr(h, av.masterArm);
+  // The UFC scratchpad shows beside the page's CODE button (DSMS, TGP).
+  if (codeOsb(ctx.page) !== 0) h = mixStr(h, av.pages.scratchpad);
   switch (ctx.page) {
     case 'DSMS':
       h = dsmsSignature(sim, h);

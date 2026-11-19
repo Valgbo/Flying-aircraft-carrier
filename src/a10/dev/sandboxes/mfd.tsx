@@ -21,12 +21,17 @@
  *                                              is the SPI; warmup: both just powered (NOT TIMED
  *                                              OUT); cold: both off
  *   path=run|orbit|hold   tad=5|10|20|40|80|160   center=OWN|SPI   markers=1 (target areas)
+ *   ufc=<digits>                               typed on the UFC at the start: the scratchpad
+ *                                              shows beside CODE on the DSMS and TGP pages
  *   quality=low|medium|high   seed=<n>   ui=0 (no panel)
  *   world=0                                    no outside world behind the displays (the
  *                                              pictures still show it): for slow software GL
  *
- * Test hook: window.__MFD_SANDBOX__ = { sim, mfd, press(display, button), pages(left, right),
- * scene(name), ready(), errors }.
+ * The panel's UFC keys type into the avionics' scratchpad (the `ufc` command, as the cockpit's
+ * UFC sends it); CODE (DSMS OSB 3, TGP OSB 9) enters it.
+ *
+ * Test hook: window.__MFD_SANDBOX__ = { sim, mfd, press(display, button), ufc(key),
+ * pages(left, right), scene(name), ready(), errors }.
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
@@ -46,6 +51,7 @@ import {
   SOI_PAGES,
   spiToSteerpoint,
   stepFireControl,
+  ufcKey,
 } from '../../core/avionics';
 import type { LaserArm, MasterArm, MfdPage, Soi } from '../../core/avionics/types';
 import { quaternionFromAttitude } from '../../core/frames';
@@ -105,6 +111,8 @@ const ctl = {
   markers: params.get('markers') === '1',
   /** Draw the outside world behind the displays (off: only the sensor pictures render it). */
   world: params.get('world') !== '0',
+  /** Digits typed on the UFC at the start (the scratchpad). */
+  ufc: (params.get('ufc') ?? '').replace(/[^0-9]/g, ''),
 };
 
 /**
@@ -205,6 +213,7 @@ function buildSetup(terrain: Terrain): Setup {
   av.pages.tadCenter = ctl.center;
   fly(setup, 0);
   applyScene(setup, ctl.scene);
+  for (const k of ctl.ufc) ufcKey(sim, k);
   return setup;
 }
 
@@ -598,6 +607,9 @@ function Bezel(props: {
   );
 }
 
+/** The UFC keys the avionics' scratchpad takes (the cockpit's UFC digits and CLR). */
+const UFC_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'CLR'];
+
 const PANEL: CSSProperties = {
   position: 'absolute',
   top: 8,
@@ -678,6 +690,21 @@ function Panel({ setup, mfd }: { setup: Setup; mfd: MfdRenderer }) {
           sim.commands.push({ type: 'laserArm', value: v as LaserArm }),
         )}
       </Row>
+      <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: 6, margin: '2px 0' }}>
+        <span>UFC</span>
+        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+          {UFC_KEYS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              style={{ padding: '0 4px', minWidth: 20 }}
+              onClick={() => sim.commands.push({ type: 'ufc', key: k })}
+            >
+              {k}
+            </button>
+          ))}
+        </span>
+      </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '6px 0' }}>
         <button
           type="button"
@@ -720,6 +747,11 @@ function Panel({ setup, mfd }: { setup: Setup; mfd: MfdRenderer }) {
             ? `${mav.type} sta ${mav.station} ${mav.powered ? (mav.align > 0 ? `align ${Math.ceil(mav.align)}s` : mav.locked ? 'LOCK' : 'search') : 'off'}${mav.inZone ? ' IN ZONE' : ''}`
             : 'none'}{' '}
           · {pic('MAV')}
+        </div>
+        <div>
+          UFC scratchpad &quot;{av.pages.scratchpad}&quot; · DSMS code{' '}
+          {av.profiles.find((p) => p.id === av.selectedProfile)?.laserCode ?? '—'} · TGP code{' '}
+          {av.laserCode}
         </div>
         <div>
           SPI {av.spi.valid ? av.spi.source : '—'} · range{' '}
@@ -777,6 +809,7 @@ export default function MfdSandbox() {
       errors: setup.errors,
       press: (display: 'L' | 'R', button: number) =>
         sim.commands.push({ type: 'osb', display, button }),
+      ufc: (key: string) => sim.commands.push({ type: 'ufc', key }),
       pages: (left: MfdPage, right: MfdPage, soi?: Soi) => {
         showPages(sim, left, right);
         if (soi) sim.avionics.soi = soiFor(sim, soi);
