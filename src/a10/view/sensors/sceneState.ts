@@ -4,12 +4,14 @@
  * [uThermal] around its own render and restores it"). GPU-free, allocation-free per frame.
  *
  * Both bands
+ *   terrain tiles          the picture's own (terrainFocus.ts: selected for its magnification
+ *                          inside it; the outside view's are drawn again afterwards);
  *   terrain `uPixelAngle`  one EFFECTIVE pixel of the sensor (thin roads stay ≈1.5 px wide in
  *                          the picture, not in the outside view's pixels);
  *   terrain `uDepthBias`   the ribbons' depth bias for the sensor camera's near plane;
- *   terrain `uDetailDistance`  the close-range ground detail distance the renderer chooses
- *                          (television: the outside view's times the sensor's magnification;
- *                          infrared: none — SensorRenderer.ts INFRARED_DETAIL_DISTANCE);
+ *   terrain `uDetailDistance`  the close-range ground detail distance the renderer chooses (the
+ *                          outside view's times the sensor's magnification, both bands: the
+ *                          terrain's bump is filtered for the pixel's footprint, no moiré);
  *   shadow map             not re-rendered for the sensor camera (the sun's shadows only cover
  *                          the aircraft's surroundings; the world pass updates them).
  * Television (CCD)
@@ -29,6 +31,8 @@
  */
 import { Color, Material, type Object3D, type Scene } from 'three';
 import { a10Env } from '../environment/env';
+import type { LodFocus } from '../terrain/lod';
+import { beginTerrainFocus, endTerrainFocus } from '../terrain/terrainFocus';
 import { terrainUniforms } from '../terrain/terrainMaterial';
 import {
   getThermalMode,
@@ -52,6 +56,8 @@ export interface SensorSceneSettings {
   detailDistance: number;
   /** Television: haze density at the sensor's height (FogExp2 law), 1/m. */
   hazeDensity: number;
+  /** The picture's terrain level-of-detail focus (null: the outside view's tiles). */
+  focus: LodFocus | null;
 }
 
 /** The renderer's shadow-map switch (a WebGLRenderer, or a stand-in in tests). */
@@ -76,6 +82,8 @@ export interface SavedSceneState {
   fogDensity: number;
   hasFog: boolean;
   shadowAutoUpdate: boolean;
+  /** The terrain draws the picture's own tiles (until exit). */
+  terrainFocus: boolean;
   /** Objects hidden for this render (restored to visible on exit). */
   hidden: (Object3D | null)[];
   hiddenCount: number;
@@ -99,6 +107,7 @@ export function createSavedSceneState(): SavedSceneState {
     fogDensity: 0,
     hasFog: false,
     shadowAutoUpdate: true,
+    terrainFocus: false,
     hidden: [],
     hiddenCount: 0,
   };
@@ -205,12 +214,18 @@ export function enterSensorScene(
     }
     saved.hiddenCount = 0;
   }
+  // the picture's own terrain tiles (after the infrared pass over the scene: tiles stay drawn)
+  saved.terrainFocus = settings.focus !== null && beginTerrainFocus(settings.focus);
 }
 
 /** Put back everything `enterSensorScene` changed. */
 export function exitSensorScene(scene: Scene, gl: ShadowMapHost, saved: SavedSceneState): void {
   if (!saved.active) return;
   saved.active = false;
+  if (saved.terrainFocus) {
+    saved.terrainFocus = false;
+    endTerrainFocus();
+  }
   for (let i = 0; i < saved.hiddenCount; i++) {
     const obj = saved.hidden[i];
     if (obj) obj.visible = true;

@@ -9,6 +9,10 @@
  *   4. drop tiles not used for a while beyond a memory budget (geometry, texture, material
  *      disposed);
  *   5. copy the environment (a10Env) into the shared shader uniforms.
+ *
+ * A sensor's picture (targeting pod, Maverick) draws its own tiles around its render
+ * (terrainFocus.ts → beginFocus / endFocus): selected for its magnification inside its picture
+ * (lod.ts selectFocusTiles), requested with the outside view's, kept while it keeps rendering.
  */
 import {
   BufferAttribute,
@@ -45,11 +49,18 @@ import {
   nodeKey,
   nodeOrigin,
   nodeSize,
+  selectFocusTiles,
   selectTiles,
   vertexSpacing,
+  type LodFocus,
   type LodNode,
   type LodSelectionHost,
 } from './lod';
+import {
+  getTerrainFocusTarget,
+  setTerrainFocusTarget,
+  type TerrainFocusTarget,
+} from './terrainFocus';
 import { bindTile, createTerrainMaterial, terrainUniforms } from './terrainMaterial';
 import type { WorkerReply, WorkerRequest } from './terrainProtocol';
 import { terrainStreaming } from './terrainStats';
@@ -89,6 +100,11 @@ const IN_FLIGHT_PER_WORKER = 2;
 /** Main-thread time per frame for turning finished builds into meshes, ms, and at most tiles. */
 const UPLOAD_BUDGET_MS = 2;
 const UPLOADS_PER_FRAME = 3;
+/**
+ * A sensor's picture renders at its own rate (15–30 Hz): its requests and tiles are kept this
+ * many frames after its latest picture, then let go.
+ */
+const FOCUS_KEEP_FRAMES = 30;
 
 interface TileMesh {
   mesh: Mesh<BufferGeometry, ShaderMaterial>;
@@ -132,7 +148,7 @@ export interface TerrainFrameSettings {
   treeDistance: number;
 }
 
-export class TerrainSystem implements LodSelectionHost<TerrainNode> {
+export class TerrainSystem implements LodSelectionHost<TerrainNode>, TerrainFocusTarget {
   readonly group = new Group();
   readonly trees: TreeLayer;
   private readonly nodes = new Map<number, TerrainNode>();
@@ -140,6 +156,14 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   private readonly selected: TerrainNode[] = [];
   private previous: TerrainNode[] = [];
   private readonly wanted: TerrainNode[] = [];
+  /** The latest sensor picture's tiles, the missing ones it wants, and when it rendered. */
+  private readonly focusSelected: TerrainNode[] = [];
+  private readonly focusWanted: TerrainNode[] = [];
+  private focusFrame = -Infinity;
+  private focusShown = false;
+  private focusSavedScale = 1;
+  /** Farthest ground drawn (the clear-air haze limit), m. */
+  private reach = MIN_DRAW_DISTANCE;
   private readonly arrived: TileData[] = [];
   private readonly jobs = new Map<number, Job>();
   private nextJob = 1;
@@ -166,6 +190,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     this.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
     this.trees = new TreeLayer(treeCapacity);
     this.group.add(this.trees.mesh);
+    setTerrainFocusTarget(this);
     // two workers: enough to keep up at 300 kn on a strafing pass, each holding one terrain
     const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
     const count = Math.max(1, Math.min(2, cores - 1));
@@ -294,6 +319,47 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     }
   }
 
+  /** The selection host of a sensor's picture: its requests wait in `focusWanted`. */
+  private readonly focusHost: LodSelectionHost<TerrainNode> = {
+    node: (level, ix, iz, parent) => this.node(level, ix, iz, parent),
+    request: (node, distance) => {
+      if (node.ready || node.pending) return;
+      node.requestDistance = distance;
+      this.focusWanted.push(node);
+    },
+  };
+
+  // ---- TerrainFocusTarget (a sensor's picture, around its render) ----
+
+  beginFocus(focus: LodFocus): boolean {
+    if (this.disposed || this.detail < 0) return false;
+    if (this.focusShown) this.endFocus();
+    this.focusFrame = this.frame;
+    this.focusWanted.length = 0;
+    selectFocusTiles(this.focusHost, focus, this.detail, this.focusSelected, this.reach);
+    for (const n of this.selected) n.tile!.mesh.visible = false;
+    let triangles = 0;
+    for (const n of this.focusSelected) {
+      n.tile!.mesh.visible = true;
+      triangles += n.tile!.triangles;
+    }
+    terrainStreaming.focusTiles = this.focusSelected.length;
+    terrainStreaming.focusTriangles = triangles;
+    // the geomorph counts distances as the selection did
+    this.focusSavedScale = terrainUniforms.uLodScale.value;
+    terrainUniforms.uLodScale.value = Math.max(1, focus.scale);
+    this.focusShown = true;
+    return true;
+  }
+
+  endFocus(): void {
+    if (!this.focusShown) return;
+    this.focusShown = false;
+    for (const n of this.focusSelected) n.tile!.mesh.visible = false;
+    for (const n of this.selected) n.tile!.mesh.visible = true;
+    terrainUniforms.uLodScale.value = this.focusSavedScale;
+  }
+
   // ---- per frame ----
 
   /** Drawing-buffer height, px (set by the view). */
@@ -322,6 +388,7 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
       MIN_DRAW_DISTANCE,
       hazeDistanceFor(envFrame.clearDensity, DRAW_CONTRAST),
     );
+    this.reach = reach;
     selectTiles(this, _camera.x, _camera.y, _camera.z, this.detail, this.selected, reach);
     terrainStreaming.drawCalls = this.drawCalls;
     terrainStreaming.drawnTriangles = this.drawnTriangles;
@@ -336,6 +403,22 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
     }
     this.previous.length = 0;
     for (const n of this.selected) this.previous.push(n);
+
+    // a sensor's picture (rendered at its own rate): its wanted tiles join the requests and its
+    // tiles stay in memory while it keeps rendering
+    if (this.frame - this.focusFrame <= FOCUS_KEEP_FRAMES) {
+      for (const n of this.focusWanted) {
+        if (n.ready || n.pending || n.wantedAt === this.frame) continue;
+        n.wantedAt = this.frame;
+        this.wanted.push(n);
+      }
+      for (const n of this.focusSelected) n.lastUsed = this.frame;
+    } else {
+      this.focusWanted.length = 0;
+      this.focusSelected.length = 0;
+      terrainStreaming.focusTiles = 0;
+      terrainStreaming.focusTriangles = 0;
+    }
 
     // 2. requests: tiles first (coarse, then near), then tree cells
     this.wanted.sort((a, b) => a.level - b.level || a.requestDistance - b.requestDistance);
@@ -590,6 +673,11 @@ export class TerrainSystem implements LodSelectionHost<TerrainNode> {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.endFocus();
+    if (getTerrainFocusTarget() === this) setTerrainFocusTarget(null);
+    this.focusSelected.length = 0;
+    this.focusWanted.length = 0;
     this.disposed = true;
     for (const w of this.workers) w.worker.terminate();
     this.workers.length = 0;

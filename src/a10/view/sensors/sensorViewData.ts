@@ -315,4 +315,11 @@ export const SENSOR_RENDER = {
   supersample: { low: 1, medium: 2, high: 2 },
   /** Statistics grid of the AGC (samples per side). */
   statsSize: 64,
+  /**
+   * Most a picture's terrain tiles are refined for its magnification over the outside view
+   * (lod.ts LodFocus.scale): from 8 km, ×16 already reaches the finest tiles of every preset at
+   * the look point (the outside view's at 500 m), and the picture's pyramid holds a
+   * handful of tiles.
+   */
+  lodScaleMax: 16,
 } as const;

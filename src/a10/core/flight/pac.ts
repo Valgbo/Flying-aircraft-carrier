@@ -3,8 +3,9 @@
  * squeezed the flight controls steady the gun pipper.
  *
  * Active with GUN/PAC at ARM, Master Arm at ARM and the trigger at the first detent (PAC-1) or
- * the second (PAC-2, firing). With a one-stage trigger (realism flag `twoStageTrigger` off) any
- * press counts as PAC-2.
+ * the second (PAC-2, firing); GUN/PAC at GUNARM arms the gun without PAC. With a one-stage
+ * trigger (realism flag `twoStageTrigger` off, the Relaxed preset: "One stage, PAC always on",
+ * PLAN §2) PAC is on whenever the gun is armed, GUNARM included, and any press counts as PAC-2.
  *
  * PAC-1 HOLDS: at the squeeze it records the ground point under the pipper (the avionics gun
  * solution) and the positions of the stick and pedals. Every step it computes where that point now
@@ -84,9 +85,11 @@ export function stepPac(sim: Sim, dt: number): void {
   const av = sim.avionics;
   const input = sim.input;
 
-  const armed = av.gunPac === 'ARM' && av.masterArm === 'ARM';
+  const twoStage = sim.options.realism.twoStageTrigger;
+  const armed =
+    av.masterArm === 'ARM' && (twoStage ? av.gunPac === 'ARM' : av.gunPac !== 'SAFE');
   let stage: 0 | 1 | 2 = 0;
-  if (armed && input.trigger >= 1) stage = sim.options.realism.twoStageTrigger ? input.trigger : 2;
+  if (armed && input.trigger >= 1) stage = twoStage ? input.trigger : 2;
   const wasActive = pac.active;
   pac.stage = stage;
   pac.active = stage > 0 && !ac.crashed;

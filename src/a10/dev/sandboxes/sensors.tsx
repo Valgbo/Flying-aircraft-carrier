@@ -19,6 +19,7 @@
  *   engine=on|off       the target tank's engine (t72: one of each regardless)
  *   mask=1  warmup=<s>  align=<s>   validity states
  *   quality=low|medium|high   seed=<n>   warm=<s> (effects run-in)   bench=1 (GPU-timed passes)
+ *   focus=0             the pictures draw the outside view's terrain tiles (no LOD focus)
  *   ui=0                hide the panel (the pictures and their labels stay)
  *
  * The table compares, per vehicle, the seekers' contrast (core `targetContrast`, the shared
@@ -877,7 +878,8 @@ function Panel({ setup, onPreset }: { setup: Setup; onPreset: (p: Preset) => voi
         </tbody>
       </table>
       <div style={{ opacity: 0.7 }}>
-        terrain pending {terrainStreaming.pending} · tiles {terrainStreaming.tiles}
+        terrain pending {terrainStreaming.pending} · tiles {terrainStreaming.tiles} · picture tiles{' '}
+        {terrainStreaming.focusTiles}
       </div>
     </div>
   );
@@ -928,6 +930,7 @@ export default function SensorsSandbox() {
   useEffect(() => {
     useA10Store.getState().updateSettings({ quality });
     sensorViewOverrides.finish = params.get('bench') === '1';
+    sensorViewOverrides.terrainFocus = params.get('focus') !== '0';
     if (params.get('detail')) sensorViewOverrides.detailScaleMax = num('detail', 6);
     void prepareWorld(num('seed', useA10Store.getState().settings.worldSeed));
     return onTerrain(setTerrain);

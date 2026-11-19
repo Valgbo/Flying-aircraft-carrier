@@ -87,6 +87,11 @@ import {
   SENSOR_OPTICS,
 } from '../../../src/a10/view/sensors/sensorViewData';
 import { maverickPictureStatus, tgpPictureStatus } from '../../../src/a10/view/sensors/validity';
+import { createLodFocus, type LodFocus } from '../../../src/a10/view/terrain/lod';
+import {
+  getTerrainFocusTarget,
+  setTerrainFocusTarget,
+} from '../../../src/a10/view/terrain/terrainFocus';
 import {
   createTerrainMaterial,
   terrainUniforms,
@@ -377,8 +382,8 @@ describe('scene state around a sensor render', () => {
   let vehicle: Mesh;
   let hiddenBefore: Mesh;
 
-  function settings(band: 'IR' | 'TV'): SensorSceneSettings {
-    return { band, pixelAngle: 6e-5, near: 120, detailDistance: 9000, hazeDensity: 3e-5 };
+  function settings(band: 'IR' | 'TV', focus: LodFocus | null = null): SensorSceneSettings {
+    return { band, pixelAngle: 6e-5, near: 120, detailDistance: 9000, hazeDensity: 3e-5, focus };
   }
 
   function snapshot() {
@@ -481,6 +486,53 @@ describe('scene state around a sensor render', () => {
     exitSensorScene(scene, gl, saved);
     expect(snapshot()).toEqual(before);
     expect(getThermalMode()).toBe(2);
+  });
+
+  it('draws the picture’s own terrain tiles around the render, the outside view’s after', () => {
+    const log: string[] = [];
+    let shown: LodFocus | null = null;
+    const previous = getTerrainFocusTarget();
+    setTerrainFocusTarget({
+      beginFocus(f) {
+        log.push('begin');
+        shown = f;
+        return true;
+      },
+      endFocus() {
+        log.push('end');
+        shown = null;
+      },
+    });
+    try {
+      const before = snapshot();
+      const focus = createLodFocus();
+      focus.scale = 12;
+      for (const band of ['IR', 'TV'] as const) {
+        const saved = createSavedSceneState();
+        enterSensorScene(scene, gl, settings(band, focus), saved);
+        expect(shown).toBe(focus);
+        expect(saved.terrainFocus).toBe(true);
+        // the terrain's tiles are never hidden as non-thermal overlays
+        expect(tile.visible).toBe(true);
+        exitSensorScene(scene, gl, saved);
+        expect(shown).toBe(null);
+        expect(snapshot()).toEqual(before);
+      }
+      expect(log).toEqual(['begin', 'end', 'begin', 'end']);
+      // no focus asked: the outside view's tiles, nothing begun
+      const saved = createSavedSceneState();
+      enterSensorScene(scene, gl, settings('IR'), saved);
+      exitSensorScene(scene, gl, saved);
+      expect(log).toHaveLength(4);
+      // no terrain to ask: nothing to end either
+      setTerrainFocusTarget(null);
+      enterSensorScene(scene, gl, settings('IR', focus), saved);
+      expect(saved.terrainFocus).toBe(false);
+      exitSensorScene(scene, gl, saved);
+      expect(snapshot()).toEqual(before);
+    } finally {
+      setTerrainFocusTarget(previous);
+    }
   });
 
   it('enters twice safely and classifies materials by their thermal hook', () => {

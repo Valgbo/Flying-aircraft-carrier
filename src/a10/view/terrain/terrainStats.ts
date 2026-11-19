@@ -17,6 +17,9 @@ export const terrainStreaming = {
   triangles: 0,
   /** Instanced trees drawn. */
   trees: 0,
+  /** The latest sensor picture's own tiles (terrainFocus.ts) and their triangles. */
+  focusTiles: 0,
+  focusTriangles: 0,
   /** Worker time per tile, ms (moving average). */
   buildMs: 0,
   /** Main-thread time spent turning finished tiles into meshes this frame, ms. */

@@ -4,17 +4,18 @@
  *  - squeezing while the nose is still moving (a correction just before the squeeze),
  *  - stick and pedal inputs while PAC-1 is held (walking the pipper, overriding PAC),
  *  - the keyboard procedure through the real input engine (PAC-1, one tap, fire),
- *  - the Relaxed preset's one-stage trigger.
+ *  - the Relaxed preset's one-stage trigger, with PAC always on (GUNARM too).
  * PAC must settle without a limit cycle and a burst fired with PAC must be no wider than the same
- * burst fired with GUN/PAC at GUNARM (PAC off). flightControls.test.ts keeps the flight-only PAC
- * tests (turbulence, authority, recoil feed-forward).
+ * burst fired with GUN/PAC at GUNARM (PAC off; in Relaxed, where PAC is always on, the Standard
+ * preset's). flightControls.test.ts keeps the flight-only PAC tests (turbulence, authority,
+ * recoil feed-forward).
  */
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { pitchRate, yawRate } from '../../../src/a10/core/frames';
 import { createTestbed } from '../../../src/a10/core/flight/testbed';
 import { createSim, pushCommand, realismFlags, stepSim } from '../../../src/a10/core/sim';
-import type { RealismPreset, Sim } from '../../../src/a10/core/types';
+import type { RealismFlags, RealismPreset, Sim } from '../../../src/a10/core/types';
 import { createFlatTerrain, tasFromCas } from '../../../src/a10/core/world';
 import { defaultBindingsConfig } from '../../../src/a10/input/bindings';
 import {
@@ -65,13 +66,15 @@ function dive(o: {
   diveDeg: number;
   pac: boolean;
   preset?: RealismPreset;
+  /** Realism flags (instead of a preset's). */
+  flags?: RealismFlags;
   loadoutId?: 'gunOnly' | 'tankHunter';
 }): Sim {
   const sim = createSim({
     seed: 7,
     terrain: createFlatTerrain(0),
     scenario: 'empty',
-    realism: realismFlags(o.preset ?? 'authentic'),
+    realism: o.flags ?? realismFlags(o.preset ?? 'authentic'),
     loadoutId: o.loadoutId ?? 'gunOnly',
     start: {
       x: 0,
@@ -445,25 +448,42 @@ describe('PAC through the real input engine and in the Relaxed preset (review FC
     LONG,
   );
 
+  /** A 3 s burst (trigger held at fire) with a small stick correction 0.3 s into it. */
+  const correctedBurst = (flags: RealismFlags, pac: boolean) => {
+    const sim = dive({ agl: 1300, kias: 300, diveDeg: 30, pac, flags });
+    const b = new Burst();
+    for (let i = 0; i < 7 * 120; i++) {
+      const t = sim.time;
+      sim.input.trigger = t >= 0.3 && t < 3.3 ? 2 : 0;
+      sim.input.pitch = t >= 0.6 && t < 0.7 ? 0.05 : 0;
+      stepSim(sim);
+      b.collect(sim);
+    }
+    return b;
+  };
+
   it(
     'Relaxed one-stage trigger: a correction during a 3 s burst sprays no wider than without PAC',
     () => {
-      const burst = (pac: boolean) => {
-        const sim = dive({ agl: 1300, kias: 300, diveDeg: 30, pac, preset: 'relaxed' });
-        const b = new Burst();
-        for (let i = 0; i < 7 * 120; i++) {
-          const t = sim.time;
-          sim.input.trigger = t >= 0.3 && t < 3.3 ? 2 : 0;
-          sim.input.pitch = t >= 0.6 && t < 0.7 ? 0.05 : 0;
-          stepSim(sim);
-          b.collect(sim);
-        }
-        return b;
-      };
-      const on = burst(true);
-      const off = burst(false);
+      const on = correctedBurst(realismFlags('relaxed'), true);
+      // PAC is always on in Relaxed, so the same burst without PAC is flown with Relaxed's flags
+      // but a two-stage trigger (held at fire) and GUN/PAC at GUNARM.
+      const off = correctedBurst({ ...realismFlags('relaxed'), twoStageTrigger: true }, false);
       expect(on.n).toBeGreaterThan(150);
       expect(on.along).toBeLessThanOrEqual(off.along);
+    },
+    LONG,
+  );
+
+  it(
+    'Relaxed, "PAC always on" (PLAN §2): GUN/PAC at GUNARM fires exactly the burst it fires at ARM',
+    () => {
+      const arm = correctedBurst(realismFlags('relaxed'), true);
+      const gunArm = correctedBurst(realismFlags('relaxed'), false);
+      expect(gunArm.n).toBeGreaterThan(150);
+      expect(gunArm.n).toBe(arm.n);
+      expect(gunArm.along).toBe(arm.along);
+      expect(gunArm.across).toBe(arm.across);
     },
     LONG,
   );

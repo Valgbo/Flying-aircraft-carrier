@@ -214,6 +214,48 @@ describe('Precision Attitude Control', () => {
   );
 
   it(
+    'relaxed preset, "PAC always on" (PLAN §2): GUN/PAC at GUNARM engages PAC too, not in the two-stage presets',
+    () => {
+      const pacWith = (
+        preset: 'relaxed' | 'standard' | 'authentic',
+        masterArm: 'ARM' | 'SAFE',
+        gunPac: 'SAFE' | 'GUNARM' | 'ARM',
+        trigger: 0 | 1 | 2,
+      ) => {
+        const sim = createTestbed({
+          altitude: 900,
+          groundHeight: 0,
+          tas: 300 * KT,
+          gamma: -30 * DEG,
+          throttle: 0.4,
+          realism: preset,
+        });
+        sim.avionics.masterArm = masterArm;
+        sim.avionics.gunPac = gunPac;
+        sim.input.trigger = trigger;
+        fakeGunSolution(sim);
+        step(sim);
+        return { active: sim.aircraft.pac.active, stage: sim.aircraft.pac.stage };
+      };
+      // Relaxed: either armed position and any press give PAC-2.
+      expect(pacWith('relaxed', 'ARM', 'GUNARM', 1)).toEqual({ active: true, stage: 2 });
+      expect(pacWith('relaxed', 'ARM', 'GUNARM', 2)).toEqual({ active: true, stage: 2 });
+      expect(pacWith('relaxed', 'ARM', 'ARM', 1)).toEqual({ active: true, stage: 2 });
+      // …but not with the gun or Master Arm safe, or the trigger released.
+      expect(pacWith('relaxed', 'ARM', 'SAFE', 2).active).toBe(false);
+      expect(pacWith('relaxed', 'SAFE', 'GUNARM', 2).active).toBe(false);
+      expect(pacWith('relaxed', 'ARM', 'GUNARM', 0).active).toBe(false);
+      // Two-stage presets: GUNARM arms the gun alone; PAC needs GUN/PAC at ARM.
+      for (const preset of ['authentic', 'standard'] as const) {
+        expect(pacWith(preset, 'ARM', 'GUNARM', 1).active).toBe(false);
+        expect(pacWith(preset, 'ARM', 'GUNARM', 2).active).toBe(false);
+        expect(pacWith(preset, 'ARM', 'ARM', 1)).toEqual({ active: true, stage: 1 });
+      }
+    },
+    LONG,
+  );
+
+  it(
     'PAC-2 feeds forward against the recoil pitching moment',
     () => {
       /**

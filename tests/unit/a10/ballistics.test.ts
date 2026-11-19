@@ -10,6 +10,7 @@ import { G0, SIM_DT } from '../../../src/a10/core/constants';
 import type { Sim, SimEvent } from '../../../src/a10/core/types';
 import { DEG, KT } from '../../../src/a10/core/units';
 import {
+  airAtHeight,
   API_EXPONENT,
   API_P_REF,
   API_V_REF,
@@ -86,6 +87,94 @@ describe('integrator', () => {
     expect(Math.abs(v.y - (v0.y - G0 * t))).toBeLessThan(1e-6);
     // In fact exactly: Heun's method integrates constant acceleration without error.
     expect(Math.abs(p.y - (500 + v0.y * t - 0.5 * G0 * t * t))).toBeLessThan(1e-6);
+  });
+
+  it('flies, bit for bit, the plain formula with the shared air and drag functions', () => {
+    // integrateRound passes its state through scratch fields and does the air and Cd look-ups
+    // itself (no allocation, ARCHITECTURE §3). It must give exactly the numbers of Heun's step
+    // written plainly with airAtHeight and dragFactor: in and outside the air tables, any ISA
+    // deviation, in vacuum and with no relative wind.
+    const air = { density: 0, sound: 0 };
+    const a0 = new Vector3();
+    const a1 = new Vector3();
+    const plainStep = (
+      type: RoundType,
+      p: Vector3,
+      v: Vector3,
+      wind: Vector3,
+      dt: number,
+      isa: number,
+      drag: number,
+    ) => {
+      const accel = (y: number, vx: number, vy: number, vz: number, out: Vector3) => {
+        const ax = vx - wind.x;
+        const ay = vy - wind.y;
+        const az = vz - wind.z;
+        const speed = Math.sqrt(ax * ax + ay * ay + az * az);
+        let k = 0;
+        if (drag !== 0 && speed > 0) {
+          airAtHeight(y, isa, air);
+          k = drag * dragFactor(type, speed / air.sound) * air.density * speed;
+        }
+        out.set(-k * ax, -k * ay - G0, -k * az);
+      };
+      const vx0 = v.x;
+      const vy0 = v.y;
+      const vz0 = v.z;
+      accel(p.y, vx0, vy0, vz0, a0);
+      accel(p.y + vy0 * dt, vx0 + a0.x * dt, vy0 + a0.y * dt, vz0 + a0.z * dt, a1);
+      const h = 0.5 * dt;
+      const vx1 = vx0 + (a0.x + a1.x) * h;
+      const vy1 = vy0 + (a0.y + a1.y) * h;
+      const vz1 = vz0 + (a0.z + a1.z) * h;
+      p.x += (vx0 + vx1) * h;
+      p.y += (vy0 + vy1) * h;
+      p.z += (vz0 + vz1) * h;
+      v.set(vx1, vy1, vz1);
+    };
+    const wind = new Vector3(3.3, 0.4, -6.2);
+    const velocities = [
+      new Vector3(0, 0, -GAU8.muzzleVelocity - 154.3),
+      new Vector3(12.4, -95.6, -700.25),
+      new Vector3(-180.5, 120.125, 230.75),
+      wind.clone(), // no relative wind: no drag
+    ];
+    const p = new Vector3();
+    const v = new Vector3();
+    const q = new Vector3();
+    const w = new Vector3();
+    const mismatches: string[] = [];
+    let checked = 0;
+    for (const type of [RoundType.API, RoundType.HEI, RoundType.TP])
+      for (const isa of [0, 7.5, -12.25])
+        for (const drag of [1, 0, 0.37])
+          for (const height of [-1500, -999.5, 0.3, 812.7, 5000, 19995.5, 20000.25, 26000])
+            for (const v0 of velocities)
+              for (const dt of [SIM_DT, SIM_DT * 0.37]) {
+                p.set(12.5, height, -7.75);
+                q.copy(p);
+                v.copy(v0);
+                w.copy(v0);
+                for (let k = 0; k < 3; k++) {
+                  integrateRound(type, p, v, wind, dt, isa, drag);
+                  plainStep(type, q, w, wind, dt, isa, drag);
+                  checked++;
+                  const same =
+                    Object.is(p.x, q.x) &&
+                    Object.is(p.y, q.y) &&
+                    Object.is(p.z, q.z) &&
+                    Object.is(v.x, w.x) &&
+                    Object.is(v.y, w.y) &&
+                    Object.is(v.z, w.z);
+                  if (!same && mismatches.length < 5) {
+                    mismatches.push(
+                      `type ${type} isa ${isa} drag ${drag} h ${height} v ${v0.toArray()} dt ${dt}`,
+                    );
+                  }
+                }
+              }
+    expect(checked).toBe(5184);
+    expect(mismatches).toEqual([]);
   });
 
   it('is converged at the simulation step: halving or doubling dt moves a 1,500 m shot < 1 mm', () => {

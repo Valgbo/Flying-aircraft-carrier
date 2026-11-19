@@ -9,9 +9,11 @@
  *   1. SCENE    the world scene from the sensor camera (sensorPose.ts) into a half-float target
  *               with a depth texture, at the sensor's EFFECTIVE resolution (the detector's
  *               pixels across the displayed field after electronic zoom, and the optics'
- *               diffraction limit) times the preset's samples per pixel — television: the normal
- *               scene with its haze; infrared: the thermal hooks on, the terrain's close-range
- *               detail off, and the sky, clouds and non-thermal overlays left out (sceneState.ts);
+ *               diffraction limit) times the preset's samples per pixel, with the terrain's own
+ *               tiles for the picture (refined for its magnification, inside it only) and its
+ *               close-range detail as far as the magnification carries it — television: the
+ *               normal scene with its haze; infrared: the thermal hooks on, and the sky, clouds
+ *               and non-thermal overlays left out (sceneState.ts);
  *   2. SIGNAL   kelvin or luminance per detector pixel — the scene samples weighted by the
  *               point-spread function (optics, jitter, the pixel's area), the infrared atmosphere
  *               and sky from the depth buffer — and the detector's noise (sensorShaders.ts);
@@ -68,6 +70,7 @@ import {
   sunElevationSine,
   tvLight,
 } from './radiometry';
+import { createLodFocus, type LodFocus } from '../terrain/lod';
 import { createSavedSceneState, enterSensorScene, exitSensorScene } from './sceneState';
 import { createSensorSchedule, nextSensorFrame, type SensorDemand } from './schedule';
 import {
@@ -75,6 +78,8 @@ import {
   maverickCameraPose,
   maverickPicture,
   pictureEffectivePixels,
+  pictureLodFocus,
+  pictureMagnification,
   picturePsfPixels,
   tgpCameraPose,
   type SensorCameraPose,
@@ -162,13 +167,16 @@ export const sensorViewOverrides = {
    */
   finish: false,
   /**
-   * Television: most the close-range terrain detail distance may grow with the sensor's
-   * magnification. The ground's detail (texture, tramlines) fades out with distance at the
-   * outside view's pixel size; the sensor's pixels are 10–100 times finer, so the detail has to
-   * reach as far as the magnification for the same look. A cap only guards against nonsense
-   * magnifications. (Infrared renders without the close detail: INFRARED_DETAIL_DISTANCE.)
+   * Most the close-range terrain detail distance may grow with the sensor's magnification. The
+   * ground's detail (texture, tramlines, the bump of rows and furrows) fades out with distance
+   * at the outside view's pixel size; the sensor's pixels are 10–100 times finer, so the detail
+   * has to reach as far as the magnification for the same look. Both bands: the bump's slope is
+   * filtered for the pixel's footprint (terrainMaterial.ts), so it no longer aliases into moiré
+   * in a thermal picture. A cap only guards against nonsense magnifications.
    */
   detailScaleMax: 128,
+  /** Draw the terrain's own tiles for each picture (terrainFocus.ts); false: the outside view's. */
+  terrainFocus: true,
 };
 
 let source: () => Sim | null = getSim;
@@ -216,16 +224,6 @@ const BLACK = new Color(0, 0, 0);
 const _clear = new Color();
 const _rot = new Matrix3();
 
-/**
- * The terrain's close-range detail distance in an infrared picture, m: none. The detail's bump
- * (crop rows, furrows) drives the thermal output through the sun on the bumped normal, by up to
- * ±8 K, and the bump is a finite difference of the mipmapped detail texture whose texel grid
- * beats against the picture's samples at any range a sensor looks from (broad moiré arcs over
- * every field). The seekers' contrast model has no row-scale texture either. Television keeps
- * the detail (its bump only nudges the lighting).
- */
-const INFRARED_DETAIL_DISTANCE = 1e-3;
-
 /** Round a picture size to a multiple of 16 pixels. */
 function round16(n: number): number {
   return Math.max(16, Math.round(n / 16) * 16);
@@ -250,6 +248,8 @@ export class SensorRenderer {
   private readonly schedule = createSensorSchedule();
   private readonly demand: SensorDemand = { tgp: false, mav: false };
   private readonly saved = createSavedSceneState();
+  /** The terrain level-of-detail focus of the picture being rendered. */
+  private readonly focus: LodFocus = createLodFocus();
   /** Signal-pass materials by samples per detector pixel (compiled on first use). */
   private readonly signalMaterials = new Map<number, ReturnType<typeof createSignalMaterial>>();
   private readonly displayMaterial = createDisplayMaterial();
@@ -570,28 +570,23 @@ export class SensorRenderer {
         target.viewport.set(0, 0, samples, samples);
         target.scissor.set(0, 0, samples, samples);
         target.scissorTest = true;
-        // the outside view's pixel, for the terrain's close-detail distance
+        // the picture's magnification over the outside view: its terrain tiles and the reach of
+        // the terrain's close-range detail follow it
         const mainFov = (ctx.camera as PerspectiveCamera).fov ?? 50;
-        const mainPixel =
-          (2 * Math.tan(((mainFov * Math.PI) / 180) * 0.5)) / Math.max(1, ctx.height);
-        const pixel = pose.fov / n;
-        const detailScale = Math.min(
-          sensorViewOverrides.detailScaleMax,
-          Math.max(1, mainPixel / pixel),
-        );
+        const magnification = pictureMagnification(mainFov, ctx.height, pose.fov, n);
+        const detailScale = Math.min(sensorViewOverrides.detailScaleMax, magnification);
         enterSensorScene(
           ctx.scene,
           gl,
           {
             band,
-            pixelAngle: pixel,
+            pixelAngle: pose.fov / n,
             near: pose.near,
-            // infrared: no close-range detail (see INFRARED_DETAIL_DISTANCE)
-            detailDistance:
-              band === 'IR'
-                ? INFRARED_DETAIL_DISTANCE
-                : terrainUniforms.uDetailDistance.value * detailScale,
+            detailDistance: terrainUniforms.uDetailDistance.value * detailScale,
             hazeDensity: rho,
+            focus: sensorViewOverrides.terrainFocus
+              ? pictureLodFocus(pose, magnification, this.focus)
+              : null,
           },
           this.saved,
         );

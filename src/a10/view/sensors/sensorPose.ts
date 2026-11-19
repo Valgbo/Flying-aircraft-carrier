@@ -24,6 +24,7 @@
  */
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { MaverickSeekerState, SensorPicture, TgpState } from '../../core/sensors/types';
+import type { LodFocus } from '../terrain/lod';
 import type { Sim } from '../../core/types';
 import type { StoreType } from '../../core/weapons/types';
 import { A10_GEOMETRY } from '../../data/geometry';
@@ -177,6 +178,55 @@ export function picturePsfPixels(
   const pixel = fov / Math.max(1, pixels);
   const airy = (SENSOR_OPTICS.airyGaussian * wavelengthUm * 1e-6) / apertureM;
   return Math.sqrt((airy * airy + blurRad * blurRad) / (pixel * pixel) + 1 / 12);
+}
+
+/**
+ * Magnification of a picture over the outside view (≥ 1): the outside view's pixel angle (its
+ * vertical field `mainFovDeg` over `mainHeight` drawing-buffer pixels) over the picture's (`fov`
+ * over `pixels` effective pixels). What the outside view shows at distance d, the picture shows
+ * as finely at d × magnification.
+ */
+export function pictureMagnification(
+  mainFovDeg: number,
+  mainHeight: number,
+  fov: number,
+  pixels: number,
+): number {
+  const main = (2 * Math.tan(((mainFovDeg * Math.PI) / 180) * 0.5)) / Math.max(1, mainHeight);
+  const pixel = fov / Math.max(1, pixels);
+  return Math.max(1, main / pixel);
+}
+
+/**
+ * The terrain level-of-detail focus of a picture (lod.ts LodFocus): the camera, its square
+ * picture's pyramid (line of sight, right, up, half field) and its magnification (at most
+ * SENSOR_RENDER.lodScaleMax): the terrain draws the picture's own tiles, as fine as the outside
+ * view draws them `scale` times closer.
+ */
+export function pictureLodFocus(
+  pose: SensorCameraPose,
+  magnification: number,
+  out: LodFocus,
+): LodFocus {
+  const q = pose.quaternion;
+  out.x = pose.position.x;
+  out.y = pose.position.y;
+  out.z = pose.position.z;
+  _fwd.set(0, 0, -1).applyQuaternion(q);
+  out.dx = _fwd.x;
+  out.dy = _fwd.y;
+  out.dz = _fwd.z;
+  _right.set(1, 0, 0).applyQuaternion(q);
+  out.rx = _right.x;
+  out.ry = _right.y;
+  out.rz = _right.z;
+  _up.set(0, 1, 0).applyQuaternion(q);
+  out.ux = _up.x;
+  out.uy = _up.y;
+  out.uz = _up.z;
+  out.tanHalf = Math.tan(pose.fov * 0.5);
+  out.scale = Math.min(SENSOR_RENDER.lodScaleMax, Math.max(1, magnification));
+  return out;
 }
 
 /**

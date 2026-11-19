@@ -166,29 +166,69 @@ export function airAtHeight(
 }
 
 // ---- integration --------------------------------------------------------------------------------
+//
+// No allocation per call (docs/a10/ARCHITECTURE.md §3). V8 boxes (allocates) a double passed to
+// or returned from a call it does not inline. With the evaluation state passed as arguments,
+// `accelerate` (too big to inline once the air and Cd look-ups are inlined into it) cost six
+// boxed doubles, ≈100 B, per integrateRound: megabytes per second with a burst in the air and
+// the fire-control computer predicting every step. So the state goes through the double fields
+// of _ev (as in storeModels.ts), and `accelerate` does the look-ups itself: no double crosses a
+// call on the hot path. Its arithmetic is airAt's and dragFactor's, operation for operation, so
+// the rounds fly bit for bit the same paths (tests/unit/a10/ballistics.test.ts checks it).
 
-/** Acceleration scratch (one evaluation). */
-const acc = { x: 0, y: 0, z: 0 };
+/** Mass of each RoundType (index = type), kg. */
+const MASSES = Float64Array.of(
+  roundMass(RoundType.API),
+  roundMass(RoundType.HEI),
+  roundMass(RoundType.TP),
+);
 
-/** Drag + gravity acceleration at (altitude y, velocity v) in air moving with `wind`. */
-function accelerate(
-  type: RoundType,
-  y: number,
-  vx: number,
-  vy: number,
-  vz: number,
-  wind: Vector3,
-  isaDeviation: number,
-  dragScale: number,
-): void {
-  const ax = vx - wind.x;
-  const ay = vy - wind.y;
-  const az = vz - wind.z;
+/**
+ * The state one evaluation is made at, written by integrateRound: height y, velocity (vx, vy,
+ * vz), the ISA deviation and the drag scale. Initialised to non-integers so the fields hold
+ * doubles from the start.
+ */
+const _ev = { y: 0.5, vx: 0.5, vy: 0.5, vz: 0.5, isa: 0.5, drag: 0.5 };
+
+/** Acceleration of one evaluation. */
+const acc = { x: 0.5, y: 0.5, z: 0.5 };
+
+/** Drag + gravity acceleration (into `acc`) at the state in _ev, in air moving with `wind`. */
+function accelerate(type: RoundType, wind: Vector3): void {
+  const ev = _ev;
+  const ax = ev.vx - wind.x;
+  const ay = ev.vy - wind.y;
+  const az = ev.vz - wind.z;
   const speed = Math.sqrt(ax * ax + ay * ay + az * az);
   let k = 0;
-  if (dragScale !== 0 && speed > 0) {
-    airAt(y, isaDeviation);
-    k = dragScale * dragFactor(type, speed / air.sound) * air.density * speed;
+  if (ev.drag !== 0 && speed > 0) {
+    // The air at the round's height (airAt).
+    const y = ev.y;
+    const isa = ev.isa;
+    let density: number;
+    let sound: number;
+    const x = (y - AIR_MIN) / AIR_STEP;
+    if (x >= 0 && x < AIR_POINTS - 1) {
+      let t = airTables[0];
+      if (t === undefined || t.isa !== isa) t = airTable(isa);
+      const i = Math.floor(x);
+      const f = x - i;
+      density = t.density[i] + (t.density[i + 1] - t.density[i]) * f;
+      sound = t.sound[i] + (t.sound[i + 1] - t.sound[i]) * f;
+    } else {
+      density = densityAt(y, isa);
+      sound = speedOfSoundAt(y, isa);
+    }
+    // Cd at this Mach number (dragCoefficient), then dragFactor × ρ · |v_air|.
+    const table = CD_TABLES[type];
+    const m = speed / sound / MACH_STEP;
+    let cd: number;
+    if (!(m > 0)) cd = table[0];
+    else {
+      const i = Math.floor(m);
+      cd = i >= CD_POINTS - 1 ? table[CD_POINTS - 1] : table[i] + (table[i + 1] - table[i]) * (m - i);
+    }
+    k = ev.drag * ((0.5 * cd * AREA) / MASSES[type]) * density * speed;
   }
   acc.x = -k * ax;
   acc.y = -k * ay - G0;
@@ -199,6 +239,7 @@ function accelerate(
  * Advance one round by dt with Heun's method (see the file comment). `wind` is the world air
  * velocity at the round, held over the step. Position and velocity are updated in place.
  * `isaDeviation` (K) shifts the standard atmosphere; `dragScale` 0 flies in vacuum (checks).
+ * Allocation-free.
  */
 export function integrateRound(
   type: RoundType,
@@ -209,25 +250,26 @@ export function integrateRound(
   isaDeviation = 0,
   dragScale = 1,
 ): void {
+  const ev = _ev;
   const vx0 = vel.x;
   const vy0 = vel.y;
   const vz0 = vel.z;
-  accelerate(type, pos.y, vx0, vy0, vz0, wind, isaDeviation, dragScale);
+  ev.isa = isaDeviation;
+  ev.drag = dragScale;
+  ev.y = pos.y;
+  ev.vx = vx0;
+  ev.vy = vy0;
+  ev.vz = vz0;
+  accelerate(type, wind);
   const a0x = acc.x;
   const a0y = acc.y;
   const a0z = acc.z;
   // Euler predictor for the end of the step.
-  const py = pos.y + vy0 * dt;
-  accelerate(
-    type,
-    py,
-    vx0 + a0x * dt,
-    vy0 + a0y * dt,
-    vz0 + a0z * dt,
-    wind,
-    isaDeviation,
-    dragScale,
-  );
+  ev.y = pos.y + vy0 * dt;
+  ev.vx = vx0 + a0x * dt;
+  ev.vy = vy0 + a0y * dt;
+  ev.vz = vz0 + a0z * dt;
+  accelerate(type, wind);
   const h = 0.5 * dt;
   const vx1 = vx0 + (a0x + acc.x) * h;
   const vy1 = vy0 + (a0y + acc.y) * h;

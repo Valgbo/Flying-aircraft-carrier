@@ -6,12 +6,17 @@
  *   albedo    the tile's baked texture (sRGB, filtered) × close-range detail from a generated
  *             texture array chosen by the baked class (crop rows and furrows turned to each
  *             field's row direction), with bump, a micro layer for speed cues and a mid layer
- *             against blur in the middle distance
+ *             against blur in the middle distance; the bump's slope is taken over the pixel's
+ *             footprint and fades out before rows and furrows alias (no moiré)
  *   light     exactly as three.js lights built-in materials (sun + hemisphere + ambient, /π),
  *             with the sun dimmed under the clouds' shadows
  *   haze      the environment's one law: 1 − exp(−(density·d)²) toward the horizon colour
  *   thermal   uThermal 0 visible / 1 white-hot / 2 black-hot (for the sensors module): ground
- *             temperature from surface class, sun exposure and time of day
+ *             temperature from surface class (blended across texel edges, no staircase along
+ *             hedgerows and field edges), sun exposure and time of day; the close detail's
+ *             facets warm toward the sun by a share of their slope, with no change of the mean
+ *   geomorph  by the distance over uLodScale (1; a magnifying sensor's picture draws its own
+ *             tiles, selected and morphed as the outside view's would be that much closer)
  *
  * Shared uniforms live in `terrainUniforms` (updated once per frame by TerrainView from
  * a10Env); each tile's material adds its texture and its geomorph range.
@@ -26,7 +31,27 @@ import {
   Vector4,
   type IUniform,
 } from 'three';
-import { DETAIL_SCALE, MICRO_LAYER } from './detailTextures';
+import { DETAIL_SCALE, DETAIL_SIZE, MICRO_LAYER } from './detailTextures';
+
+/**
+ * The close detail's bump fades out between these many detail texels per pixel. Its slope is a
+ * difference over the pixel's footprint, so it is the slope of the height the pixel sees; the
+ * crop rows and furrows are 32 and 21 texels apart and would alias from about 11 texels per
+ * pixel on, so by 16 the bump is gone (their colour stays, filtered by the texture's mipmaps).
+ */
+export const BUMP_FADE_TEXELS = [4, 16] as const;
+
+/**
+ * Share of the close detail's slope that warms or cools its facets in a thermal picture. The
+ * bump is drawn steep for the eye (furrow flanks up to ≈ 77°, crop rows ≈ 63°), and on the drawn
+ * normal a midday sun warms hardly any facet but cools every one that leans away: crop and
+ * ploughed fields read 3–7 K colder than the seekers' contrast model has the same ground, with
+ * stripes from −13 to +2 K. The thermal picture instead changes the sun term LINEARLY in a fifth
+ * of the slope — the flanks of real furrows, ≈ 40° — so a field keeps its mean (the seekers'
+ * level), with ±3–4 K across crop rows and ±6–8 K across furrows where the pixels resolve them
+ * (rows across the sun at 13:00; tests/unit/a10/terrainViewBump.test.ts).
+ */
+export const THERMAL_BUMP = 0.2;
 
 /** Uniforms every terrain, tree and water material shares (by reference). */
 export const terrainUniforms = {
@@ -52,6 +77,11 @@ export const terrainUniforms = {
   uTime: { value: 0 },
   /** Distance over which close-range ground detail fades out, m. */
   uDetailDistance: { value: 1600 },
+  /**
+   * Distance divisor of the geomorph: 1 in the outside view; a magnifying sensor's picture draws
+   * its own tiles (terrainFocus.ts) as the outside view would that many times closer.
+   */
+  uLodScale: { value: 1 },
   /** Depth bias of ribbons: Δ = x + y·d² (m toward the camera at distance d). */
   uDepthBias: { value: new Vector2(0.25, 2.4e-7) },
   /** Angle of one pixel of the view, rad (minimum on-screen width of roads). */
@@ -103,6 +133,7 @@ attribute vec3 aSide;
 uniform vec4 uTile;
 uniform vec2 uDepthBias;
 uniform float uPixelAngle;
+uniform float uLodScale;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -114,8 +145,9 @@ varying float vCoverage;
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   float d = distance(world.xyz, cameraPosition);
-  // geomorph toward the parent's surface as the tile nears the end of its range
-  float k = clamp((d - uTile.z) / max(uTile.w - uTile.z, 1.0), 0.0, 1.0);
+  // geomorph toward the parent's surface as the tile nears the end of its range (at the distance
+  // the selection used: a magnifying sensor's is uLodScale times shorter)
+  float k = clamp((d / uLodScale - uTile.z) / max(uTile.w - uTile.z, 1.0), 0.0, 1.0);
   float morph = aMorph * k;
   world.y += morph;
   // roads far away: keep them about 1.5 px wide, and let the fragment blend them by coverage
@@ -169,6 +201,10 @@ varying vec2 vDims;
 varying float vCoverage;
 
 const float MICRO = ${MICRO_LAYER}.0;
+/** Detail texels per pixel over which the bump fades out (BUMP_FADE_TEXELS). */
+const vec2 BUMP_FADE = vec2(${BUMP_FADE_TEXELS[0].toFixed(1)}, ${BUMP_FADE_TEXELS[1].toFixed(1)});
+/** Share of the close detail's slope a thermal picture warms its facets by (THERMAL_BUMP). */
+const float THERMAL_BUMP = ${THERMAL_BUMP.toFixed(3)};
 
 float cloudShadow(vec3 p) {
   if (uCloudFade.z <= 0.0) return 1.0;
@@ -215,6 +251,35 @@ float forestShadow(vec2 uv) {
   return 1.0 - 0.82 * shade;
 }
 
+/** Ground class (0..7) of the tile texel `tc` (the bake's code in the alpha channel). */
+float classAt(ivec2 tc) {
+  return mod(floor(texelFetch(uSplat, tc, 0).a * 255.0 + 0.5), 8.0);
+}
+
+/** Thermal level and heat uptake of a ground class (the contrast model's GROUND_THERMAL). */
+vec2 groundThermal(float cls) {
+  float temperature = cls == 3.0 ? 0.52 : cls == 4.0 ? 0.5 : cls == 2.0 ? 0.47 : cls == 5.0 ? 0.33 : cls == 6.0 ? 0.55 : 0.4;
+  float heatUptake = cls == 5.0 ? 0.25 : cls == 3.0 || cls == 6.0 ? 0.85 : 0.6;
+  return vec2(temperature, heatUptake);
+}
+
+/**
+ * The ground's thermal level and heat uptake at tile coordinate uv, blended bilinearly between
+ * the four nearest texels: classes meet along texel edges, which a magnified thermal picture
+ * would show as a staircase of texels along every hedgerow and field edge.
+ */
+vec2 groundThermalAt(vec2 uv) {
+  vec2 f = uv * uTile.y;
+  vec2 w = fract(f);
+  ivec2 i0 = ivec2(floor(f));
+  ivec2 hi = ivec2(int(uTile.y));
+  vec2 a = groundThermal(classAt(clamp(i0, ivec2(0), hi)));
+  vec2 b = groundThermal(classAt(clamp(i0 + ivec2(1, 0), ivec2(0), hi)));
+  vec2 c = groundThermal(classAt(clamp(i0 + ivec2(0, 1), ivec2(0), hi)));
+  vec2 d = groundThermal(classAt(clamp(i0 + ivec2(1, 1), ivec2(0), hi)));
+  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+
 /** paint() with the pixel footprint given (for coordinates that wrap). */
 float paintW(float x, float halfWidth, float fw) {
   float l = 1.0 - smoothstep(halfWidth - fw, halfWidth + fw, abs(x));
@@ -226,27 +291,41 @@ vec4 detail(vec2 p, float layer) {
   return texture(uDetail, vec3(p / uDetailScale[int(layer)], layer));
 }
 
-/** Bumped normal from a detail layer's height at p (p's axes are ax, ay in world x/z). */
-vec3 bumped(vec3 n, vec2 p, float layer, vec2 ax, vec2 ay, float strength) {
-  float sc = uDetailScale[int(layer)];
-  float e = 1.0 / 256.0;
-  vec2 uv = p / sc;
+/**
+ * Slope of a detail layer's height at uv (in repeats, per repeat) for a pixel "texels" texels
+ * of the layer wide. The difference spans the pixel's footprint (at least a texel): on the coarse
+ * mip level the pixel samples it is the smoothed height's slope, continuous, instead of a step
+ * per mip texel whose grid beats against the pixels (broad moiré arcs over fields; ±8 K stripes
+ * in a thermal picture). It fades out before rows and furrows alias (BUMP_FADE).
+ */
+vec2 heightSlope(vec2 uv, float layer, float texels) {
+  float e = max(1.0, texels) / ${DETAIL_SIZE}.0;
+  float fade = 1.0 - smoothstep(BUMP_FADE.x, BUMP_FADE.y, texels);
   float h0 = texture(uDetail, vec3(uv, layer)).a;
   float hx = texture(uDetail, vec3(uv + vec2(e, 0.0), layer)).a;
   float hy = texture(uDetail, vec3(uv + vec2(0.0, e), layer)).a;
-  vec2 g = vec2(hx - h0, hy - h0) / (e * sc) * strength;
-  vec2 gw = g.x * ax + g.y * ay;
+  return vec2(hx - h0, hy - h0) / e * fade;
+}
+
+/**
+ * World-plane slope (x, z) of a detail layer's bump at p (p's axes are ax, ay in world x/z),
+ * for a pixel "footprint" metres wide on the ground.
+ */
+vec2 bumpSlope(vec2 p, float layer, vec2 ax, vec2 ay, float footprint, float strength) {
+  float sc = uDetailScale[int(layer)];
+  vec2 g = heightSlope(p / sc, layer, footprint / sc * ${DETAIL_SIZE}.0) / sc * strength;
+  return g.x * ax + g.y * ay;
+}
+
+/** Bumped normal from a detail layer's height at p (p's axes are ax, ay in world x/z). */
+vec3 bumped(vec3 n, vec2 p, float layer, vec2 ax, vec2 ay, float footprint, float strength) {
+  vec2 gw = bumpSlope(p, layer, ax, ay, footprint, strength);
   return normalize(n - vec3(gw.x, 0.0, gw.y));
 }
 
 /** Bumped normal from a detail layer's height sampled at an explicit repeat size (world x/z axes). */
-vec3 bumpedAt(vec3 n, vec2 p, float layer, float sc, float strength) {
-  float e = 1.0 / 256.0;
-  vec2 uv = p / sc;
-  float h0 = texture(uDetail, vec3(uv, layer)).a;
-  float hx = texture(uDetail, vec3(uv + vec2(e, 0.0), layer)).a;
-  float hy = texture(uDetail, vec3(uv + vec2(0.0, e), layer)).a;
-  vec2 g = vec2(hx - h0, hy - h0) / (e * sc) * strength;
+vec3 bumpedAt(vec3 n, vec2 p, float layer, float sc, float footprint, float strength) {
+  vec2 g = heightSlope(p / sc, layer, footprint / sc * ${DETAIL_SIZE}.0) / sc * strength;
   return normalize(n - vec3(g.x, 0.0, g.y));
 }
 
@@ -256,6 +335,13 @@ void main() {
   float dist = length(toCam);
   vec3 V = toCam / max(dist, 1e-3);
   vec3 N = normalize(vNormal);
+  // the pixel's footprint on the ground, m (taken here, in uniform control flow, for the bump)
+  vec2 wx = dFdx(vWorld.xz);
+  vec2 wy = dFdy(vWorld.xz);
+  float footprint = max(length(wx), length(wy));
+  // thermal: the normal the sun warms, and the close detail's slope on top of it (ground)
+  vec3 Nsun = N;
+  vec2 facet = vec2(0.0);
   vec2 st = (vUv * uTile.y + 0.5) / (uTile.y + 1.0);
   vec3 albedo = texture2D(uSplat, st).rgb;
   float near = 1.0 - smoothstep(uDetailDistance * 0.35, uDetailDistance, dist);
@@ -289,7 +375,8 @@ void main() {
         albedo *= 1.0 - 0.38 * tracks * near;
       }
       float bumpK = cls == 2.0 ? 1.4 : cls == 3.0 ? 1.0 : 0.5;
-      N = bumped(N, p, cls, ax, ay, bumpK * near * near);
+      facet = bumpSlope(p, cls, ax, ay, footprint, bumpK * near * near);
+      N = normalize(N - vec3(facet.x, 0.0, facet.y));
       // micro detail: speed and height cues close to the ground
       float micro = 1.0 - smoothstep(40.0, 260.0, dist);
       if (micro > 0.0) {
@@ -306,8 +393,10 @@ void main() {
     // the shadow a forest edge or hedgerow casts on the open ground beside it
     if (cls != 5.0 && dist < FOREST_SHADOW_RANGE) sunVisible *= forestShadow(vUv);
     color = lightLambert(albedo, N, sunVisible);
-    temperature = cls == 3.0 ? 0.52 : cls == 4.0 ? 0.5 : cls == 2.0 ? 0.47 : cls == 5.0 ? 0.33 : cls == 6.0 ? 0.55 : 0.4;
-    heatUptake = cls == 5.0 ? 0.25 : cls == 3.0 || cls == 6.0 ? 0.85 : 0.6;
+    // thermal: the class's level and uptake, blended across texel edges
+    vec2 ground = uThermal > 0.5 ? groundThermalAt(vUv) : groundThermal(cls);
+    temperature = ground.x;
+    heatUptake = ground.y;
   } else if (kind < 2.5) {
     // ---- roads: highway, road, track ----
     float sub = floor(vInfo.y + 0.5);
@@ -411,8 +500,9 @@ void main() {
     albedo *= mix(1.0, crowns, 0.6) * (0.74 + 0.52 * stands);
     if (kind < 5.5) {
       vec4 d = detail(vWorld.xz, 5.0);
-      N = bumpedAt(N, vWorld.xz, 5.0, CROWN_SCALE, 1.2);
-      N = bumped(N, vWorld.xz, 5.0, vec2(1.0, 0.0), vec2(0.0, 1.0), 1.6 * near);
+      N = bumpedAt(N, vWorld.xz, 5.0, CROWN_SCALE, footprint, 1.2);
+      N = bumped(N, vWorld.xz, 5.0, vec2(1.0, 0.0), vec2(0.0, 1.0), footprint, 1.6 * near);
+      Nsun = N; // crowns are real shapes: their sunny sides are warmer
       albedo *= mix(vec3(1.0), d.rgb * 2.0, 0.9 * near);
     } else {
       // foliage side-on along the wall, darker toward the shaded understorey
@@ -427,7 +517,9 @@ void main() {
   }
 
   if (uThermal > 0.5) {
-    float sun = max(dot(N, uSunDir), 0.0) * sunVisible;
+    // the sun on the macro slope; the ground's close-detail facets lean toward or away from it by
+    // THERMAL_BUMP of their drawn slope, to first order (a field's mean stays the seekers' level)
+    float sun = max(max(dot(Nsun, uSunDir), 0.0) - THERMAL_BUMP * dot(facet, uSunDir.xz), 0.0) * sunVisible;
     float t = temperature + (uThermalParams.x * heatUptake * sun - 0.15) * 0.35 + (uThermalParams.y - 0.4) * 0.3;
     gl_FragColor = vec4(thermalOut(t, haze), 1.0);
     return;

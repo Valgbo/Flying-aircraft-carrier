@@ -13,6 +13,14 @@
  * and every texel ≈ 3 px. A node splits only when all four children are built; until then it
  * stays (coarser for a moment, never a hole). Coarse tiles are requested first.
  *
+ * A SENSOR'S PICTURE (the targeting pod, a Maverick seeker: a narrow camera that magnifies) has
+ * its own selection, `selectFocusTiles`: the same rule with every distance divided by the
+ * sensor's magnification (its pixels are that much finer than the outside view's, so its ground
+ * must be as fine as the outside view draws it that much closer), restricted to the picture's
+ * pyramid — a node wholly outside one of its four side planes is neither drawn nor requested.
+ * The terrain system shows that selection only around the sensor's own render
+ * (terrainFocus.ts), so the outside view's tiles stay exactly what `selectTiles` chose.
+ *
  * Pure: no three.js objects, no worker; unit-tested.
  */
 
@@ -114,6 +122,51 @@ export interface LodSelectionHost<N extends LodNode> {
 }
 
 /**
+ * A sensor's picture for the selection: the camera, its (square) picture's pyramid, and how much
+ * finer its pixels are than the outside view's.
+ */
+export interface LodFocus {
+  /** Camera position, m. */
+  x: number;
+  y: number;
+  z: number;
+  /** Unit direction of the line of sight (the picture's centre). */
+  dx: number;
+  dy: number;
+  dz: number;
+  /** Unit right and up of the picture (perpendicular to the line of sight). */
+  rx: number;
+  ry: number;
+  rz: number;
+  ux: number;
+  uy: number;
+  uz: number;
+  /** Tangent of half the picture's field (square: both axes). */
+  tanHalf: number;
+  /** Magnification over the outside view (≥ 1): distances count 1 / scale. */
+  scale: number;
+}
+
+export function createLodFocus(): LodFocus {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    dx: 0,
+    dy: 0,
+    dz: -1,
+    rx: 1,
+    ry: 0,
+    rz: 0,
+    ux: 0,
+    uy: 1,
+    uz: 0,
+    tanHalf: 0.01,
+    scale: 1,
+  };
+}
+
+/**
  * Select the tiles to draw for a camera at (cx, cy, cz). Fills `out` (cleared) with ready
  * nodes that cover the ground without overlap; requests every missing node it would like.
  */
@@ -130,12 +183,82 @@ export function selectTiles<N extends LodNode>(
   const maxLevel = MAX_LEVEL_BY_DETAIL[Math.max(0, Math.min(2, detail))];
   const root = host.node(0, 0, 0, null);
   drawLimit = Math.min(maxDistance, MAX_DRAW_DISTANCE);
+  picture = null;
+  lodScale = 1;
   visit(host, root, cx, cy, cz, detail, maxLevel, out);
+  return out;
+}
+
+/**
+ * Select the tiles of a sensor's picture (see LodFocus and the file comment): ready nodes that
+ * cover, without overlap, all the ground inside the picture, refined as the outside view would
+ * refine them at 1 / scale of their distance. Fills `out` (cleared); requests the missing nodes
+ * in the picture with those magnified distances. `maxDistance` is a true distance.
+ */
+export function selectFocusTiles<N extends LodNode>(
+  host: LodSelectionHost<N>,
+  focus: LodFocus,
+  detail: number,
+  out: N[],
+  maxDistance = MAX_DRAW_DISTANCE,
+): N[] {
+  out.length = 0;
+  const maxLevel = MAX_LEVEL_BY_DETAIL[Math.max(0, Math.min(2, detail))];
+  const root = host.node(0, 0, 0, null);
+  drawLimit = Math.min(maxDistance, MAX_DRAW_DISTANCE);
+  // inward normals of the picture pyramid's four side planes (through the camera)
+  const t = focus.tanHalf;
+  for (let i = 0; i < 4; i++) {
+    const a = i === 0 ? 1 : i === 1 ? -1 : 0;
+    const b = i === 2 ? 1 : i === 3 ? -1 : 0;
+    planes[i * 3] = a * focus.rx + b * focus.ux + t * focus.dx;
+    planes[i * 3 + 1] = a * focus.ry + b * focus.uy + t * focus.dy;
+    planes[i * 3 + 2] = a * focus.rz + b * focus.uz + t * focus.dz;
+  }
+  picture = focus;
+  lodScale = Math.max(1, focus.scale);
+  try {
+    visit(host, root, focus.x, focus.y, focus.z, detail, maxLevel, out);
+  } finally {
+    picture = null;
+    lodScale = 1;
+  }
   return out;
 }
 
 /** Farthest distance drawn in the current selection (set by selectTiles). */
 let drawLimit = MAX_DRAW_DISTANCE;
+/** The current selection's focus (a sensor's picture), or null for the outside view. */
+let picture: LodFocus | null = null;
+/** The current selection's distance divisor (1 for the outside view). */
+let lodScale = 1;
+/** Inward normals (x, y, z) of the focus picture's four side planes (set by selectFocusTiles). */
+const planes = new Float64Array(12);
+
+/**
+ * Whether the box [x0, x0+size] × [minY, maxY] × [z0, z0+size] may show in the focus's picture:
+ * not wholly outside any of its pyramid's side planes (conservative near the pyramid's edges).
+ */
+function inPicture(
+  f: LodFocus,
+  x0: number,
+  z0: number,
+  size: number,
+  minY: number,
+  maxY: number,
+): boolean {
+  for (let i = 0; i < 12; i += 3) {
+    const nx = planes[i];
+    const ny = planes[i + 1];
+    const nz = planes[i + 2];
+    // the box's corner farthest along the inward normal
+    const px = (nx >= 0 ? x0 + size : x0) - f.x;
+    const py = (ny >= 0 ? maxY : minY) - f.y;
+    const pz = (nz >= 0 ? z0 + size : z0) - f.z;
+    if (nx * px + ny * py + nz * pz < 0) return false;
+  }
+  return true;
+}
 
 function visit<N extends LodNode>(
   host: LodSelectionHost<N>,
@@ -150,36 +273,37 @@ function visit<N extends LodNode>(
   const size = nodeSize(node.level);
   const x0 = nodeOrigin(node.level, node.ix);
   const z0 = nodeOrigin(node.level, node.iz);
-  const distance = boxDistance(cx, cy, cz, x0, z0, size, node.minY, node.maxY);
-  if (distance > drawLimit) return;
+  // a sensor's picture: nothing outside it is drawn or wanted
+  if (picture !== null && !inPicture(picture, x0, z0, size, node.minY, node.maxY)) return;
+  const reach = boxDistance(cx, cy, cz, x0, z0, size, node.minY, node.maxY);
+  if (reach > drawLimit) return;
+  // the distance the split rule sees (a magnifying sensor's: 1 / scale of the true one)
+  const distance = reach / lodScale;
   if (node.level < maxLevel && distance < splitDistance(node.level, detail)) {
     const level = node.level + 1;
+    const cs = size / 2;
+    // children that can show (all four, but for a sensor's picture those in the picture)
+    let wanted = 0;
     let ready = 0;
     for (let k = 0; k < 4; k++) {
       const child = host.node(level, node.ix * 2 + (k & 1), node.iz * 2 + (k >> 1), node);
+      const kx = x0 + (k & 1) * cs;
+      const kz = z0 + (k >> 1) * cs;
+      if (picture !== null && !inPicture(picture, kx, kz, cs, child.minY, child.maxY)) continue;
+      wanted++;
       if (child.ready) ready++;
       else {
-        const cs = size / 2;
-        const cd = boxDistance(
-          cx,
-          cy,
-          cz,
-          x0 + (k & 1) * cs,
-          z0 + (k >> 1) * cs,
-          cs,
-          child.minY,
-          child.maxY,
-        );
-        host.request(child, cd);
+        const cd = boxDistance(cx, cy, cz, kx, kz, cs, child.minY, child.maxY);
+        host.request(child, cd / lodScale);
       }
     }
     // go down when the children can cover the node — or when the node itself is not there yet
-    if (ready === 4 || !node.ready) {
+    if (ready === wanted || !node.ready) {
       for (let k = 0; k < 4; k++) {
         const child = host.node(level, node.ix * 2 + (k & 1), node.iz * 2 + (k >> 1), node);
-        if (ready === 4 || child.ready) visit(host, child, cx, cy, cz, detail, maxLevel, out);
+        if (ready === wanted || child.ready) visit(host, child, cx, cy, cz, detail, maxLevel, out);
       }
-      if (ready === 4) return;
+      if (ready === wanted) return;
       if (!node.ready) {
         host.request(node, distance);
         return;
